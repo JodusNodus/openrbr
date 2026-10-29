@@ -1,4 +1,4 @@
-//! The Graphics & sound page: the window, the camera, the HUD, the sound and the renderer's additions.
+//! The Graphics & sound page: the window, the camera, the HUD, the sound and the renderer's quality.
 
 use egui::{Color32, ComboBox, DragValue};
 use rbr_render::camera_prefs;
@@ -6,83 +6,148 @@ use rbr_render::coords;
 use rbr_render::hud::{Part, Parts};
 use rbr_render::mirrors::Rate;
 use rbr_render::present::Present;
-use rbr_render::renderer::{AntiAliasing, Detail, Enhance, Reflections};
+use rbr_render::renderer::{AntiAliasing, Detail, Reflections};
 
 use crate::pages::{fields, section, DRIVE_FIELDS, FIELD};
 use crate::Form;
 
-/// The renderer additions on (`viewer --enhance`), by [`Enhance::NAMES`].
-pub type Graphics = [bool; Enhance::NAMES.len()];
-
-/// Each renderer addition's label and hover tip, by [`Enhance::NAMES`].
-pub const GRAPHICS_LABELS: [(&str, &str); Enhance::NAMES.len()] = [
-    ("Sharp distant textures", "16x anisotropic filtering: the road stays sharp further out at grazing angles"),
-    (
-        "Enhanced asphalt",
-        "Tarmac roads get the fine grain and relief of a scanned asphalt surface, lit by the sun, over the stage's own \
-         road colour (about 0.1 ms)",
-    ),
-    (
-        "Cabin light",
-        "In the cockpit: the sun only through the glass, with the roof, pillars and dash shading each other, darker \
-         footwells and corners, a sheen on the dash, and the headlights' glow at night",
-    ),
-    (
-        "Soft car shadow",
-        "The car's own shape as a soft shadow on the ground and fences under it, in place of the game's shadow decal",
-    ),
-    (
-        "Soft decals",
-        "Skid marks painted on the stage (some RallySimFans stages) blended softly into the road instead of cut out \
-         into hard black shapes",
-    ),
-    (
-        "Dense grass",
-        "A field of grass blades over the grassy ground within 20 m of the road, swaying in the wind, drawn within 50 m \
-         of the camera. Needs Lighting. Costs frame time (about 1.5 ms at 1080p) and about 150 MB of video memory",
-    ),
-    (
-        "Enhanced gravel",
-        "Gravel and dirt roads get the fine grain and relief of a scanned gravel surface, lit by the sun, over the \
-         stage's own road colour (about 0.1 ms)",
-    ),
-    (
-        "Enhanced ground",
-        "Hillsides, fields and verges get the grass, earth and stones of a scanned ground surface, lit by the sun, over \
-         the stage's own ground colour, and lose the baked tint that turns them blue and over-green",
-    ),
-    (
-        "Lighting",
-        "A physically based sky and light for the time of day, with moving volumetric clouds, haze and mist, sun \
-         shafts, real-time sun shadows and sunlit foliage, ambient occlusion and bounced light worked out from the \
-         stage when it loads, and reflection probes. Costs frame time (about 1 ms or more) and a longer load (a \
-         second or two)",
-    ),
-    (
-        "Realistic tyre marks",
-        "Tyre marks as wide as the tread and swept wider in a slide: ruts with berms in gravel, rubber on tarmac only \
-         when sliding, grooves in snow, flattened grass, longer trails",
-    ),
-    ("Weather and particle effects", "GPU rain and snow around the car, rings on wet roads, sunlit and soft particles"),
-    (
-        "Enhanced snow",
-        "Snow gets the fine grain and relief of a scanned snow surface, lit by the sun, over the stage's own snow \
-         (about 0.1 ms)",
-    ),
-    ("Flowing water", "Rivers and lakes that flow, ripple and fade into their banks"),
-    ("Puddles on wet roads", "Puddles on the wet road in rain, reflecting the sky and the stage"),
-];
-
-/// The index of `name` in [`Enhance::NAMES`].
-#[cfg(test)]
-pub fn graphics_index(name: &str) -> usize {
-    Enhance::NAMES.iter().position(|n| *n == name).expect("an Enhance name")
+/// The Quality section's choices: the renderer's additions (`viewer --enhance`), the wet roads (`--enhance wet` and
+/// `--reflections`), the detail (`--detail`) and the mirrors (`--mirrors`). Each is kept under its own key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Graphics {
+    pub lighting: bool,
+    /// Our rain, snow and particles (`particles`).
+    pub particles: bool,
+    /// The scanned asphalt, gravel, snow and ground (`asphalt`, `gravel`, `snow`, `ground`), one switch.
+    pub surfaces: bool,
+    pub cabin: bool,
+    pub contact: bool,
+    pub grass: bool,
+    /// Our tyre marks, which no preset changes: free, and off until reviewed in play.
+    pub marks: bool,
+    pub wet_roads: WetRoads,
+    pub detail: Detail,
+    pub mirrors: Rate,
 }
 
-/// The additions on by default: all but the grass (a proof of concept) and the tyre marks, not yet reviewed in play. The
-/// cabin light costs next to nothing.
-pub const DEFAULT_GRAPHICS: Graphics =
-    [true, true, true, true, true, false, true, true, true, false, true, true, true, true];
+/// The additions always on, as they cost nothing: 16x anisotropic filtering, the soft decals, the flowing water.
+pub const ALWAYS_ON: [&str; 3] = ["anisotropy", "decals", "water"];
+
+/// A new install's choices: the High preset.
+pub const DEFAULT_GRAPHICS: Graphics = Quality::High.graphics(false);
+
+/// The width of the Quality section's boxes, beside the left column.
+const QUALITY_FIELD: f32 = 170.0;
+
+/// The wet roads: as in 1.02, or our film and puddles (`--enhance wet`) reflecting the baked stage and sky (low), and
+/// the scenery on screen too, on the wet roads and the water (medium and high, `--reflections`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WetRoads {
+    Off,
+    Low,
+    Medium,
+    High,
+}
+
+impl WetRoads {
+    /// The choices offered, in the launcher's order.
+    pub const ALL: [WetRoads; 4] = [WetRoads::High, WetRoads::Medium, WetRoads::Low, WetRoads::Off];
+
+    /// Its name in the settings.
+    pub fn name(self) -> &'static str {
+        match self {
+            WetRoads::Off => "off",
+            WetRoads::Low => "low",
+            WetRoads::Medium => "medium",
+            WetRoads::High => "high",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<WetRoads> {
+        WetRoads::ALL.into_iter().find(|w| w.name() == text)
+    }
+
+    /// The viewer's screen-space reflections for it.
+    pub fn reflections(self) -> Reflections {
+        match self {
+            WetRoads::Off | WetRoads::Low => Reflections::Off,
+            WetRoads::Medium => Reflections::Medium,
+            WetRoads::High => Reflections::High,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            WetRoads::Off => "Off",
+            WetRoads::Low => "Low",
+            WetRoads::Medium => "Medium",
+            WetRoads::High => "High",
+        }
+    }
+}
+
+/// The Quality section's presets (their cost: `notes/renderer.md` "Cost on an M3 Pro").
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Quality {
+    /// The game's look with the free additions.
+    Low,
+    /// Every addition but our lighting, the costliest.
+    Medium,
+    High,
+    /// High with the dense grass and the Ultra detail.
+    Ultra,
+}
+
+impl Quality {
+    pub const ALL: [Quality; 4] = [Quality::Low, Quality::Medium, Quality::High, Quality::Ultra];
+
+    /// Its choices, the tyre marks `marks`.
+    pub const fn graphics(self, marks: bool) -> Graphics {
+        let high = Graphics {
+            lighting: true,
+            particles: true,
+            surfaces: true,
+            cabin: true,
+            contact: true,
+            grass: false,
+            marks,
+            wet_roads: WetRoads::High,
+            detail: Detail::High,
+            mirrors: Rate::Every(1),
+        };
+        match self {
+            Quality::Low => Graphics {
+                lighting: false,
+                particles: false,
+                surfaces: false,
+                cabin: false,
+                contact: false,
+                wet_roads: WetRoads::Off,
+                mirrors: Rate::Off,
+                ..high
+            },
+            Quality::Medium => {
+                Graphics { lighting: false, wet_roads: WetRoads::Medium, mirrors: Rate::Every(3), ..high }
+            }
+            Quality::High => high,
+            Quality::Ultra => Graphics { grass: true, detail: Detail::Ultra, ..high },
+        }
+    }
+
+    /// The preset `graphics` are, if any.
+    pub fn of(graphics: Graphics) -> Option<Quality> {
+        Quality::ALL.into_iter().find(|q| q.graphics(graphics.marks) == graphics)
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Quality::Low => "Low",
+            Quality::Medium => "Medium",
+            Quality::High => "High",
+            Quality::Ultra => "Ultra",
+        }
+    }
+}
 
 /// The render scales the Graphics & sound page offers, percent of the window's width and height (`viewer --render-scale`): the
 /// frame is drawn smaller and the post pass scales it up, for high refresh rates at 1440p and above. 100, the first,
@@ -92,16 +157,6 @@ pub const RENDER_SCALES: [u32; 4] = [100, 75, 67, 50];
 /// A render scale's label.
 fn scale_label(percent: u32) -> String {
     format!("{percent}%")
-}
-
-/// A screen-space reflections choice's label.
-fn reflections_label(choice: Reflections) -> &'static str {
-    match choice {
-        Reflections::High => "High",
-        Reflections::Medium => "Medium",
-        Reflections::Low => "Low",
-        Reflections::Off => "Off",
-    }
 }
 
 /// A detail choice's label.
@@ -119,10 +174,6 @@ fn anti_aliasing_label(choice: AntiAliasing) -> &'static str {
         AntiAliasing::Off => "Off",
     }
 }
-
-/// The mirrors' rate a new install starts with (`viewer --mirrors`): the most often updated costing at most 1 ms a frame
-/// at 1440p on an M-series Mac (`lead/reports/mirrors.md`).
-pub const DEFAULT_MIRRORS: Rate = Rate::Every(1);
 
 /// A mirrors' rate's label.
 fn mirrors_label(rate: Rate) -> &'static str {
@@ -200,8 +251,8 @@ pub const MAX_VOLUME: f32 = 4.0;
 pub const MAX_GROUP_VOLUME: f32 = 2.0;
 
 impl Form {
-    /// The Graphics & sound page: the window, the camera, the HUD and the sound on the left; the renderer's additions
-    /// on the right.
+    /// The Graphics & sound page: the window, the camera, the HUD and the sound on the left; the renderer's quality on
+    /// the right.
     pub fn graphics_page(&mut self, ui: &mut egui::Ui) {
         egui::ScrollArea::vertical().id_salt("graphics").show(ui, |ui| {
             ui.horizontal_top(|ui| {
@@ -210,7 +261,7 @@ impl Form {
                     self.view_fields(ui);
                 });
                 ui.add_space(20.0);
-                ui.vertical(|ui| self.enhancements(ui));
+                ui.vertical(|ui| self.quality(ui));
             });
         });
     }
@@ -268,38 +319,6 @@ impl Form {
                 .on_hover_text(tip);
             ui.end_row();
 
-            let tip = "Reflections of the scenery on screen in wet roads and water. Medium and Low: fewer rays a pixel \
-                       and fewer steps a ray, grainier; Low about 1 ms a frame less at 1080p in the wet. Off: the baked reflections of the stage and the sky alone; saves \
-                       5 to 6.5 ms a frame at 1080p in the wet where a road fills the view";
-            ui.label("Wet reflections").on_hover_text(tip);
-            ComboBox::from_id_salt("reflections")
-                .width(FIELD)
-                .selected_text(reflections_label(self.reflections))
-                .show_ui(ui, |ui| {
-                    for choice in Reflections::ALL {
-                        ui.selectable_value(&mut self.reflections, choice, reflections_label(choice));
-                    }
-                })
-                .response
-                .on_hover_text(tip);
-            ui.end_row();
-
-            let tip = "Ultra, for strong GPUs: sun shadows at twice the texels (sharper shadows of posts, cables and \
-                       trunks) and sharper reflections in the car's paint and the wet roads. About 1 to 2 ms a frame \
-                       more at 1440p, 2.5 to 3.5 ms in the wet, and 0.5 GB more video memory on long stages";
-            ui.label("Detail").on_hover_text(tip);
-            ComboBox::from_id_salt("detail")
-                .width(FIELD)
-                .selected_text(detail_label(self.detail))
-                .show_ui(ui, |ui| {
-                    for choice in Detail::ALL {
-                        ui.selectable_value(&mut self.detail, choice, detail_label(choice));
-                    }
-                })
-                .response
-                .on_hover_text(tip);
-            ui.end_row();
-
             let tip = if self.upscaler {
                 "Upscales the car's and the stage's textures 4x (to at most 4096 texels a side), so the bonnet, the \
                  livery, the cockpit, the gravel and the signs stay sharp up close. The first drive with \
@@ -329,21 +348,6 @@ impl Form {
                 .show_ui(ui, |ui| {
                     for (present, (label, tip)) in Present::ALL.into_iter().zip(PRESENT_LABELS) {
                         ui.selectable_value(&mut self.present, present, label).on_hover_text(tip);
-                    }
-                })
-                .response
-                .on_hover_text(tip);
-            ui.end_row();
-
-            let tip = "In the cockpit: the rear-view and door mirrors show the stage, the car and the cars behind, \
-                       redrawn this often (each mirror in turn). Off: they only reflect the sky";
-            ui.label("Mirrors").on_hover_text(tip);
-            ComboBox::from_id_salt("mirrors")
-                .width(FIELD)
-                .selected_text(mirrors_label(self.mirrors))
-                .show_ui(ui, |ui| {
-                    for rate in Rate::ALL {
-                        ui.selectable_value(&mut self.mirrors, rate, mirrors_label(rate));
                     }
                 })
                 .response
@@ -451,29 +455,131 @@ impl Form {
         });
     }
 
-    /// One box for each renderer addition, with its tip on hover, and the presets.
-    fn enhancements(&mut self, ui: &mut egui::Ui) {
-        section(ui, "Enhancements");
+    /// The Quality section: the presets, then each choice with its tip on hover.
+    fn quality(&mut self, ui: &mut egui::Ui) {
+        section(ui, "Quality");
         ui.colored_label(
             Color32::GRAY,
-            "Additions beyond the game's look. The stage always draws at its highest quality.",
+            "Additions beyond the game's look. The stage always draws at its highest quality; sharp distant textures, \
+             soft decals and flowing water are always on.",
         );
         ui.add_space(4.0);
-        for (k, (label, tip)) in GRAPHICS_LABELS.into_iter().enumerate() {
-            ui.checkbox(&mut self.graphics[k], label).on_hover_text(tip);
-        }
-        ui.add_space(8.0);
-        // The presets leave the render scale as it is: it changes the frame's size, not the additions.
-        ui.horizontal(|ui| {
-            if ui.button("All on").clicked() {
-                self.graphics = [true; Enhance::NAMES.len()];
-            }
-            if ui.button("All off").clicked() {
-                self.graphics = Default::default();
-            }
-            if ui.button("Defaults").clicked() {
-                self.graphics = DEFAULT_GRAPHICS;
-            }
+        let g = &mut self.graphics;
+        fields(ui, "quality", |ui| {
+            let tip = "Sets the choices below. Low: the game's look. Medium: all but Lighting, the costliest. High: \
+                       all but Dense grass and Ultra detail. Ultra: all. The render scale, anti-aliasing and tyre \
+                       marks stay as they are";
+            ui.label("Preset").on_hover_text(tip);
+            ComboBox::from_id_salt("preset")
+                .width(QUALITY_FIELD)
+                .selected_text(Quality::of(*g).map_or("Custom", Quality::label))
+                .show_ui(ui, |ui| {
+                    for preset in Quality::ALL {
+                        if ui.selectable_label(Quality::of(*g) == Some(preset), preset.label()).clicked() {
+                            *g = preset.graphics(g.marks);
+                        }
+                    }
+                })
+                .response
+                .on_hover_text(tip);
+            ui.end_row();
+
+            let tip = "A physically based sky and light for the time of day, with moving volumetric clouds, haze and \
+                       mist, sun shafts, real-time sun shadows and sunlit foliage, ambient occlusion and bounced light \
+                       worked out from the stage when it loads, and reflection probes. The costliest choice: up to \
+                       half the frame time on a dry day, and a few seconds longer to load";
+            ui.label("Lighting").on_hover_text(tip);
+            ui.checkbox(&mut g.lighting, "sky, sun and shadows").on_hover_text(tip);
+            ui.end_row();
+
+            let tip = "GPU rain and snow around the car, rings on wet roads, sunlit and soft particles, wheel spray \
+                       and smoke, and the car's dirt. Costly in heavy rain (the mirrors draw it too), next to nothing \
+                       in the dry";
+            ui.label("Weather effects").on_hover_text(tip);
+            ui.checkbox(&mut g.particles, "rain, snow and particles").on_hover_text(tip);
+            ui.end_row();
+
+            let tip = "In wet weather, a film of water and puddles on the roads, the ground about them soaked. Low: \
+                       they reflect the stage's baked reflections and the sky. Medium and High: also the scenery on \
+                       screen, on the wet roads and on rivers and lakes, Medium grainier. Off: the game's wet roads. \
+                       Each step up costs more frame time in the rain";
+            ui.label("Wet roads").on_hover_text(tip);
+            ComboBox::from_id_salt("wet roads")
+                .width(QUALITY_FIELD)
+                .selected_text(g.wet_roads.label())
+                .show_ui(ui, |ui| {
+                    for choice in WetRoads::ALL {
+                        ui.selectable_value(&mut g.wet_roads, choice, choice.label());
+                    }
+                })
+                .response
+                .on_hover_text(tip);
+            ui.end_row();
+
+            let tip = "Asphalt, gravel, snow and the off-road ground get the fine grain and relief of scanned \
+                       surfaces, lit by the sun, over the stage's own colours; the ground loses the baked tint that \
+                       turns it blue and over-green. Costs little";
+            ui.label("Surfaces").on_hover_text(tip);
+            ui.checkbox(&mut g.surfaces, "scanned").on_hover_text(tip);
+            ui.end_row();
+
+            let tip = "In the cockpit: the sun only through the glass, with the roof, pillars and dash shading each \
+                       other, darker footwells and corners, a sheen on the dash, and the headlights' glow at night";
+            ui.label("Cabin light").on_hover_text(tip);
+            ui.checkbox(&mut g.cabin, "in the cockpit").on_hover_text(tip);
+            ui.end_row();
+
+            let tip = "The car's own shape as a soft shadow on the ground and fences under it, in place of the game's \
+                       shadow decal";
+            ui.label("Car shadow").on_hover_text(tip);
+            ui.checkbox(&mut g.contact, "soft").on_hover_text(tip);
+            ui.end_row();
+
+            let tip = "A field of grass blades over the grassy ground within 20 m of the road, swaying in the wind, \
+                       drawn within 50 m of the camera. Needs Lighting. Costly (the sun's shadows draw it too), and \
+                       about 150 MB of video memory";
+            ui.label("Dense grass").on_hover_text(tip);
+            ui.checkbox(&mut g.grass, "by the road").on_hover_text(tip);
+            ui.end_row();
+
+            let tip = "Ultra, for strong GPUs: sun shadows at twice the texels (sharper shadows of posts, cables and \
+                       trunks) and sharper reflections in the car's paint and the wet roads. 15 to 40 % more frame \
+                       time, and 0.5 GB more video memory on long stages";
+            ui.label("Detail").on_hover_text(tip);
+            ComboBox::from_id_salt("detail")
+                .width(QUALITY_FIELD)
+                .selected_text(detail_label(g.detail))
+                .show_ui(ui, |ui| {
+                    for choice in Detail::ALL {
+                        ui.selectable_value(&mut g.detail, choice, detail_label(choice));
+                    }
+                })
+                .response
+                .on_hover_text(tip);
+            ui.end_row();
+
+            let tip = "In the cockpit: the rear-view and door mirrors show the stage, the car and the cars behind, \
+                       redrawn this often (each mirror in turn). Costly in the rain, which they draw too. Off: they \
+                       only reflect the sky";
+            ui.label("Mirrors").on_hover_text(tip);
+            ComboBox::from_id_salt("mirrors")
+                .width(QUALITY_FIELD)
+                .selected_text(mirrors_label(g.mirrors))
+                .show_ui(ui, |ui| {
+                    for rate in Rate::ALL {
+                        ui.selectable_value(&mut g.mirrors, rate, mirrors_label(rate));
+                    }
+                })
+                .response
+                .on_hover_text(tip);
+            ui.end_row();
+
+            let tip = "Tyre marks as wide as the tread and swept wider in a slide: ruts with berms in gravel, rubber \
+                       on tarmac only when sliding, grooves in snow, flattened grass, longer trails. The presets leave \
+                       them as they are";
+            ui.label("Tyre marks").on_hover_text(tip);
+            ui.checkbox(&mut g.marks, "realistic").on_hover_text(tip);
+            ui.end_row();
         });
     }
 

@@ -45,9 +45,10 @@
 //! The Ghost field races a ghost car in the quick race (`viewer --ghost`): off, the best one (`--best-ghost
 //! GhostCars/Best_<map:02>.ghc`, replaced when a finished drive beats it, as `BeginWrite` keeps the faster run; ours:
 //! the game keeps it in memory and saves on request), or a saved `GhostCars/<name>_<map:02>.ghc` of the stage's map.
-//! The Graphics & sound page turns the renderer's additions beyond the game's look on and off (`viewer --enhance`, one
-//! `launcher-settings.ini` key each, named as `rbr_render::renderer::Enhance::NAMES`). The game's own quality settings
-//! are not offered: the stage always draws at the highest (user decision).
+//! The Graphics & sound page's Quality section sets the renderer's additions beyond the game's look (`viewer --enhance`,
+//! `--reflections`, `--detail`, `--mirrors`; `graphics_page::Graphics`, one `launcher-settings.ini` key each), by hand
+//! or by preset; the free ones are always on. The game's own quality settings are not offered: the stage always draws
+//! at the highest (user decision).
 //! The Time of day box draws a quick race's stage at a start time on its rally's date (`viewer --clock`, `start_time`
 //! in the settings): the sun, its light and shadows, dusk and night lit by the car's lamps; the start board shows it
 //! (`rbr-standalone --start-time`). The default is the sun the stage was baked with (the viewer gives the start board
@@ -491,16 +492,12 @@ struct Form {
     menu_sound: Option<Option<MenuPlayer>>,
     /// The HUD shown, its speed unit, and the FPS counter.
     hud: graphics_page::HudChoice,
-    /// The renderer additions on (`viewer --enhance`).
+    /// The Quality section's choices.
     graphics: graphics_page::Graphics,
     /// The render scale, percent ([`graphics_page::RENDER_SCALES`]).
     render_scale: u32,
     /// The frame's anti-aliasing (`viewer --anti-aliasing`).
     anti_aliasing: rbr_render::renderer::AntiAliasing,
-    /// The screen-space reflections (`viewer --reflections`).
-    reflections: rbr_render::renderer::Reflections,
-    /// The additions' detail (`viewer --detail`).
-    detail: rbr_render::renderer::Detail,
     /// The car's and the stage's textures upscaled (`viewer --upscale-textures`), when [`Form::upscaler`].
     upscale_textures: bool,
     /// Whether the upscaler is installed ([`rbr_render::upscale::Upscaler::find`]), looked for at the start and after
@@ -510,8 +507,6 @@ struct Form {
     upscaler_download: upscaler::Download,
     /// How the driving window presents its frames (`viewer --present`).
     present: rbr_render::present::Present,
-    /// How often the cockpit's mirrors are drawn (`viewer --mirrors`).
-    mirrors: rbr_render::mirrors::Rate,
     /// The driving window fills the monitor (`viewer --fullscreen`); `size` applies when off.
     fullscreen: bool,
     /// The viewer writes a performance log to the player's `logs` folder (`viewer --perf-log`).

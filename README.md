@@ -48,7 +48,7 @@ ReRBR replays (`.rrp`), with playback and video export from the Replays tab.
 The physics is NGP 7.4.778's; the gameplay (weather draws, race flow, damage, service, season, records) is the game's.
 Ours, not in 1.02: the launcher in place of the game's menus, the season's car (the game drives your team's), the HUD
 and end screens, the wiper switch, the look-back key, the "Best" ghost, night, working mirrors, and the renderer
-additions on the Graphics & sound page, each with its own switch. The stage always draws at the game's highest quality.
+additions on the Graphics & sound page, set by a quality preset or one by one. The stage always draws at the game's highest quality.
 
 Left out on purpose: original `.rpl` playback, replay cameras and filters, music, co-driver languages other than
 English, the rally school, Richard Burns Challenge, hot seat and custom rallies, unlocks (everything is open),

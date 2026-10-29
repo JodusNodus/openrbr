@@ -16,14 +16,16 @@ use rbr_render::glass::model::Switch;
 use rbr_render::hud::Parts;
 use rbr_render::mirrors::Rate;
 use rbr_render::present::Present;
-use rbr_render::renderer::{AntiAliasing, Detail, Enhance, Reflections};
+use rbr_render::renderer::{AntiAliasing, Detail};
 use rbr_render::shifter::{CarBox, Engagement};
 use rbr_sound::custom_codriver;
 
 use crate::catalog::{self, Car, Catalog, TyreChoice, WEARS};
 use crate::controls_page::ControlsPage;
 use crate::ghosts::GhostChoice;
-use crate::graphics_page::{HudChoice, DEFAULT_GRAPHICS, DEFAULT_MIRRORS, MAX_GROUP_VOLUME, MAX_VOLUME, RENDER_SCALES};
+use crate::graphics_page::{
+    Graphics, HudChoice, WetRoads, DEFAULT_GRAPHICS, MAX_GROUP_VOLUME, MAX_VOLUME, RENDER_SCALES,
+};
 use crate::pages::Page;
 use crate::rally_page::RallyPage;
 use crate::setup_page::SetupPage;
@@ -243,14 +245,20 @@ pub struct Settings {
     pub hud_hide: Option<Parts>,
     /// The wiper switch at the start (`viewer --wipers`).
     pub wipers: Option<Switch>,
-    /// Each renderer addition on or off (`viewer --enhance`), by [`Enhance::NAMES`], each kept under its name.
-    pub graphics: [Option<bool>; Enhance::NAMES.len()],
+    /// The Quality section's switches ([`Graphics`]), each kept under its name.
+    pub lighting: Option<bool>,
+    pub particles: Option<bool>,
+    pub surfaces: Option<bool>,
+    pub cabin: Option<bool>,
+    pub contact: Option<bool>,
+    pub grass: Option<bool>,
+    pub marks: Option<bool>,
     /// One of [`RENDER_SCALES`].
     pub render_scale: Option<u32>,
     /// The frame's anti-aliasing (`viewer --anti-aliasing`).
     pub anti_aliasing: Option<AntiAliasing>,
-    /// The screen-space reflections (`viewer --reflections`).
-    pub reflections: Option<Reflections>,
+    /// The wet roads (`viewer --enhance wet`, `--reflections`).
+    pub wet_roads: Option<WetRoads>,
     /// The additions' detail (`viewer --detail`).
     pub detail: Option<Detail>,
     /// The car's and the stage's textures upscaled (`viewer --upscale-textures`).
@@ -480,10 +488,16 @@ impl Settings {
             hide_wheel: on_off(get("hide_wheel")),
             hud_hide: get("hud_hide").and_then(|v| Parts::hiding(&v).ok()),
             wipers: get("wipers").as_deref().and_then(Switch::parse),
-            graphics: Enhance::NAMES.map(|name| on_off(get(name))),
+            lighting: on_off(get("lighting")),
+            particles: on_off(get("particles")),
+            surfaces: on_off(get("surfaces")),
+            cabin: on_off(get("cabin")),
+            contact: on_off(get("contact")),
+            grass: on_off(get("grass")),
+            marks: on_off(get("marks")),
             render_scale: get("render_scale").and_then(|v| v.parse().ok()).filter(|v| RENDER_SCALES.contains(v)),
             anti_aliasing: get("anti_aliasing").as_deref().and_then(AntiAliasing::parse),
-            reflections: get("reflections").as_deref().and_then(Reflections::parse),
+            wet_roads: get("wet_roads").as_deref().and_then(WetRoads::parse),
             detail: get("detail").as_deref().and_then(Detail::parse),
             upscale_textures: on_off(get("upscale_textures")),
             present: get("present").as_deref().and_then(Present::parse),
@@ -588,7 +602,7 @@ impl Settings {
             ("head_gasket", self.head_gasket.map(|v| v.to_string())),
             ("render_scale", self.render_scale.map(|v| v.to_string())),
             ("anti_aliasing", self.anti_aliasing.map(|v| v.name().to_owned())),
-            ("reflections", self.reflections.map(|v| v.name().to_owned())),
+            ("wet_roads", self.wet_roads.map(|v| v.name().to_owned())),
             ("detail", self.detail.map(|v| v.name().to_owned())),
             ("upscale_textures", on_off_text(self.upscale_textures)),
             ("present", self.present.map(|v| v.name().to_owned())),
@@ -596,10 +610,14 @@ impl Settings {
             ("fullscreen", on_off_text(self.fullscreen)),
             ("start_time", self.start_time.map(clock_text)),
             ("perf_log", on_off_text(self.perf_log)),
-        ]
-        .into_iter()
-        .chain(Enhance::NAMES.into_iter().zip(self.graphics.map(on_off_text)))
-        {
+            ("lighting", on_off_text(self.lighting)),
+            ("particles", on_off_text(self.particles)),
+            ("surfaces", on_off_text(self.surfaces)),
+            ("cabin", on_off_text(self.cabin)),
+            ("contact", on_off_text(self.contact)),
+            ("grass", on_off_text(self.grass)),
+            ("marks", on_off_text(self.marks)),
+        ] {
             if let Some(v) = value {
                 out.push_str(&format!("{key} = {v}\n"));
             }
@@ -807,16 +825,24 @@ impl Form {
                 hide_wheel: settings.hide_wheel.unwrap_or(false),
                 parts: settings.hud_hide.unwrap_or_default(),
             },
-            graphics: std::array::from_fn(|k| settings.graphics[k].unwrap_or(DEFAULT_GRAPHICS[k])),
+            graphics: Graphics {
+                lighting: settings.lighting.unwrap_or(DEFAULT_GRAPHICS.lighting),
+                particles: settings.particles.unwrap_or(DEFAULT_GRAPHICS.particles),
+                surfaces: settings.surfaces.unwrap_or(DEFAULT_GRAPHICS.surfaces),
+                cabin: settings.cabin.unwrap_or(DEFAULT_GRAPHICS.cabin),
+                contact: settings.contact.unwrap_or(DEFAULT_GRAPHICS.contact),
+                grass: settings.grass.unwrap_or(DEFAULT_GRAPHICS.grass),
+                marks: settings.marks.unwrap_or(DEFAULT_GRAPHICS.marks),
+                wet_roads: settings.wet_roads.unwrap_or(DEFAULT_GRAPHICS.wet_roads),
+                detail: settings.detail.unwrap_or(DEFAULT_GRAPHICS.detail),
+                mirrors: settings.mirrors.unwrap_or(DEFAULT_GRAPHICS.mirrors),
+            },
             render_scale: settings.render_scale.unwrap_or(100),
             anti_aliasing: settings.anti_aliasing.unwrap_or_default(),
-            reflections: settings.reflections.unwrap_or_default(),
-            detail: settings.detail.unwrap_or_default(),
             upscale_textures: settings.upscale_textures.unwrap_or(false),
             upscaler: rbr_render::upscale::Upscaler::find(&home.join(rbr_render::upscale::DIR)).is_some(),
             upscaler_download: Default::default(),
             present: settings.present.unwrap_or_default(),
-            mirrors: settings.mirrors.unwrap_or(DEFAULT_MIRRORS),
             fullscreen: settings.fullscreen.unwrap_or(true),
             perf_log: settings.perf_log.unwrap_or(false),
             start_time: settings.start_time,
@@ -894,14 +920,20 @@ impl Form {
             dials: Some(self.hud.dials),
             hide_wheel: Some(self.hud.hide_wheel),
             hud_hide: Some(self.hud.parts),
-            graphics: self.graphics.map(Some),
+            lighting: Some(self.graphics.lighting),
+            particles: Some(self.graphics.particles),
+            surfaces: Some(self.graphics.surfaces),
+            cabin: Some(self.graphics.cabin),
+            contact: Some(self.graphics.contact),
+            grass: Some(self.graphics.grass),
+            marks: Some(self.graphics.marks),
+            wet_roads: Some(self.graphics.wet_roads),
+            detail: Some(self.graphics.detail),
+            mirrors: Some(self.graphics.mirrors),
             render_scale: Some(self.render_scale),
             anti_aliasing: Some(self.anti_aliasing),
-            reflections: Some(self.reflections),
-            detail: Some(self.detail),
             upscale_textures: Some(self.upscale_textures),
             present: Some(self.present),
-            mirrors: Some(self.mirrors),
             fullscreen: Some(self.fullscreen),
             perf_log: Some(self.perf_log),
             start_time: self.start_time,
@@ -988,25 +1020,16 @@ mod tests {
             hide_wheel: Some(true),
             hud_hide: Some(Parts::hiding("progress,car").unwrap()),
             wipers: Some(Switch::Intermittent),
-            graphics: [
-                Some(true),
-                None,
-                Some(false),
-                Some(false),
-                None,
-                Some(true),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                Some(true),
-                None,
-            ],
+            lighting: Some(false),
+            particles: None,
+            surfaces: Some(true),
+            cabin: Some(false),
+            contact: Some(false),
+            grass: Some(true),
+            marks: None,
             render_scale: Some(75),
             anti_aliasing: Some(AntiAliasing::Off),
-            reflections: Some(Reflections::Off),
+            wet_roads: Some(WetRoads::Low),
             detail: Some(Detail::Ultra),
             upscale_textures: Some(true),
             present: Some(Present::Immediate),
@@ -1098,7 +1121,10 @@ mod tests {
             text.contains("wipers = intermittent\ndials = off\nhide_wheel = on\nhud_hide = progress,car\n"),
             "{text}"
         );
-        assert!(text.contains("anisotropy = on\ncabin = off\ncontact = off\ngrass = on\nwater = on\n"), "{text}");
+        assert!(
+            text.contains("perf_log = on\nlighting = off\nsurfaces = on\ncabin = off\ncontact = off\ngrass = on\n"),
+            "{text}"
+        );
         assert!(text.contains("start_time = 16:30\nperf_log = on\n"), "{text}");
         assert_eq!(Settings::parse("[launcher]\nperf_log = maybe\n").perf_log, None);
         assert_eq!(Settings::parse("").perf_log, None);
@@ -1106,11 +1132,11 @@ mod tests {
         assert_eq!(clock_args(Some(5 * 60)), ["--clock", "05:00"]);
         assert!(clock_args(None).is_empty());
         assert_eq!(Settings::parse("[launcher]\nwipers = fast\n").wipers, None);
-        assert!(text.contains("render_scale = 75\nanti_aliasing = off\nreflections = off\ndetail = ultra\n"), "{text}");
+        assert!(text.contains("render_scale = 75\nanti_aliasing = off\nwet_roads = low\ndetail = ultra\n"), "{text}");
         assert_eq!(Settings::parse("[launcher]\ndetail = high\n").detail, Some(Detail::High));
         assert_eq!(Settings::parse("[launcher]\ndetail = max\n").detail, None);
-        assert_eq!(Settings::parse("[launcher]\nreflections = medium\n").reflections, Some(Reflections::Medium));
-        assert_eq!(Settings::parse("[launcher]\nreflections = on\n").reflections, None);
+        assert_eq!(Settings::parse("[launcher]\nwet_roads = medium\n").wet_roads, Some(WetRoads::Medium));
+        assert_eq!(Settings::parse("[launcher]\nwet_roads = on\n").wet_roads, None);
         assert_eq!(Settings::parse("[launcher]\nanti_aliasing = 2x\n").anti_aliasing, None);
         assert!(text.contains("present = immediate\nmirrors = 3\n"), "{text}");
         assert_eq!(Settings::parse("[launcher]\nmirrors = 4\n").mirrors, None);

@@ -71,4 +71,7 @@ sources). Start runs the viewer with `rbr-standalone --live --boot` as child pro
 
 Form in `rbr-launcher/src/settings.rs`, folder and once-only migrate in `rbr-launcher/src/home.rs`.
 
+- Quality keys (`graphics_page::Graphics`): `lighting`, `particles`, `surfaces`, `cabin`, `contact`, `grass`, `marks`,
+  `wet_roads`, `detail`, `mirrors`; unset takes the High preset. The preset box is not stored: it shows the preset the
+  keys match, else Custom; presets leave `marks`, the render scale and anti-aliasing alone.
 - `perf_log` defaults off; on, the viewer logs with `viewer --perf-log <files folder>/logs` (`home::LOGS`, shown on the Graphics page).

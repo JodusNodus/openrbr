@@ -28,7 +28,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SETTINGS = {
     'weather': 'good', 'wetness': 'dry', 'fog': 'off', 'precipitation': 'none', 'wear': 'new', 'tyre': 'auto',
     'fov': '55', 'wipers': 'auto', 'dials': 'on', 'mirrors': '1', 'anti_aliasing': 'taa',
-    'reflections': 'high', 'render_scale': '100', 'upscale_textures': 'on', 'cabin': 'on', 'start_time': '16:00',
+    'wet_roads': 'high', 'render_scale': '100', 'upscale_textures': 'on', 'cabin': 'on', 'start_time': '16:00',
 }
 # Copied from the player's settings: where the game and NGP are.
 KEEP = ('install_folder', 'ngp_physics', 'ngp_dll', 'rsf_root')

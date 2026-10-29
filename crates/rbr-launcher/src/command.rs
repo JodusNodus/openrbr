@@ -16,7 +16,7 @@ use rbr_render::shifter::CarBox;
 use rbr_sound::mixer::Volumes;
 
 use crate::catalog::{self, Car, Stage, TyreChoice};
-use crate::graphics_page::{Graphics, HudChoice};
+use crate::graphics_page::{Graphics, HudChoice, WetRoads, ALWAYS_ON};
 use crate::settings::{clock_text, wetness_name, Clouds, Fog, Precipitation};
 use crate::{rally_page, Form};
 
@@ -77,10 +77,20 @@ pub fn render_scale_args(percent: u32) -> Vec<String> {
     }
 }
 
-/// The `viewer --enhance` list of the additions on, or `None` with none on.
-pub fn enhance_list(graphics: &Graphics) -> Option<String> {
-    let on: Vec<&str> = Enhance::NAMES.iter().zip(graphics).filter(|(_, on)| **on).map(|(name, _)| *name).collect();
-    (!on.is_empty()).then(|| on.join(","))
+/// The `viewer --enhance` list of the additions `graphics` turn on, and those always on.
+pub fn enhance_list(graphics: &Graphics) -> String {
+    let on = |name: &str| match name {
+        "asphalt" | "gravel" | "snow" | "ground" => graphics.surfaces,
+        "cabin" => graphics.cabin,
+        "contact" => graphics.contact,
+        "grass" => graphics.grass,
+        "lighting" => graphics.lighting,
+        "marks" => graphics.marks,
+        "particles" => graphics.particles,
+        "wet" => graphics.wet_roads != WetRoads::Off,
+        name => ALWAYS_ON.contains(&name),
+    };
+    Enhance::NAMES.into_iter().filter(|name| on(name)).collect::<Vec<_>>().join(",")
 }
 
 /// The RSF install's Pacenote plugin: its folder and the voices, styles and range sets it offers.
@@ -221,9 +231,7 @@ pub fn viewer_args(
         let path = path.display().to_string();
         args.extend(["--bindings".into(), path.clone(), "--cameras".into(), path]);
     }
-    if let Some(list) = enhance_list(graphics) {
-        args.extend(["--enhance".into(), list]);
-    }
+    args.extend(["--enhance".into(), enhance_list(graphics)]);
     args.extend([
         "--live".into(),
         standalone.display().to_string(),
@@ -544,16 +552,17 @@ impl Form {
             .then(|| ["--anti-aliasing".to_owned(), self.anti_aliasing.name().to_owned()])
             .into_iter()
             .flatten();
-        let reflections = (self.reflections != Reflections::default())
-            .then(|| ["--reflections".to_owned(), self.reflections.name().to_owned()])
+        let reflections = self.graphics.wet_roads.reflections();
+        let reflections = (reflections != Reflections::default())
+            .then(|| ["--reflections".to_owned(), reflections.name().to_owned()])
             .into_iter()
             .flatten();
-        let detail = (self.detail != Detail::default())
-            .then(|| ["--detail".to_owned(), self.detail.name().to_owned()])
+        let detail = (self.graphics.detail != Detail::default())
+            .then(|| ["--detail".to_owned(), self.graphics.detail.name().to_owned()])
             .into_iter()
             .flatten();
         let present = ["--present".to_owned(), self.present.name().to_owned()];
-        let mirrors = ["--mirrors".to_owned(), self.mirrors.name()];
+        let mirrors = ["--mirrors".to_owned(), self.graphics.mirrors.name()];
         let fullscreen = self.fullscreen.then(|| "--fullscreen".to_owned());
         let perf_log = perf_log_args(self.perf_log, &self.logs_dir());
         let upscale = (self.upscale_textures && self.upscaler)
@@ -669,7 +678,7 @@ impl Form {
 mod tests {
     use super::*;
     use crate::catalog::{Catalog, RsfCar};
-    use crate::graphics_page::{graphics_index, DEFAULT_GRAPHICS, GRAPHICS_LABELS};
+    use crate::graphics_page::{Quality, DEFAULT_GRAPHICS};
     use crate::settings::{load, Settings, SEQUENTIAL};
     use crate::{install, Paths, Start, SETTINGS_FILE};
     use rbr_formats::data::Data;
@@ -745,7 +754,7 @@ mod tests {
             Volumes::default(),
             true,
             HudChoice::default(),
-            &Graphics::default(),
+            &Quality::Low.graphics(false),
             Switch::Off,
             Path::new("/b/rbr-standalone"),
             Path::new("/d"),
@@ -788,7 +797,7 @@ mod tests {
                 hide_wheel: true,
                 parts: Parts::hiding("inputs,view").unwrap(),
             },
-            &Graphics::default(),
+            &Quality::Low.graphics(false),
             Switch::Continuous,
             Path::new("/b/rbr-standalone"),
             Path::new("/d"),
@@ -800,7 +809,7 @@ mod tests {
             args.join(" "),
             "track-54_O --car COROLLA --weather wet --size 1280x720 --fov 65 --volume 0.5 --volumes 0.5,1,1.5,2 --no-codriver \
              --no-hud --mph --wipers continuous --fps --pace-stack 3 --no-dials --hide-wheel --hud-hide inputs,view --bindings /l/launcher-settings.ini \
-             --cameras /l/launcher-settings.ini --live /b/rbr-standalone --live --boot --weather 2 --wear worn --tyre 5 \
+             --cameras /l/launcher-settings.ini --enhance anisotropy,decals,water --live /b/rbr-standalone --live --boot --weather 2 --wear worn --tyre 5 \
              --stage track-54_O --car 6 --data /d --callout-distance 4 --marker-threshold 25 \
              --damage safe --auto-gears off --gear-guard on --neutral-lock off --clutch-help on --setup /l/setup-current.lsp"
         );
@@ -821,10 +830,7 @@ mod tests {
             Volumes::default(),
             true,
             HudChoice::default(),
-            &["marks", "lighting"].iter().fold(Graphics::default(), |mut g, name| {
-                g[graphics_index(name)] = true;
-                g
-            }),
+            &Graphics { lighting: true, marks: true, ..Quality::Low.graphics(false) },
             Switch::Auto,
             Path::new("/b/rbr-standalone"),
             Path::new("/d"),
@@ -834,7 +840,7 @@ mod tests {
         )
         .join(" ");
         assert!(args.contains("--boot --weather 1 --wear worn"), "{args}");
-        assert!(args.contains("--enhance lighting,marks --live "), "{args}");
+        assert!(args.contains("--enhance anisotropy,decals,lighting,marks,water --live "), "{args}");
         assert!(
             args.ends_with(
                 "--season-row 167 --damage realistic --auto-gears on --gear-guard off --neutral-lock on --clutch-help off"
@@ -906,7 +912,7 @@ mod tests {
                 Volumes::default(),
                 true,
                 HudChoice::default(),
-                &Graphics::default(),
+                &Quality::Low.graphics(false),
                 Switch::Off,
                 Path::new("/b/rbr-standalone"),
                 Path::new("/d"),
@@ -1118,19 +1124,17 @@ mod tests {
 
     #[test]
     fn the_enhance_list_names_what_the_viewer_takes() {
-        assert_eq!(enhance_list(&Graphics::default()), None);
-        let all = enhance_list(&[true; Enhance::NAMES.len()]).unwrap();
+        assert_eq!(enhance_list(&Quality::Low.graphics(false)), "anisotropy,decals,water");
         assert_eq!(
-            all,
-            "anisotropy,asphalt,cabin,contact,decals,grass,gravel,ground,lighting,marks,particles,snow,water,wet"
+            enhance_list(&DEFAULT_GRAPHICS),
+            "anisotropy,asphalt,cabin,contact,decals,gravel,ground,lighting,particles,snow,water,wet"
         );
-        // `all` is every addition but the grass.
-        assert_eq!(Enhance::parse(&all), Enhance::parse("all,grass"));
-        let defaults = enhance_list(&DEFAULT_GRAPHICS).unwrap();
-        assert_eq!(defaults, "anisotropy,asphalt,cabin,contact,decals,gravel,ground,lighting,particles,snow,water,wet");
-        for name in ["asphalt", "gravel", "snow"] {
-            assert!(GRAPHICS_LABELS[graphics_index(name)].0.starts_with(&format!("Enhanced {name}")));
+        // Ultra with the tyre marks is every addition.
+        assert_eq!(Enhance::parse(&enhance_list(&Quality::Ultra.graphics(true))), Enhance::parse("all,grass"));
+        for preset in Quality::ALL {
+            assert_eq!(Quality::of(preset.graphics(true)), Some(preset));
         }
+        assert_eq!(Quality::of(Graphics { grass: true, ..DEFAULT_GRAPHICS }), None);
     }
 
     /// The advanced H-shifter takes the car's gearbox and the grind from RBRControls' folder.
