@@ -93,7 +93,12 @@ impl Cursor<'_> {
     }
 
     fn u32s(&mut self, n: u32) -> Result<Vec<u32>, Error> {
-        (0..n).map(|_| self.u32()).collect()
+        // No reservation: `n` comes from the file and can be huge; the loop fails at the first missing word.
+        let mut out = Vec::new();
+        for _ in 0..n {
+            out.push(self.u32()?);
+        }
+        Ok(out)
     }
 }
 
@@ -104,9 +109,10 @@ pub fn parse(bytes: &[u8]) -> Result<Engine, Error> {
     let version = c.u32()?;
     let nbanks = c.u32()?;
     let nparts = c.u32s(nbanks)?;
-    let mut banks = Vec::with_capacity(nbanks as usize);
+    // No reservation: both counts come from the file; each loop below fails at the first missing field.
+    let mut banks = Vec::new();
     for &n in &nparts {
-        let mut parts = Vec::with_capacity(n as usize);
+        let mut parts = Vec::new();
         for _ in 0..n {
             c.take(8)?;
             let rpm = c.u32()?;
@@ -182,6 +188,22 @@ mod tests {
         assert_eq!(bank.parts[1].load, 100);
         assert_eq!(bank.parts[0].samples, [1, -2, 3]);
         assert_eq!(bank.parts[0].cycles, [1.0, 2.5]);
+    }
+
+    #[test]
+    fn damaged_files_never_panic() {
+        let bytes = file(1);
+        crate::damage::never_panics(&bytes, &[0, 0x7f, 0xff], |b| {
+            let _ = parse(b);
+        });
+    }
+
+    #[test]
+    fn huge_counts_are_an_error() {
+        let mut bad = file(1);
+        // The bank count: `u32::MAX` banks would be a huge allocation up front.
+        bad[8..12].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert!(matches!(parse(&bad), Err(Error::Truncated { .. })));
     }
 
     #[test]
