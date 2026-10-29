@@ -159,12 +159,12 @@ impl Tree {
         Ok(Tree { root, names: HashMap::new() })
     }
 
-    /// The path for `rel` (`/`-separated): the names already written kept, its new folders made.
+    /// The path for `rel` below the game folder: the names already written kept, its new folders made. The entry
+    /// goes through `car_packs::safe_path`, so a `.7z` path cannot escape the folder (`C:/x/y`, `..` and absolute
+    /// paths stay inside or fail, and `\` is a separator).
     fn path(&mut self, rel: &str, dir: bool) -> io::Result<PathBuf> {
-        let parts: Vec<&str> = rel.split('/').filter(|p| !p.is_empty()).collect();
-        if parts.is_empty() || parts.iter().any(|p| *p == "." || *p == "..") {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, format!("a bad path {rel}")));
-        }
+        let parts = crate::car_packs::safe_path(rel)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, format!("a bad path {rel}")))?;
         let mut written = String::new();
         for (k, part) in parts.iter().enumerate() {
             let folder = dir || k + 1 < parts.len();
@@ -1115,6 +1115,23 @@ mod tests {
         assert!(tree.path("PixelShaders", false).is_err());
         assert!(tree.path("../x", false).is_err());
         assert_eq!(missing(&tree.have(), &["pixelshaders/FOG", "x"]), ["x"]);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// `Tree::path` through `car_packs::safe_path`: drive letters, parent climbs and stray separators fail, and
+    /// backslash-separated and absolute-looking entries land below the folder instead of escaping it.
+    #[test]
+    fn the_tree_keeps_unsafe_entries_inside() {
+        let dir = temp("unsafe-tree");
+        fs::create_dir_all(&dir).unwrap();
+        let mut tree = Tree::new(dir.join("game")).unwrap();
+        for bad in ["C:/x/y", "C:\\x", "..", "../x", "..\\x", "a/../../x", "\\", "a/C:x/b"] {
+            assert!(tree.path(bad, false).is_err(), "{bad}");
+        }
+        for good in ["a\\b", "/abs/path", "a/./b"] {
+            let path = tree.path(good, false).unwrap();
+            assert!(path.starts_with(dir.join("game")), "{good}: {}", path.display());
+        }
         fs::remove_dir_all(&dir).unwrap();
     }
 

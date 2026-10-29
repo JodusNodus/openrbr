@@ -33,6 +33,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use rbr_formats::rsf::{codriver, pacenotes};
 
+use crate::car_packs::{safe_folder, safe_path};
 use crate::disc_install::{Job, Progress, Temp};
 use crate::pages::{GOOD, WARN};
 use crate::{install, Form};
@@ -67,19 +68,6 @@ pub struct NotePack {
     /// The note files, and the stage-folder names naming them.
     pub files: usize,
     pub stages: Vec<String>,
-}
-
-/// An archive entry path (`\` or `/` separated) as safe components below the folder it is written to, or `None`.
-fn safe_path(name: &str) -> Option<Vec<&str>> {
-    let parts: Vec<&str> = name.split(['/', '\\']).filter(|p| !p.is_empty() && *p != ".").collect();
-    let bad = |p: &&str| *p == ".." || p.contains(':');
-    (!parts.is_empty() && !parts.iter().any(bad)).then_some(parts)
-}
-
-/// One folder name of ours, from untrusted text: no separators, not hidden.
-fn safe_folder(name: &str) -> Option<String> {
-    let name = name.trim();
-    (!name.is_empty() && !name.starts_with('.') && safe_path(name)?.len() == 1).then(|| name.to_owned())
 }
 
 /// Whether the file name has an audio suffix the voices play.

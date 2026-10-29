@@ -89,7 +89,7 @@ pub(crate) fn safe_path(name: &str) -> Option<Vec<&str>> {
 }
 
 /// One folder name of ours, from untrusted text: no separators, not hidden.
-fn safe_folder(name: &str) -> Option<String> {
+pub(crate) fn safe_folder(name: &str) -> Option<String> {
     let name = name.trim();
     (!name.is_empty() && !name.starts_with('.') && safe_path(name)?.len() == 1).then(|| name.to_owned())
 }
