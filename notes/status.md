@@ -1,27 +1,24 @@
 # Status
 
-Every 1.02 gameplay system and where it stands in Rust. G marks gameplay-critical systems (they change times,
-penalties, results or the car's motion). States: done, partial, out (the user's decision), user (the user's own work).
-"Original run" means a run of the original game (on a Windows or Wine machine) is still wanted to compare. How checks work:
-[verification.md](verification.md). Detail per row: rbr-recomp `notes/progress/systems.md`. Current state and decisions
-in force are at the top and the bottom, one line each; history is in git, the log up to the split in rbr-recomp's
-`LOG.md` and `notes/archive/`.
+Every 1.02 gameplay system and where it stands in Rust. G: gameplay-critical (changes times, penalties, results or
+the car's motion). States: done, partial, out (the user's decision), user (the user's own work). "Original run": a run
+of the original game is still wanted to compare. Checks: [verification.md](verification.md). Detail per row:
+rbr-recomp `notes/progress/systems.md`; history up to the split: rbr-recomp `LOG.md`, `notes/archive/`.
 
 ## Current state (2026-10-19)
 
-- **Repository:** ReRBR, the Rust reimplementation only. The C++ reconstruction and its notes are in rbr-recomp
-  (frozen).
 - **Physics:** about 930 ported functions (`crates/rbr-physics/ports.csv`), about 660 bindings
   (`crates/rbr-hybrid/bound.csv`). The pure step runs NGP only (`rbr-standalone --boot` needs `--ngp-physics`; 1.02
-  snapshots are refused); drive2 attempt 5 runs 84084/84084 equal (`harness/rsf_compare.py`).
-- **Load path:** `rbr-standalone --boot` builds the physics state from the game files, NGP's `physics.rbz`,
-  and immutable tables read from the player's verified NGP 7.4.778 DLL; no executable code section or patch array
-  is mapped (drive2 attempt 5 physics PASS 84084/84084).
+  snapshots are refused).
+- **Load path:** `rbr-standalone --boot` builds the physics state from the game files, NGP's `physics.rbz` and
+  immutable tables read from the player's verified NGP 7.4.778 DLL; no executable code section or patch array is
+  mapped.
 - **Gameplay loop:** done on the recorded drives (control payload, stage states, timing, time card), plus the
   championship, service park and saves.
-- **Gate matrix:** the 1.02 drives (4 hand-recorded, 35 playback-made) feed the hybrid check and playback only;
-  `rbr-standalone` no longer steps them. The NGP gate is drive2 attempt 5 (snow, Ford Focus RS WRC 06, RSF car 55) and `harness/matrix.py` (NGP
-  playback-made pairs on NGP's four car slots), see [verification.md](verification.md#drives-and-the-gate-matrix).
+- **Gate matrix:** the NGP gate is drive2 attempt 5 (snow, Ford Focus RS WRC 06, RSF car 55), physics PASS
+  84084/84084 (`harness/rsf_compare.py`), and `harness/matrix.py` (NGP playback-made pairs on NGP's four car slots).
+  The 1.02 drives (4 hand-recorded, 35 playback-made) feed only the hybrid check and playback
+  ([verification.md](verification.md#drives-and-the-gate-matrix)).
 - **NGP 7.4.778:** physics, load path, force feedback and the H-shifter in Rust ([ngp.md](ngp.md)).
 - **Presentation:** renderer, sound, HUD, cameras and launcher in live play; leftovers in the tables below.
 
@@ -114,15 +111,13 @@ in force are at the top and the bottom, one line each; history is in git, the lo
 
 ## Decisions
 
-- 2026-10-21 (user): ReRBR supports both reuse of an existing RBR/RSF installation read-only and a complete
-  setup without RSF (retail+patch+NGP plus locally installed content). Downloaded packs are copied into
-  ReRBR-owned user content directories; existing RSF content is read in place; player settings, saves and personal
-  edits always belong to ReRBR.
-
-- 2026-10-21 (user): ReRBR steps NGP physics only. `rbr-standalone --boot` needs `--ngp-physics`, the viewer and
-  launcher run through it, and the oracle is drive2 attempt 5 (physics PASS 84084/84084). The 1.02 behaviour
-  branches inside `rbr-physics`/`rbr-hybrid` are removed (NGP-only ports). The `Variant` type is gone: the x87 precision is the thread's (`fpu::precision()`), and the
-  `ngp` flags of gameplay, render, recording and standalone with it (`ControlPath::Quantized` is the 1.02 leftover).
+- 2026-10-21 (user): ReRBR runs either on an existing RBR/RSF install, read-only, or without RSF (retail, patch,
+  NGP and locally installed content). Downloaded packs are copied into ReRBR's user content directories; existing
+  RSF content is read in place; player settings, saves and edits always belong to ReRBR.
+- 2026-10-21 (user): ReRBR steps NGP physics only; the viewer and launcher run through `rbr-standalone --boot
+  --ngp-physics`, the oracle is drive2 attempt 5. The 1.02 branches in `rbr-physics`/`rbr-hybrid` and the `Variant`
+  type are gone: the x87 precision is the thread's (`fpu::precision()`), and the `ngp` flags of gameplay, render,
+  recording and standalone went with it (`ControlPath::Quantized` is the 1.02 leftover).
 - 2026-10-20 (user): the porting workbench (the exe's function map, worklist, progress tracking, rename tables) moves
   to rbr-recomp's `rerbr/`. ReRBR keeps the Rust, the layouts and addresses that key the vectors and bindings, and
   the checks.
@@ -133,16 +128,15 @@ in force are at the top and the bottom, one line each; history is in git, the lo
 - 2026-10-19: the documentation is cut to one note per area; detail as of the split stays in rbr-recomp under the
   same paths.
 - 2026-10-17 (user): the goal is RBR with NGP 7 physics and its NGP cars, on the original and the modded stages, all
-  in live play ([notes/rust-plan.md](rust-plan.md)). NGP and force feedback are the user's code.
+  in live play ([rust-plan.md](rust-plan.md)). NGP and force feedback are the user's code.
 - 2026-10-17 (user): HUD modern and simple with every feature of the original; sound and visuals may be better than
   the original; macOS and Linux first, Windows later; English only.
 - 2026-10-16 (user): particles aim to look good, not to match 1.02; the windscreen gets a modern water-on-glass
-  system ([notes/renderer.md](renderer.md)).
+  system ([renderer.md](renderer.md)).
 - 2026-10-16 (user): a new basic launcher starts the Rust game; it is not the 1.02 frontend.
 - 2026-10-16: the headline metric is how far `rbr-standalone` runs pure and equal on every drive, and its stop list.
-- 2026-10-15: the C++ physics is frozen; Rust is translated a group at a time and checked against the original
-  directly. A group is bound whole and checked by one run; `--only` and bisect only on a divergence; fuzzed records
-  only for unreached branches. Rust matches every word the gate compares.
+- 2026-10-15: the C++ physics is frozen; Rust is ported a group at a time, bound whole and checked against the
+  original directly ([rust-plan.md](rust-plan.md#order)). Rust matches every word the gate compares.
 - 2026-10-15: the gameplay loop is written directly in Rust and checked against recordings; 1.02 replays deferred.
 - 2026-10-13: no matching or coverage work for UI, menus, rendering code, HedgeHog3D or LocoMotion.
 - The reference is the official 1.02 binaries, not the RSF build. Never modify a player's RSF install; runs of the
