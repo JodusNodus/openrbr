@@ -281,7 +281,7 @@ probably fit the wrong hour.
   now have their sun). Under it the tables hold the CIE overcast sky, giving up-facing ground a quarter of the clear
   sky's light (Kasten and Czeplak 1980); 45O wet mean 92 to 95; dusk to night smooth (2026-10-24).
 - With the day's light the roads with a specular map reflect as a rough dielectric (`with_specular` in `shader.wgsl`,
-  retail only): F0 0.04, roughness 0.75; the game's `road_shine` stays beside it (the gravel's stone detail). Frame
+  retail only): the game's `road_shine` stays beside it (the gravel's stone detail). Frame
   time ~0 (2026-10-24). On all ground it cost 0.5 ms for a few percent; on leaves the crown normals turned the canopy
   white.
 - The clock's ambient share and tint scale the stage's display colours, so its light is them to the 2.2; day frames
