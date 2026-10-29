@@ -54,13 +54,29 @@ pub fn record(path: &Path, argv: &[String]) -> std::io::Result<()> {
     if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
         std::fs::create_dir_all(dir)?;
     }
-    std::fs::write(path, rbr_recording::replay::header(&args))
+    std::fs::write(path, rbr_recording::replay::header(&args))?;
+    match std::fs::remove_file(rbr_recording::replay::result_path(path)) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+        _ => Ok(()),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    #[test]
+    fn recording_over_a_path_clears_its_previous_result() {
+        let dir = std::env::temp_dir().join(format!("rerbr-replay-replace-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("drive.rrp");
+        rbr_recording::replay::save_result(&path, &Default::default()).unwrap();
+        record(&path, &["--save-replay".into(), path.display().to_string(), "track-54_E".into()]).unwrap();
+        assert!(!rbr_recording::replay::result_path(&path).exists());
+        assert_eq!(rbr_recording::replay::read_args(std::fs::File::open(&path).unwrap()).unwrap(), ["track-54_E"]);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn replay_runs_the_headers_command_with_the_current_viewer_arguments() {

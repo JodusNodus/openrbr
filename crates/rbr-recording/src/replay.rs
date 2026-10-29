@@ -16,9 +16,35 @@
 
 use crate::realtime::{Logged, LOGGED_BYTES, LOG_MAGIC};
 use std::io::{Cursor, Read};
+use std::path::{Path, PathBuf};
+
+use crate::splits::{Splits, SPL1};
 
 /// The first bytes of a replay.
 pub const MAGIC: [u8; 4] = *b"RRP1";
+
+/// The last displayed stage result, kept beside the replay without changing its frame stream.
+pub fn result_path(replay: &Path) -> PathBuf {
+    replay.with_extension("rrp.splits")
+}
+
+/// Saves the existing SPL1 record when a recorded drive closes, including an unfinished drive's last clock.
+pub fn save_result(replay: &Path, result: &Splits) -> std::io::Result<()> {
+    std::fs::write(result_path(replay), result.to_bytes())
+}
+
+/// Reads the optional result. Older recordings have none; damaged metadata never supplies a guessed time.
+pub fn read_result(replay: &Path) -> std::io::Result<Splits> {
+    let mut bytes = Vec::new();
+    std::fs::File::open(result_path(replay))?.take(512).read_to_end(&mut bytes)?;
+    if bytes.len() < 8
+        || bytes[..4] != SPL1
+        || u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as usize != bytes.len() - 8
+    {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid replay result"));
+    }
+    Splits::from_payload(&bytes[8..])
+}
 
 /// Reads only the viewer arguments, leaving `input` at the frame log. Bounds the header before allocating,
 /// so browsing a damaged replay cannot allocate its declared lengths.
@@ -122,5 +148,27 @@ mod tests {
         assert_eq!(input.position() as usize, end);
         assert!(read_args(&b"RRP1\xff\xff\xff\xff"[..]).is_err());
         assert!(read_args(&b"RRP1\x01\0\0\0\xff\xff\xff\xff"[..]).is_err());
+    }
+
+    #[test]
+    fn results_keep_penalties_and_status_without_changing_the_replay() {
+        let dir = std::env::temp_dir().join(format!("rerbr-replay-result-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("drive.rrp");
+        let bytes = header(&[]);
+        std::fs::write(&path, &bytes).unwrap();
+        assert_eq!(read_result(&path).unwrap_err().kind(), std::io::ErrorKind::NotFound);
+        for result in [
+            Splits { finished: true, race_time: 389.123, penalties: 20.0, ..Default::default() },
+            Splits { retired: true, race_time: 72.0, ..Default::default() },
+            Splits { race_time: 12.0, ..Default::default() },
+        ] {
+            save_result(&path, &result).unwrap();
+            assert_eq!(read_result(&path).unwrap(), result);
+            assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        }
+        std::fs::write(result_path(&path), b"SPL1\xff\xff\xff\xff").unwrap();
+        assert_eq!(read_result(&path).unwrap_err().kind(), std::io::ErrorKind::InvalidData);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

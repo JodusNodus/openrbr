@@ -4,10 +4,12 @@ use std::fs::{self, File};
 use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use egui::{ComboBox, RichText};
-use rbr_recording::{realtime, replay};
+use rbr_recording::{realtime, replay, splits::Splits};
+
+use crate::settings::{Clouds, Precipitation};
 
 use crate::pages::{section, WARN};
 use crate::Form;
@@ -17,12 +19,16 @@ struct Entry {
     path: PathBuf,
     modified: SystemTime,
     title: String,
+    conditions: String,
+    start_time: Option<String>,
+    result: Option<Splits>,
     problem: Option<String>,
 }
 
 impl Entry {
     fn read(path: PathBuf) -> Self {
-        let modified = path.metadata().and_then(|m| m.modified()).unwrap_or(UNIX_EPOCH);
+        let modified =
+            recorded_time(&path).unwrap_or_else(|| path.metadata().and_then(|m| m.modified()).unwrap_or(UNIX_EPOCH));
         let header = (|| {
             let mut input = BufReader::new(File::open(&path).map_err(|e| e.to_string())?);
             let args = replay::read_args(&mut input)?;
@@ -43,7 +49,13 @@ impl Entry {
             let viewer = &args[..args.iter().position(|a| a == "--live").unwrap_or(args.len())];
             viewer.windows(2).find(|w| w[0] == "--title").map(|w| w[1].clone())
         });
-        Self { path, modified, title: title.unwrap_or(fallback), problem: header.err() }
+        let (conditions, start_time) = header.as_ref().map(|args| conditions(args)).unwrap_or_default();
+        let result = header
+            .as_ref()
+            .ok()
+            .and_then(|_| replay::read_result(&path).ok())
+            .filter(|r| r.race_time.is_finite() && r.race_time >= 0.0);
+        Self { path, modified, title: title.unwrap_or(fallback), conditions, start_time, result, problem: header.err() }
     }
 }
 
@@ -152,6 +164,67 @@ fn age(modified: SystemTime) -> String {
     }
 }
 
+/// Launcher replay names use epoch nanoseconds, or seconds for older files. Copying a drive preserves this date.
+fn recorded_time(path: &Path) -> Option<SystemTime> {
+    let name = path.file_stem()?.to_str()?;
+    let stamp = name.split_once('-')?.0.parse::<u64>().ok()?;
+    UNIX_EPOCH.checked_add(if stamp >= 1_000_000_000_000 {
+        Duration::from_nanos(stamp)
+    } else {
+        Duration::from_secs(stamp)
+    })
+}
+
+fn recorded_at(time: SystemTime) -> String {
+    let seconds = time.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+    format!("{} · {:02}:{:02} UTC", age(time), seconds / 3600 % 24, seconds / 60 % 60)
+}
+
+fn result_text(result: Option<&Splits>) -> String {
+    let Some(result) = result else { return "Time unavailable".into() };
+    let time = rbr_render::hud::clock_label(f64::from(result.race_time));
+    if result.retired {
+        format!("DNF at {time}")
+    } else if result.finished {
+        time
+    } else {
+        format!("Stopped at {time}")
+    }
+}
+
+/// Conditions come from the saved command, with the viewer's overrides kept apart from the physics options.
+fn conditions(args: &[String]) -> (String, Option<String>) {
+    let at = args.iter().position(|a| a == "--live").unwrap_or(args.len());
+    let viewer = &args[..at];
+    let command = args.get(at + 1..).unwrap_or_default();
+    let value =
+        |args: &[String], flag: &str| args.windows(2).rev().find(|pair| pair[0] == flag).map(|pair| pair[1].clone());
+    let mut parts = Vec::new();
+    if let Some(road) = value(viewer, "--weather").or_else(|| value(command, "--wetness")) {
+        parts.push(match road.as_str() {
+            "dry" => "Dry road".into(),
+            "damp" => "Damp road".into(),
+            "wet" => "Wet road".into(),
+            _ => road,
+        });
+    }
+    if let Some(clouds) = value(viewer, "--clouds").and_then(|v| Clouds::parse(&v)) {
+        parts.push(clouds.label().into());
+    }
+    if let Some(rain) = value(viewer, "--precipitation").and_then(|v| Precipitation::parse(&v)) {
+        parts.push(if rain == Precipitation::None {
+            "No precipitation".into()
+        } else {
+            format!("{} precipitation", rain.label())
+        });
+    }
+    if let Some(fog) = value(viewer, "--fog").filter(|v| v != "off") {
+        parts.push(format!("{fog} fog"));
+    }
+    let start = value(viewer, "--clock").or_else(|| value(command, "--start-time"));
+    (if parts.is_empty() { "Stage defaults".into() } else { parts.join(" · ") }, start)
+}
+
 /// Viewer options precede its saved live command, so replay expansion can override presentation settings.
 fn viewer_args(path: &Path, view: &str, video: Option<(&Path, (u32, u32), u32)>) -> Vec<String> {
     let mut args = vec!["--replay".into(), path.display().to_string(), "--view".into(), view.into()];
@@ -200,17 +273,25 @@ impl Form {
                 for entry in &self.replays.entries {
                     if !entry.title.to_lowercase().contains(&query)
                         && !entry.path.to_string_lossy().to_lowercase().contains(&query)
+                        && !entry.conditions.to_lowercase().contains(&query)
                     {
                         continue;
                     }
                     matches += 1;
                     let selected = self.replays.selected.as_ref() == Some(&entry.path);
-                    let label = format!("{}\n{}", entry.title, age(entry.modified));
+                    let start = entry.start_time.as_ref().map(|t| format!(" · {t} start")).unwrap_or_default();
+                    let label = format!(
+                        "{}\n{} · {}\n{}{start}",
+                        entry.title,
+                        result_text(entry.result.as_ref()),
+                        entry.conditions,
+                        recorded_at(entry.modified)
+                    );
                     if ui
                         .add(
                             egui::Button::selectable(selected, label)
                                 .wrap()
-                                .min_size(egui::vec2(ui.available_width(), 56.0)),
+                                .min_size(egui::vec2(ui.available_width(), 78.0)),
                         )
                         .clicked()
                     {
@@ -234,6 +315,25 @@ impl Form {
                 if let Some(problem) = &entry.problem {
                     ui.colored_label(WARN, problem);
                 }
+                ui.add_space(8.0);
+                egui::Grid::new("replay-summary").num_columns(2).show(ui, |ui| {
+                    for (label, value) in [
+                        ("Stage time", result_text(entry.result.as_ref())),
+                        ("Conditions", entry.conditions.clone()),
+                        ("Recorded", recorded_at(entry.modified)),
+                        ("Stage start", entry.start_time.clone().unwrap_or_else(|| "Stage default".into())),
+                    ] {
+                        ui.weak(label);
+                        ui.label(value);
+                        ui.end_row();
+                    }
+                    if let Some(result) = entry.result.as_ref().filter(|r| r.penalties > 0.0 && r.penalties.is_finite())
+                    {
+                        ui.weak("Penalties");
+                        ui.label(format!("{} included", rbr_render::hud::clock_label(f64::from(result.penalties))));
+                        ui.end_row();
+                    }
+                });
                 ui.add_space(10.0);
                 ui.horizontal(|ui| {
                     ui.label("Camera");
@@ -347,6 +447,48 @@ mod tests {
     use super::*;
 
     #[test]
+    fn saved_conditions_distinguish_viewer_weather_from_physics_options() {
+        let args = [
+            "--weather",
+            "wet",
+            "--clouds",
+            "partly",
+            "--precipitation",
+            "heavy",
+            "--clock",
+            "16:00",
+            "--live",
+            "standalone",
+            "--weather",
+            "0",
+            "--start-time",
+            "08:00",
+        ]
+        .map(str::to_owned);
+        assert_eq!(conditions(&args), ("Wet road · Partly cloudy · Heavy precipitation".into(), Some("16:00".into())));
+        assert_eq!(conditions(&[]), ("Stage defaults".into(), None));
+        let args = ["--live", "standalone", "--wetness", "damp", "--start-time", "08:00"].map(str::to_owned);
+        assert_eq!(conditions(&args), ("Damp road".into(), Some("08:00".into())));
+    }
+
+    #[test]
+    fn stage_times_keep_the_finish_retirement_and_partial_drive_distinct() {
+        let mut result = Splits { finished: true, race_time: 389.123, penalties: 20.0, ..Default::default() };
+        assert_eq!(result_text(Some(&result)), "06:29.123");
+        result.retired = true;
+        assert_eq!(result_text(Some(&result)), "DNF at 06:29.123");
+        result.finished = false;
+        result.retired = false;
+        assert_eq!(result_text(Some(&result)), "Stopped at 06:29.123");
+        assert_eq!(result_text(None), "Time unavailable");
+        assert_eq!(
+            recorded_time(Path::new("1793268612-stage.rrp")),
+            recorded_time(Path::new("1793268612000000000-stage.rrp"))
+        );
+        assert!(recorded_time(Path::new("my-drive.rrp")).is_none());
+    }
+
+    #[test]
     fn browsing_keeps_bad_files_visible_and_preserves_the_selection() {
         let home = std::env::temp_dir().join(format!("rerbr-replay-browser-{}", std::process::id()));
         let dir = home.join("replays");
@@ -358,12 +500,17 @@ mod tests {
         bytes.extend_from_slice(&realtime::Logged::unchecked([0; rbr_recording::CONTROL_BYTES], 1).to_bytes());
         fs::write(&path, bytes).unwrap();
         fs::write(dir.join("broken.rrp"), b"broken").unwrap();
+        let result = Splits { finished: true, race_time: 389.123, ..Default::default() };
+        replay::save_result(&path, &result).unwrap();
+        replay::save_result(&dir.join("broken.rrp"), &result).unwrap();
         fs::write(dir.join("unrelated.txt"), b"keep").unwrap();
         let mut browser = Replays::default();
         browser.refresh(&home);
         assert_eq!(browser.entries.len(), 2);
         let entry = browser.entries.iter().find(|e| e.path == path).unwrap();
         assert_eq!(entry.title, "Stage · Car");
+        assert_eq!(entry.result, Some(result));
+        assert!(browser.entries.iter().find(|e| e.problem.is_some()).unwrap().result.is_none());
         assert!(entry.problem.is_none());
         assert!(browser.entries.iter().any(|e| e.problem.is_some()));
         browser.select(Some(path.clone()), &home);

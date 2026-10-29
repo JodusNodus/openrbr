@@ -215,7 +215,10 @@ fn run() -> Result<(), String> {
     {
         match replay::record(&path, &std::env::args().skip(1).collect::<Vec<_>>()) {
             Ok(()) => command.extend(["--replay-out".to_owned(), path.display().to_string()]),
-            Err(e) => eprintln!("viewer: {}: {e}; driving without a replay", path.display()),
+            Err(e) => {
+                eprintln!("viewer: {}: {e}; driving without a replay", path.display());
+                args.save_replay = None;
+            }
         }
     }
     let mut data = Data::from_env().ok_or("RBR_DATA is not set")?;

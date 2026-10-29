@@ -192,7 +192,10 @@ carry the layout (`gauges.rs`) and the drawing rules (`dials`).
   While watching there is no device input, pause menu or ghost saving: P or Space pauses, R starts over, the
   camera key cycles the views, V resets the mouse look, Esc closes.
 - Replays tab (`replay_page.rs`): cached, newest-first headers from `<files>/replays`, searched by title or filename;
-  malformed and unfinished files stay visible with their error. Watch uses the saved presentation with the selected
+  malformed and unfinished files stay visible with their error. Rows show the stage time, recorded time in UTC and
+  saved road/cloud/precipitation/fog overrides; details include the stage start time and included penalties. A live
+  window saves its last SPL1 beside the replay as `.rrp.splits`, distinguishing a finish, DNF and an interrupted drive;
+  older replays without it show Time unavailable. Watch uses the saved presentation with the selected
   camera; Export offers 720p–2160p, 30/60 fps, an MP4 filename, audio and progress from the viewer's log (ffmpeg on
   PATH). Replay exit never advances the championship. Files are kept until removed by the player.
 - Loading screen (ours, `viewer/loading.rs`): the viewer's window opens first (fullscreen when set) and shows the

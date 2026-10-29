@@ -335,6 +335,8 @@ pub struct App {
     /// Watching a replay (`--replay`): the stepping process serves its frames, and the window takes no device
     /// input, opens no menus and saves no ghost.
     replay: bool,
+    /// The live drive whose last stage result is saved when the window closes.
+    save_replay: Option<PathBuf>,
     /// A failed replay closes the window and reports failure to the launcher.
     replay_failure: Option<String>,
     running: Running,
@@ -425,6 +427,7 @@ impl App {
             shifter,
             feed,
             replay,
+            save_replay: args.save_replay.clone().filter(|_| !replay),
             replay_failure: None,
             running,
             held: HashSet::new(),
@@ -757,6 +760,13 @@ impl ApplicationHandler for App {
 
     /// The live input's timing, while the Wayland connection its feedback shares is still open.
     fn exiting(&mut self, _: &ActiveEventLoop) {
+        if let (Some(path), Some(splits)) =
+            (&self.save_replay, self.scene.live.as_ref().and_then(|live| live.splits.as_ref()))
+        {
+            if let Err(e) = rbr_recording::replay::save_result(path, splits) {
+                eprintln!("viewer: replay result: {e}");
+            }
+        }
         if let Some(latency) = self.latency.take() {
             eprintln!("viewer: {}", latency.summary());
         }
