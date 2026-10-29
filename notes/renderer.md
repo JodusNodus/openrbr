@@ -708,6 +708,8 @@ Rock keeps its hue (2026-10-29): rock, stone walls and concrete (`ground_rock`: 
 over blue under `GROUND_ROCK_AT` 0.06 to 0.14 of its brightest channel, on a steep face, facet up component under
 `GROUND_STEEP` 0.6 to 0.85) take the ground scan's and the earth patches' brightness only, so cuttings and parapets keep
 their own colour; a flat grey verge (gravel) keeps the tint.
+Rock to grey: rock gives up `GROUND_ROCK_GREY` 0.85 of its lit colour for grey (its texture's cast and the light's tint are
+mostly not its own), steepness `GROUND_STEEP` 0.75 to 0.97 (softer); `ground_scan` takes and returns the lit colour.
 
 Lighting, in pieces (all with `lighting`; each measured on its own before the merge):
 
