@@ -5,7 +5,7 @@ later). Everything you know and love + optional enhancements. Bring your own gam
 
 ## Why
 
-- **Native on Linux, macOS and Windows.** No Wine, no Proton, no Windows.
+- **Native on Linux, macOS and Windows.** No Wine, no Proton.
 - **NGP 7 physics.** use the latest NGP version (must be provided by you).
 - **The original game around it.** Weather, damage, the service park, the championship and the stage records work
   as in RBR 1.02, checked against recordings of the original.
