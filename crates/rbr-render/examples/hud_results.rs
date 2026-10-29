@@ -30,6 +30,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         texture_names: Default::default(),
         textures: Default::default(),
         start_digits: None,
+        snow_ground: false,
         start: None,
         atmosphere: Default::default(),
         driveline: Vec::new(),
