@@ -258,7 +258,18 @@ fn list_at(b: &[u8], at: usize) -> Option<(Vec<&[u8]>, usize)> {
     Some((items, at + 4 + count * size))
 }
 
-fn nodes(b: &[u8]) -> Vec<Node<'_>> {
+/// Deepest `LIST` nesting accepted. Real banks nest a handful of lists; deeper nesting is corruption, and
+/// unbounded recursion would overflow the stack (as would dropping the tree it builds).
+const MAX_DEPTH: usize = 64;
+
+fn nodes(b: &[u8]) -> Option<Vec<Node<'_>>> {
+    nodes_at(b, 0)
+}
+
+fn nodes_at(b: &[u8], depth: usize) -> Option<Vec<Node<'_>>> {
+    if depth > MAX_DEPTH {
+        return None;
+    }
     let mut out = Vec::new();
     let mut at = 0;
     while at + 8 <= b.len() {
@@ -266,13 +277,13 @@ fn nodes(b: &[u8]) -> Vec<Node<'_>> {
         let len = u32_at(b, at + 4).unwrap() as usize;
         let Some(body) = b.get(at + 8..at + 8 + len) else { break };
         if (&tag == b"LIST" || &tag == b"RIFF") && len >= 4 {
-            out.push(Node::List(body[..4].try_into().unwrap(), nodes(&body[4..])));
+            out.push(Node::List(body[..4].try_into().unwrap(), nodes_at(&body[4..], depth + 1)?));
         } else {
             out.push(Node::Chunk(tag, body));
         }
         at += 8 + len + (len & 1);
     }
-    out
+    Some(out)
 }
 
 /// The chunks of a list's direct children with tag `tag`.
@@ -329,6 +340,13 @@ struct Objects<'a> {
 
 impl<'a> Objects<'a> {
     fn walk(&mut self, list: &[u8; 4], children: &[Node<'a>]) -> Option<()> {
+        self.walk_at(list, children, 0)
+    }
+
+    fn walk_at(&mut self, list: &[u8; 4], children: &[Node<'a>], depth: usize) -> Option<()> {
+        if depth > MAX_DEPTH {
+            return None;
+        }
         match list {
             b"WAIT" => {
                 let b = chunk(children, b"WAIB")?;
@@ -403,7 +421,7 @@ impl<'a> Objects<'a> {
             _ => {
                 for n in children {
                     match n {
-                        Node::List(kind, inner) => self.walk(kind, inner)?,
+                        Node::List(kind, inner) => self.walk_at(kind, inner, depth + 1)?,
                         Node::Chunk(tag, b) => self.chunk(tag, b)?,
                     }
                 }
@@ -483,8 +501,10 @@ fn fsb5(fsb: &[u8]) -> Result<Vec<Sample>, Error> {
     let header = if version == 0 { 0x40 } else { 0x3c };
     let data_start = header + headers + names;
     let mut at = header;
-    let mut samples = Vec::with_capacity(count);
-    let mut offsets = Vec::with_capacity(count);
+    // No reservation: `count` comes from the file and can be huge; the loop below fails at the first missing
+    // header instead.
+    let mut samples = Vec::new();
+    let mut offsets = Vec::new();
     for _ in 0..count {
         let bits = u64::from_le_bytes(fsb.get(at..at + 8).ok_or_else(short)?.try_into().unwrap());
         at += 8;
@@ -502,13 +522,16 @@ fn fsb5(fsb: &[u8]) -> Result<Vec<Sample>, Error> {
             let size = ((head >> 1) & 0xff_ffff) as usize;
             let body = fsb.get(at + 4..at + 4 + size).ok_or_else(short)?;
             match head >> 25 {
-                1 => channels = body[0],
+                1 => channels = *body.first().ok_or_else(short)?,
                 2 => rate = u32_at(body, 0).ok_or_else(short)?,
                 11 => vorbis_crc = u32_at(body, 0),
                 _ => {}
             }
             more = head & 1 == 1;
             at += 4 + size;
+        }
+        if rate == 0 {
+            return Err(short());
         }
         offsets.push(offset);
         samples.push(Sample { name: String::new(), rate, channels, frames, vorbis_crc, codec, data: 0..0 });
@@ -519,7 +542,13 @@ fn fsb5(fsb: &[u8]) -> Result<Vec<Sample>, Error> {
         let name = fsb.get(at..).ok_or_else(short)?.split(|&c| c == 0).next().unwrap_or_default();
         sample.name = String::from_utf8_lossy(name).into_owned();
         let end = offsets.get(k + 1).copied().unwrap_or(data_size);
-        sample.data = data_start + offsets[k]..data_start + end;
+        let start = offsets[k];
+        // Decreasing offsets give an inverted range, which would pass the length check below and panic in a
+        // later slice; offsets past the data section are corruption too.
+        if start > end || end > data_size {
+            return Err(short());
+        }
+        sample.data = data_start + start..data_start + end;
         if sample.data.end > fsb.len() {
             return Err(short());
         }
@@ -565,9 +594,15 @@ pub fn strings(bytes: &[u8]) -> Result<HashMap<Id, String>, Error> {
         let leaf = b.get(at..at + 3).ok_or_else(short)?;
         let mut n = usize::from(leaf[0]) | usize::from(leaf[1]) << 8 | usize::from(leaf[2]) << 16;
         let mut pieces = Vec::new();
-        while let Some(&p) = parent.get(&n) {
+        // A node that is its own child (or any longer parent cycle) would loop forever: a path without a
+        // repeat holds at most every node, so a longer walk is a cycle.
+        for _ in 0..nodes.len() + 1 {
+            let Some(&p) = parent.get(&n) else { break };
             pieces.push(piece(n).ok_or_else(short)?);
             n = p;
+        }
+        if parent.contains_key(&n) {
+            return Err(Error("strings bank: a parent cycle".to_owned()));
         }
         let name: Vec<u8> = pieces.into_iter().rev().flatten().copied().collect();
         out.insert(id_at(id, 0).ok_or_else(short)?, String::from_utf8_lossy(&name).into_owned());
@@ -581,7 +616,7 @@ pub fn parse(bytes: Vec<u8>, strings_bank: &[u8]) -> Result<Bank, Error> {
     if bytes.get(..4) != Some(b"RIFF") || bytes.get(8..12) != Some(b"FEV ") {
         return err("not an FMOD Studio bank (RIFF FEV)");
     }
-    let tree = nodes(&bytes[12..]);
+    let tree = nodes(&bytes[12..]).ok_or(Error("bank: lists nested too deep".to_owned()))?;
     let mut o = Objects::default();
     o.walk(b"FEV ", &tree).ok_or(Error("bank: a short object".to_owned()))?;
     // The sound banks' samples one after the other; a waveform's (bank, sample) is an index into them.
@@ -765,6 +800,123 @@ mod tests {
         let points = [[1000.0, 0.0], [2000.0, 1.0]];
         assert_eq!([0.0, 1000.0, 1500.0, 2000.0, 9000.0].map(|x| interpolate(&points, x)), [0.0, 0.0, 0.5, 1.0, 1.0]);
         assert_eq!(interpolate(&[], 1.0), 0.0);
+    }
+
+    /// A minimal valid FSB5: version 1, one PCM sample `"s"` of 16 bytes.
+    fn fsb5_file() -> Vec<u8> {
+        let mut b = b"FSB5".to_vec();
+        for w in [1u32, 1, 8, 6, 16, PCM16] {
+            b.extend_from_slice(&w.to_le_bytes());
+        }
+        b.resize(0x3c, 0);
+        // Rate index 8 (44100), one channel, offset 0, 100 frames, no extra chunks.
+        let bits = 16u64 | (100 << 34);
+        b.extend_from_slice(&bits.to_le_bytes());
+        // The name table: one offset word, then `"s\0"`.
+        b.extend_from_slice(&4u32.to_le_bytes());
+        b.extend_from_slice(b"s\0");
+        b.extend_from_slice(&[0u8; 16]);
+        b
+    }
+
+    /// A minimal valid strings bank: one nameless id.
+    fn strings_file() -> Vec<u8> {
+        let mut body = vec![0u8; 4];
+        // The node list: one root node (no piece, no children).
+        body.extend_from_slice(&[3, 0, 8, 0, 0xff, 0xff, 0xff, 0, 0, 0, 0, 0]);
+        // The id list: one zero id.
+        body.extend_from_slice(&[3, 0, 16, 0]);
+        body.extend_from_slice(&[0u8; 16]);
+        // An empty pool, one id, its leaf at node 0.
+        body.extend_from_slice(&[0, 0, 1, 0, 0, 0, 0]);
+        let mut out = b"STDT".to_vec();
+        out.extend_from_slice(&(body.len() as u32).to_le_bytes());
+        out.extend(body);
+        out
+    }
+
+    /// `levels` nested `LIST` chunks around an empty chunk, built outside-in.
+    fn nested_lists(levels: usize) -> Vec<u8> {
+        let mut b = b"RIFF\0\0\0\0FEV ".to_vec();
+        b.resize(12 + 12 * levels + 8, 0);
+        for k in 0..levels {
+            let at = 12 + 12 * k;
+            b[at..at + 4].copy_from_slice(b"LIST");
+            let body = (12 * (levels - k)) as u32;
+            b[at + 4..at + 8].copy_from_slice(&body.to_le_bytes());
+        }
+        b[12 + 12 * levels..][..4].copy_from_slice(b"CHNK");
+        b
+    }
+
+    #[test]
+    fn synthetic_fsb5_and_strings_bank_read() {
+        let samples = fsb5(&fsb5_file()).unwrap();
+        assert_eq!(samples.len(), 1);
+        assert_eq!(samples[0].name, "s");
+        assert_eq!((samples[0].rate, samples[0].channels, samples[0].frames), (44100, 1, 100));
+        assert_eq!((samples[0].codec, samples[0].data.len()), (PCM16, 16));
+        let names = strings(&strings_file()).unwrap();
+        assert_eq!(names.get(&[0u8; 16]).map(String::as_str), Some(""));
+        assert_eq!(names.len(), 1);
+    }
+
+    #[test]
+    fn damaged_fsb5_and_strings_bank_never_panic() {
+        let fsb = fsb5_file();
+        crate::damage::never_panics(&fsb, &[0, 0x7f, 0xff], |b| {
+            let _ = fsb5(b);
+        });
+        let bank = strings_file();
+        crate::damage::never_panics(&bank, &[0, 0x7f, 0xff], |b| {
+            let _ = strings(b);
+        });
+    }
+
+    #[test]
+    fn strings_bank_parent_cycle_is_an_error() {
+        let mut bad = strings_file();
+        // The node is its own child (first 0, one child): the old walk looped forever.
+        bad[12..16].copy_from_slice(&[0, 0, 0, 1]);
+        assert!(strings(&bad).is_err());
+    }
+
+    #[test]
+    fn fsb5_rejects_empty_chunks_zero_rates_and_inverted_offsets() {
+        // A size-0 type-1 chunk has no byte to read the channel count from.
+        let mut bad = fsb5_file();
+        bad[0x3c] |= 1;
+        bad.splice(0x44..0x44, [0u8, 0, 0, 2]);
+        bad[12..16].copy_from_slice(&12u32.to_le_bytes());
+        assert!(fsb5(&bad).is_err());
+        // A type-2 chunk setting the rate to 0.
+        let mut bad = fsb5_file();
+        bad[0x3c] |= 1;
+        bad.splice(0x44..0x44, [0u8, 0, 0, 4, 0, 0, 0, 0]);
+        bad[12..16].copy_from_slice(&16u32.to_le_bytes());
+        assert!(fsb5(&bad).is_err());
+        // Two samples with decreasing offsets: an inverted range, which passed the length check.
+        let mut bad = b"FSB5".to_vec();
+        for w in [1u32, 2, 16, 12, 16, PCM16] {
+            bad.extend_from_slice(&w.to_le_bytes());
+        }
+        bad.resize(0x3c, 0);
+        bad.extend_from_slice(&(16u64 | (1 << 7) | (100 << 34)).to_le_bytes());
+        bad.extend_from_slice(&(16u64 | (100 << 34)).to_le_bytes());
+        bad.extend_from_slice(&8u32.to_le_bytes());
+        bad.extend_from_slice(&10u32.to_le_bytes());
+        bad.extend_from_slice(b"a\0b\0");
+        bad.extend_from_slice(&[0u8; 16]);
+        assert!(fsb5(&bad).is_err());
+        // A huge sample count is an error, not a huge allocation.
+        let mut bad = fsb5_file();
+        bad[8..12].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert!(fsb5(&bad).is_err());
+    }
+
+    #[test]
+    fn deeply_nested_lists_are_an_error() {
+        assert!(parse(nested_lists(100_000), &strings_file()).is_err());
     }
 
     #[test]
