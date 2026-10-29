@@ -4,7 +4,7 @@
 //! nothing.
 
 use crate::args::Args;
-use crate::draw::{dial_values, readout, scripted_camera, show_crew, step_characters, throw_smoke};
+use crate::draw::{dial_values, draw_car, draw_particles, readout, scripted_camera, step_characters};
 use crate::scene::{take_damage, Scene};
 use crate::screenshot::view_projections;
 use glam::Mat4;
@@ -15,7 +15,7 @@ use rbr_render::hud::results::{self, ResultsMenu};
 use rbr_render::hud::stock::Stock;
 use rbr_render::hud::{self as hud_overlay, Overlay};
 use rbr_render::playback::ChaseLook;
-use rbr_render::renderer::{self, Gpu, Renderer};
+use rbr_render::renderer::{self, Renderer};
 use rbr_render::sound::Player;
 use rbr_render::views::Shown;
 use rbr_sound::Scene as AudioScene;
@@ -101,7 +101,7 @@ pub fn render(
         if ended {
             break;
         }
-        let events = draw_frame(scene, args, &mut renderer, size, t, &mut shown)?;
+        let events = draw_frame(scene, args, &mut renderer, size, t, &mut shown);
         let (view, sky) = views(scene, args, shown, size);
         // Bake the reflection probes after the first frame's sky and shadows, as the window's load does.
         if !probed {
@@ -117,9 +117,17 @@ pub fn render(
             audio.step(audio_scene(scene, args, shown), &mut pending, &rbr_render::sound::events(&events, helicopter));
             audio.samples(periods)?;
         }
+        let readout = scene
+            .playback
+            .as_ref()
+            .filter(|_| scene.hud.show)
+            .map(|p| readout(p, scene.live.as_ref(), shown, &args.bindings, scene.hud, None));
+        let results = scene.live.as_ref().and_then(|live| ResultsMenu::open(live.menu));
         let (_, pixels) = renderer.render_offscreen_with(size, view, sky, |encoder, target| {
-            let hud = FrameHud { scene, args, shown, size };
-            draw_overlay(hud, &gpu, &mut overlay, encoder, target);
+            overlay.draw_with(&gpu.device, &gpu.queue, encoder, target, size, |ctx, hud| {
+                readout.iter().for_each(|r| hud_overlay::paint_readout(ctx, hud, r));
+                results.iter().for_each(|m| results::paint(ctx, m));
+            });
         })?;
         encoder.video(&pixels)?;
         frames += 1;
@@ -185,7 +193,7 @@ fn draw_frame(
     size: (u32, u32),
     t: f32,
     shown: &mut Shown,
-) -> Result<Vec<Event>, Box<dyn Error>> {
+) -> Vec<Event> {
     if let Some(playback) = &mut scene.playback {
         // The car's velocity stands for the eye's (the rain's streaks) when the camera rides with the car.
         let (index, now, here) = (playback.index(), playback.time(), playback.position());
@@ -204,13 +212,12 @@ fn draw_frame(
     }
     // The game's start orbit replaces the view until the go, and the helicam while the helicopter runs.
     let camera_record = scene.live.as_ref().and_then(|live| live.hud.camera);
-    let (heli, flip, scripted) = scripted_camera(scene.characters.as_ref());
+    let (heli, flip, _) = scripted_camera(scene.characters.as_ref());
     let before = *shown;
     *shown = Shown::of(scene.cameras.start_view(args.view), camera_record, heli, flip);
     if !before.same_camera(*shown) {
         renderer.reset_history();
     }
-    let (view, look) = (shown.car_view(), ChaseLook::default());
     let camera = match (args.flyby, &scene.playback) {
         (Some(offset), Some(playback)) => Some(playback.flyby(offset)),
         _ => args.camera,
@@ -226,24 +233,8 @@ fn draw_frame(
     if let Some(characters) = &mut scene.characters {
         characters.apply(renderer, view_projection);
     }
-    if let (Some(drawn), Some(playback)) = (&mut scene.particles, &scene.playback) {
-        throw_smoke(scene.characters.as_mut(), drawn);
-        drawn.draw(renderer, playback, scene.live.as_mut(), view_projection);
-    }
-    if let (Some(playback), Some(glass)) = (&mut scene.playback, &mut scene.glass) {
-        glass.draw(renderer, playback, view.interior(), scene.particles.as_ref().map(|p| &p.particles.spray));
-    }
-    if let (Some(playback), Some(crew)) = (&mut scene.playback, &mut scene.crew) {
-        // The live process's newest step turns the wheel, a step at a time.
-        let steer = scene.live.as_ref().and_then(|live| live.newest_step()).map(|step| step.steering());
-        show_crew(crew, playback, view, steer, renderer);
-    }
-    if let (Some(playback), Some(mounts)) = (&mut scene.playback, &scene.mounts) {
-        playback.interior = view.interior();
-        renderer.set_outside_view(!view.interior());
-        let lens = shown.lens(playback, mounts, scripted, look, args.fov);
-        playback.apply(renderer, &lens);
-    }
+    draw_particles(scene, renderer, view_projection);
+    draw_car(scene, renderer, *shown, ChaseLook::default(), args.fov);
     if let (Some(ghost), Some(playback)) = (&mut scene.ghost, &scene.playback) {
         ghost.apply(renderer, playback, view_projection);
     }
@@ -258,35 +249,7 @@ fn draw_frame(
     if let Some(live) = &scene.live {
         renderer.set_interactive_poses(&live.interactive_poses);
     }
-    Ok(events)
-}
-
-/// Draws the HUD over the frame, as the screenshot does.
-struct FrameHud<'a> {
-    scene: &'a Scene,
-    args: &'a Args,
-    shown: Shown,
-    size: (u32, u32),
-}
-
-fn draw_overlay(
-    hud: FrameHud,
-    gpu: &Gpu,
-    overlay: &mut Overlay,
-    encoder: &mut wgpu::CommandEncoder,
-    target: &wgpu::TextureView,
-) {
-    let FrameHud { scene, args, shown, size } = hud;
-    let readout = scene
-        .playback
-        .as_ref()
-        .filter(|_| scene.hud.show)
-        .map(|p| readout(p, scene.live.as_ref(), shown, &args.bindings, scene.hud, None));
-    let results = scene.live.as_ref().and_then(|live| ResultsMenu::open(live.menu));
-    overlay.draw_with(&gpu.device, &gpu.queue, encoder, target, size, |ctx, hud| {
-        readout.iter().for_each(|r| hud_overlay::paint_readout(ctx, hud, r));
-        results.iter().for_each(|m| results::paint(ctx, m));
-    });
+    events
 }
 
 /// The sound the output frames hear: the live drive's player with no device, rendered into the WAV for the game

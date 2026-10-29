@@ -5,7 +5,7 @@ mod input;
 mod results;
 
 use crate::args::Args;
-use crate::draw::{dial_values, readout, scripted_camera, show_crew, start_camera, step_characters, throw_smoke};
+use crate::draw::{dial_values, draw_car, draw_particles, readout, scripted_camera, start_camera, step_characters};
 use crate::latency::Latency;
 use crate::loading::{Loaded, Loading};
 use crate::scene::{take_damage, Scene};
@@ -652,7 +652,7 @@ impl App {
         }
         // The game's start orbit replaces the player's view until the go, and the helicam while the helicopter runs.
         let camera_record = self.scene.live.as_ref().and_then(|live| live.hud.camera);
-        let (heli, flip, scripted) = scripted_camera(self.scene.characters.as_ref());
+        let (heli, flip, _) = scripted_camera(self.scene.characters.as_ref());
         let before = self.shown;
         self.shown = Shown::of(self.view, camera_record, heli, flip);
         // The Camera page shows the view it sets, also over the start orbit and the helicam.
@@ -665,29 +665,11 @@ impl App {
         }
         let looking_back = self.bindings.get(Action::LookBack).key.is_some_and(|k| self.held.contains(&k))
             || self.pads[Action::LookBack as usize] > bindings::PRESS;
-        let (car_view, look) = (self.shown.car_view(), self.look);
         if let Some(playback) = &mut self.scene.playback {
             playback.follow_game_chase(self.shown.swing(), looking_back);
         }
-        if let (Some(playback), Some(glass)) = (&mut self.scene.playback, &mut self.scene.glass) {
-            let spray = self.scene.particles.as_ref().map(|p| &p.particles.spray);
-            glass.draw(&mut running.renderer, playback, car_view.interior(), spray);
-        }
-        if let (Some(playback), Some(crew)) = (&mut self.scene.playback, &mut self.scene.crew) {
-            // The live process's newest step turns the wheel, a step at a time.
-            let steer = self.scene.live.as_ref().and_then(|live| live.newest_step()).map(|step| step.steering());
-            show_crew(crew, playback, car_view, steer, &mut running.renderer);
-        }
         let fov = self.fov;
-        let car_lens = match (&self.scene.playback, &self.scene.mounts) {
-            (Some(playback), Some(mounts)) => Some(self.shown.lens(playback, mounts, scripted, look, fov)),
-            _ => None,
-        };
-        if let (Some(playback), Some(lens)) = (&mut self.scene.playback, &car_lens) {
-            playback.interior = car_view.interior();
-            running.renderer.set_outside_view(!car_view.interior());
-            playback.apply(&mut running.renderer, lens);
-        }
+        let car_lens = draw_car(&mut self.scene, &mut running.renderer, self.shown, self.look, fov);
         let (view_projection, sky_view_projection) = match (&mut self.scene.orbit, car_lens) {
             (Some(orbit), _) => {
                 orbit.zoom((movement.forward * -ZOOM_RATE * dt).exp());
@@ -707,10 +689,7 @@ impl App {
         if let (Some(ghost), Some(playback)) = (&mut self.scene.ghost, &self.scene.playback) {
             ghost.apply(&mut running.renderer, playback, view_projection);
         }
-        if let (Some(drawn), Some(playback)) = (&mut self.scene.particles, &self.scene.playback) {
-            throw_smoke(self.scene.characters.as_mut(), drawn);
-            drawn.draw(&mut running.renderer, playback, self.scene.live.as_mut(), view_projection);
-        }
+        draw_particles(&mut self.scene, &mut running.renderer, view_projection);
         if let (Some(drawn), Some(playback)) = (&mut self.scene.fences, &self.scene.playback) {
             drawn.draw(&mut running.renderer, playback, view_projection);
         }
