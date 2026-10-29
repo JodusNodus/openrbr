@@ -44,6 +44,24 @@ const CONVOLUTION_DRY: usize = 2;
 const COMPRESSOR_EVERY: u32 = 8;
 /// A wet level at or below this is off (FMOD's floor).
 const SILENT_DB: f32 = -80.0;
+/// The most parameters any effect the code models reads (`SFXREVERB`'s 0..=12): parameter indices at or above
+/// this are ignored, so a corrupt `PROP` word (effect parameter `p - 1000`, e.g. 0xFFFFFFFF) cannot grow the Vec
+/// by gigabytes inside `Mixer::apply`.
+const MAX_EFFECT_PARAMS: usize = 13;
+
+/// How many parameters an effect of `kind` reads in `Stage::tune` (indices below this are kept). Kinds the code
+/// does not model read none of the ones it keeps, so they take the cap: storing more cannot change the sound.
+fn param_limit(kind: u32) -> usize {
+    match kind {
+        DSP_LOWPASS_SIMPLE | DSP_HIGHPASS_SIMPLE | DSP_FADER | DSP_SEND => 1,
+        DSP_LOWPASS | DSP_HIGHPASS => 2,
+        DSP_PARAMEQ | DSP_CONVOLUTION_REVERB => 3,
+        DSP_COMPRESSOR => 5,
+        DSP_THREE_EQ => 6,
+        DSP_SFXREVERB => MAX_EFFECT_PARAMS,
+        _ => MAX_EFFECT_PARAMS,
+    }
+}
 /// The reverb's delay lines (ms; ours), and the longest early plus late delay it keeps.
 const LINES_MS: [f32; 4] = [29.7, 37.1, 41.1, 43.7];
 const MAX_DELAY_S: f32 = 0.4;
@@ -332,9 +350,11 @@ impl Chain {
         let stages = effects
             .iter()
             .map(|e| {
+                let mut params = e.params.clone();
+                params.truncate(param_limit(e.kind));
                 let mut s = Stage {
+                    params,
                     kind: e.kind,
-                    params: e.params.clone(),
                     filters: Vec::new(),
                     gains: [1.0; 3],
                     prime: false,
@@ -350,9 +370,12 @@ impl Chain {
         Chain { stages }
     }
 
-    /// Effect `effect`'s parameter `param` to `value`.
+    /// Effect `effect`'s parameter `param` to `value` (indices at or above its kind's count are ignored).
     pub(crate) fn set(&mut self, effect: usize, param: usize, value: f32, rate: u32) {
         let Some(s) = self.stages.get_mut(effect) else { return };
+        if param >= param_limit(s.kind) {
+            return;
+        }
         if s.params.len() <= param {
             s.params.resize(param + 1, value);
         }
@@ -400,6 +423,17 @@ mod tests {
         chain.run(0.5);
         chain.set(0, 0, 5000.0, 48000);
         assert!((chain.run(0.5) - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_huge_parameter_index_is_ignored() {
+        // A corrupt PROP word (0xFFFFFFFF - 1000): no 17 GB Vec, and the sound is unchanged.
+        let mut chain = Chain::new(&[effect(DSP_LOWPASS_SIMPLE, &[22000.0])], 48000);
+        chain.set(0, 0xFFFF_FFFF - 1000, 500.0, 48000);
+        assert_eq!(chain.stages[0].params, vec![22000.0]);
+        assert!(response(&mut chain, 4000.0) > 0.99);
+        chain.set(0, 1, 500.0, 48000);
+        assert_eq!(chain.stages[0].params, vec![22000.0]);
     }
 
     #[test]
