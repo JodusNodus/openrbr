@@ -497,7 +497,7 @@ impl Form {
             if !gearbox.sequential {
                 (options.aids.clutch_help, options.aids.auto_gears) = (false, false);
             }
-            viewer_extra.extend(shifter_args(gearbox, Path::new(self.rsf_root.trim())));
+            viewer_extra.extend(shifter_args(gearbox, Path::new(self.rsf().trim())));
         }
         if let Some(mods) = self.codriver_mods.as_ref().filter(|_| self.codriver) {
             // The stage's names for the note lookup: RSF's aliases where there are any, then the launcher's own
