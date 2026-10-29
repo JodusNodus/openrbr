@@ -11,6 +11,8 @@
 //! animation arrays are referenced from records, and some of their field
 //! meanings are still unknown.
 
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
 use std::fmt::{self, Display, Formatter};
 
 /// File signature, ASCII `MINAATAD`.
@@ -359,7 +361,34 @@ fn parse_replay_stream(bytes: &[u8], offset: u32) -> Result<DlsReplayStream, Err
     Ok(DlsReplayStream { offset, header, ten_word_records, six_word_records, pairs })
 }
 
+/// One animation record decoded: its field words and everything they reference.
+struct DecodedRecord {
+    fields: [u32; 17],
+    arrays: Vec<DlsRawArray>,
+    nested_groups: Vec<DlsNestedGroup>,
+    replay: DlsReplayStream,
+}
+
+impl DecodedRecord {
+    /// The words kept: the fields plus every decoded word.
+    fn words(&self) -> usize {
+        let arrays: usize = self.arrays.iter().map(|a| a.words.len()).sum();
+        let nested: usize = self.nested_groups.iter().map(|g| 3 + 2 * g.pairs.len()).sum();
+        let replay = 7
+            + 10 * self.replay.ten_word_records.len()
+            + 6 * self.replay.six_word_records.len()
+            + 2 * self.replay.pairs.len();
+        17 + arrays + nested + replay
+    }
+}
+
 fn parse_animation_entries(bytes: &[u8], offset: usize) -> Result<Vec<DlsAnimationEntry>, Error> {
+    // Absolute cap on the words kept: 64 Mi words (256 MB). No real file keeps that much however much its
+    // records share, while the hundreds-of-GB blow-up still fails.
+    entries_within(bytes, offset, ((bytes.len() / 4).saturating_mul(8)).max(1 << 26))
+}
+
+fn entries_within(bytes: &[u8], offset: usize, budget: usize) -> Result<Vec<DlsAnimationEntry>, Error> {
     let mut cursor = Cursor::at(bytes, offset)?;
     let count = cursor.u32()? as usize;
     let pair_bytes = checked_product(count, 8, cursor.offset, bytes.len())?;
@@ -370,30 +399,49 @@ fn parse_animation_entries(bytes: &[u8], offset: usize) -> Result<Vec<DlsAnimati
         pairs.push(cursor.words::<2>()?);
     }
 
+    // Every pair entry re-decoded its record and copied up to six arrays as large as the file, so a small file
+    // with many pairs pointing at one record asked for hundreds of GB. Each distinct record is decoded once and
+    // reused, and the words kept across all entries are capped by `budget`.
+    let mut budget = budget;
+    let mut spend = |words: usize, offset: usize| -> Result<(), Error> {
+        budget = budget.checked_sub(words).ok_or(Error::Allocation { offset, count: words })?;
+        Ok(())
+    };
+    let mut decoded: HashMap<u32, DecodedRecord> = HashMap::new();
     let mut entries = Vec::new();
     entries.try_reserve_exact(count).map_err(|_| Error::Allocation { offset, count })?;
     for pair in pairs {
         let record_offset = pair[0];
-        let mut record = Cursor::at(bytes, record_offset as usize)?;
-        let fields = record.words::<17>()?;
+        let record = match decoded.entry(record_offset) {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => {
+                let mut record = Cursor::at(bytes, record_offset as usize)?;
+                let fields = record.words::<17>()?;
 
-        // FUN_00479020 uses words 1..7 as counts and words 9..15 as
-        // file-relative offsets in each 17-word record. Field meanings are
-        // still unknown, but sizes and strides are visible in the loops.
-        let mut arrays = Vec::new();
-        for (count_index, offset_index, words) in
-            [(1usize, 9usize, 2u8), (2, 10, 3), (3, 11, 3), (5, 13, 4), (6, 14, 3), (7, 15, 5)]
-        {
-            arrays.push(parse_raw_array(bytes, fields[count_index], fields[offset_index], words)?);
-        }
-        let nested_groups = parse_nested_groups(bytes, fields[4], fields[12])?;
+                // FUN_00479020 uses words 1..7 as counts and words 9..15 as
+                // file-relative offsets in each 17-word record. Field meanings are
+                // still unknown, but sizes and strides are visible in the loops.
+                let mut arrays = Vec::new();
+                for (count_index, offset_index, words) in
+                    [(1usize, 9usize, 2u8), (2, 10, 3), (3, 11, 3), (5, 13, 4), (6, 14, 3), (7, 15, 5)]
+                {
+                    arrays.push(parse_raw_array(bytes, fields[count_index], fields[offset_index], words)?);
+                }
+                let nested_groups = parse_nested_groups(bytes, fields[4], fields[12])?;
+                let replay = parse_replay_stream(bytes, fields[16])?;
+                let record = DecodedRecord { fields, arrays, nested_groups, replay };
+                spend(record.words(), record_offset as usize)?;
+                entry.insert(record)
+            }
+        };
+        spend(record.words(), record_offset as usize)?;
         entries.push(DlsAnimationEntry {
             pair,
             record_offset,
-            fields,
-            arrays,
-            nested_groups,
-            replay: parse_replay_stream(bytes, fields[16])?,
+            fields: record.fields,
+            arrays: record.arrays.clone(),
+            nested_groups: record.nested_groups.clone(),
+            replay: record.replay.clone(),
         });
     }
     Ok(entries)
@@ -653,6 +701,63 @@ mod tests {
         assert_eq!(entry.replay.six_word_records[0], [901, 902, 903, 904, 905, 906]);
         assert_eq!(entry.replay.pairs, [[1001, 1002]]);
         assert_eq!(file.track_groups[0].children[0], [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
+    }
+
+    /// A small file whose table 0 holds `pairs` entries all pointing at one empty record.
+    fn shared_record_file(pairs: u32) -> Vec<u8> {
+        let mut bytes = vec![0u8; HEADER_LEN];
+        bytes[..8].copy_from_slice(MAGIC);
+        patch_u32(&mut bytes, 8, RETAIL_VERSION);
+        let table0 = bytes.len() as u32;
+        patch_u32(&mut bytes, 16, table0);
+        bytes.extend_from_slice(&pairs.to_le_bytes());
+        // The record comes after the pairs, eight empty tables (32 bytes) and the replay stream (28 bytes).
+        let record = table0 + 4 + 8 * pairs + 32 + 28;
+        for _ in 0..pairs {
+            bytes.extend_from_slice(&record.to_le_bytes());
+            bytes.extend_from_slice(&0u32.to_le_bytes());
+        }
+        // Tables 1..7 and 9 are empty; table 8 is absent.
+        let tables = bytes.len() as u32;
+        for (i, at) in [20, 24, 28, 32, 36, 40, 44, 52].into_iter().enumerate() {
+            patch_u32(&mut bytes, at, tables + 4 * i as u32);
+        }
+        patch_u32(&mut bytes, 48, u32::MAX);
+        for _ in 0..8 {
+            bytes.extend_from_slice(&0u32.to_le_bytes());
+        }
+        // The replay stream (not version 6: empty) and the empty record pointing at it.
+        let replay = bytes.len() as u32;
+        bytes.extend_from_slice(&[0u8; 7 * 4]);
+        let at = bytes.len();
+        bytes.extend_from_slice(&[0u8; 17 * 4]);
+        patch_u32(&mut bytes, at + 16 * 4, replay);
+        debug_assert_eq!(record as usize, at);
+        bytes
+    }
+
+    #[test]
+    fn damaged_files_never_panic() {
+        let bytes = animation_file();
+        crate::damage::never_panics(&bytes, &[0, 0x7f, 0xff], |b| {
+            let _ = parse(b);
+        });
+    }
+
+    #[test]
+    fn many_pairs_sharing_one_record_are_bounded() {
+        // Two pairs sharing a record read fine.
+        let bytes = shared_record_file(2);
+        let file = parse(&bytes).unwrap();
+        assert_eq!(file.animation_entries.len(), 2);
+        assert_eq!(file.animation_entries[0].fields, file.animation_entries[1].fields);
+        // A thousand pairs sharing one record still parses under the absolute cap, but fails with a small
+        // budget: the cap guards the hundreds-of-gigabytes case, not sharing as such. The inner function is
+        // called directly to keep this cheap.
+        let bytes = shared_record_file(1000);
+        assert_eq!(parse(&bytes).unwrap().animation_entries.len(), 1000);
+        let table0 = u32::from_le_bytes(bytes[16..20].try_into().unwrap()) as usize;
+        assert!(entries_within(&bytes, table0, 1024).is_err());
     }
 
     #[test]

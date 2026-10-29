@@ -580,15 +580,8 @@ mod tests {
         payload.extend(vec![0u8; 730 * 4 + 730 * 48]);
         let body = binding("D_pelvis::PRS", INNER_SAMPLED_PRS, SUBTYPE_SAMPLED, &payload);
         let bytes = file(&[(KIND_ANIMATION, SUBTYPE_ANIMATION, body)]);
-        for cut in 0..bytes.len() {
-            let _ = parse(&bytes[..cut]);
-        }
-        for at in BANNER.len()..bytes.len() {
-            for value in [0u8, 0x7f, 0xff] {
-                let mut copy = bytes.clone();
-                copy[at] = value;
-                let _ = parse(&copy);
-            }
-        }
+        crate::damage::never_panics(&bytes, &[0, 0x7f, 0xff], |b| {
+            let _ = parse(b);
+        });
     }
 }

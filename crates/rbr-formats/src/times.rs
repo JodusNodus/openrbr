@@ -80,7 +80,8 @@ pub fn parse_time(token: &str) -> Option<f32> {
 pub fn parse(text: &str) -> Result<Vec<StageTimes>, Error> {
     let mut rest = tokens(text).into_iter();
     let declared: usize = rest.next().and_then(|t| t.parse().ok()).ok_or(Error::BadCount)?;
-    let mut stages = Vec::with_capacity(declared);
+    // No reservation: `declared` comes from the file; the loop below fails at the first missing stage.
+    let mut stages = Vec::new();
     while stages.len() < declared {
         let found = stages.len();
         let short = || Error::StagesShort { declared, found };
@@ -136,6 +137,13 @@ mod tests {
         let stages = parse("1\n5\n00:01:00 00:02:00 00:03:00\n$\n7 7 7 7").expect("parse");
         assert_eq!(stages.len(), 1);
         assert_eq!(stages[0].finish, 3.0);
+    }
+
+    #[test]
+    fn a_huge_declared_count_is_an_error() {
+        // Billions of stages would be a huge allocation up front; the file ends after one stage.
+        let text = "4294967295\n5\n00:01:00 00:02:00 00:03:00\n$\n";
+        assert!(matches!(parse(text), Err(Error::StagesShort { .. })));
     }
 
     #[test]
