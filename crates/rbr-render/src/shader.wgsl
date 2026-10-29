@@ -401,6 +401,10 @@ fn vertex(input: VertexIn) -> VertexOut {
     out.uv1 = v.uv1;
     out.uv2 = v.uv2;
     out.world = v.position;
+    if (is_grass_top(v)) {
+        out.world = v.position + grass_sway(v.position, v.uv2.x);
+        out.clip = frame.view_projection * vec4<f32>(out.world, 1.0);
+    }
     out.normal = v.normal;
     out.specular = v.specular;
     out.sky = vec3<f32>(unpack2x16snorm(v.sky_dir), v.occlusion);
@@ -408,6 +412,29 @@ fn vertex(input: VertexIn) -> VertexOut {
     out.bounce_sky = bounce_light(v.bounce.y);
     out.wet = v.wet;
     return out;
+}
+
+// The top of one of our grass cards (`grass.rs`: `specular.x` past `GRASS_MARK` by its brightness, marked as a tuft,
+// `uv2.x` its height; no shadow map on them).
+fn is_grass_top(v: VertexIn) -> bool {
+    return v.specular.x > GRASS_MARK && v.specular.x < GRASS_MARK + 3.0 && v.specular.y > 0.5 && v.specular.y < 1.5
+        && v.specular.z > 0.5 && v.uv2.x > 0.0;
+}
+
+// How far the wind moves a grass card's top at `p`, `height` above its foot (ours): a bow along `GRASS_WIND` by
+// `GRASS_SWAY` of its height, in gusts that cross the field as a slow wave (`GRASS_GUST`: its metres per radian and
+// radians a second), with a quicker flutter of its own (`GRASS_FLUTTER`), dipping the top a little as it bows.
+const GRASS_WIND: vec2<f32> = vec2<f32>(0.8, 0.6);
+const GRASS_SWAY: f32 = 0.22;
+const GRASS_GUST: vec2<f32> = vec2<f32>(2.5, 1.4);
+const GRASS_FLUTTER: vec2<f32> = vec2<f32>(0.3, 4.3);
+
+fn grass_sway(p: vec3<f32>, height: f32) -> vec3<f32> {
+    let t = frame.wind.x;
+    let gust = 0.5 + 0.5 * sin(dot(p.xz, GRASS_WIND) / GRASS_GUST.x - t * GRASS_GUST.y);
+    let flutter = sin(dot(p.xz, vec2<f32>(1.0, 1.3)) / GRASS_FLUTTER.x + t * GRASS_FLUTTER.y);
+    let bow = (0.25 + 0.75 * gust * gust + 0.15 * flutter) * GRASS_SWAY * height;
+    return vec3<f32>(GRASS_WIND.x * bow, -0.4 * bow * bow / height, GRASS_WIND.y * bow);
 }
 
 // A colour packed as `bounce.wgsl` packs it: three 10-bit shares of 0 to 2.
@@ -572,7 +599,10 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             let evened = albedo_remap(mean) * albedo / max(mean, vec3<f32>(1e-4));
             albedo = mix(remapped, mix(evened, remapped, paved_line), paved_flat);
         }
-        if (is_tuft(v)) {
+        if (is_tuft(v) && v.specular.x > GRASS_MARK) {
+            // Our grass cards (`grass.rs`) take the ground's brightness under them.
+            albedo = albedo * (v.specular.x - GRASS_MARK);
+        } else if (is_tuft(v)) {
             // Pale tufts take the straw tint, dark bushes a lift of their dark leaves.
             let luma = dot(albedo, vec3<f32>(0.2126, 0.7152, 0.0722));
             let pale = smoothstep(TUFT_PALE.x, TUFT_PALE.y, luma) * (1.0 - smoothstep(TUFT_SNOW.x, TUFT_SNOW.y, luma));
@@ -1102,22 +1132,34 @@ fn own_light(v: VertexOut, sun_seen: f32, under_cloud: f32) -> vec3<f32> {
     if (tuft || crown) {
         // Blades lit from both sides: a wrapped facing (a crown's tighter, to keep its lit and shaded halves), the light
         // through them behind, and the sunlit tips of a tuft a little warmer.
-        let wrap = select(TUFT_WRAP, CROWN_WRAP, crown);
+        // Our grass cards (`grass.rs`) are a dense field rather than lone tufts: a tighter wrap, so each clump has a lit
+        // and a shaded side, and the sun and the sky shut out deeper down it, the sun the more the lower it is
+        // (`GRASS_SUN_BASE` from a low sun to a high one). They keep the ground's hue: no straw in their tips, the sky's
+        // colour as the ground takes it, and the light through the blades tinted by them once more.
+        let ours = tuft && v.specular.x > GRASS_MARK;
+        let wrap = select(select(TUFT_WRAP, GRASS_WRAP, ours), CROWN_WRAP, crown);
         let wrapped = max(facing + wrap, 0.0) / (1.0 + wrap);
         let behind = max(-facing, 0.0);
         var shade = mix(TUFT_SUN_BASE, 1.0, smoothstep(0.0, 0.5, height));
-        var tip = mix(vec3<f32>(1.0), TUFT_TIP, smoothstep(0.5, 1.0, height));
+        var through_tint = TUFT_STRAW;
+        if (ours) {
+            let base = mix(GRASS_SUN_BASE.x, GRASS_SUN_BASE.y, smoothstep(0.1, 0.8, -frame.sun.y));
+            shade = mix(base, 1.0, smoothstep(0.0, GRASS_RISE, height));
+            let leaf = pow(hue, vec3<f32>(2.2));
+            through_tint = leaf / max(max(leaf.r, max(leaf.g, leaf.b)), 1e-3);
+        }
+        var tip = mix(vec3<f32>(1.0), select(TUFT_TIP, GRASS_TIP, ours), smoothstep(0.5, 1.0, height));
         if (crown) {
             // Only the crown's inside is shaded from the sun, not its lit surface.
             shade = mix(CROWN_INNER, 1.0, smoothstep(0.2, 0.9, length(crown_at(v))));
             tip = vec3<f32>(1.0);
         }
-        sun = sun_unit * (wrapped + TUFT_TRANSMIT * behind * TUFT_STRAW) * sun_seen * shade * tip;
+        sun = sun_unit * (wrapped + TUFT_TRANSMIT * behind * through_tint) * sun_seen * shade * tip;
         // The sky's light is neutral on straw, and the sunlit ground around it sends its warm light up from below.
         let grey = dot(sky, vec3<f32>(0.2126, 0.7152, 0.0722));
-        sky = mix(vec3<f32>(grey), sky, TUFT_SKY_TINT);
+        sky = mix(vec3<f32>(grey), sky, select(TUFT_SKY_TINT, 1.0, ours));
         bounce = bounce + TUFT_GROUND * (sky_unit * 0.5 + sun_unit * max(-frame.sun.y, 0.0) * sun_seen) * (1.0 - height);
-        occlusion = mix(TUFT_BASE, 1.0, smoothstep(0.0, TUFT_RISE, height));
+        occlusion = mix(select(TUFT_BASE, GRASS_BASE, ours), 1.0, smoothstep(0.0, select(TUFT_RISE, GRASS_RISE, ours), height));
         if (crown) {
             // The sky's and the ground's light, not the sun's, is shut out of a crown's lower and inner parts.
             ambient_occlusion = mix(CROWN_BASE, 1.0, smoothstep(0.0, 0.6, height)) * mix(CROWN_INNER, 1.0, smoothstep(0.2, 1.0, length(crown_at(v))));
@@ -1145,6 +1187,14 @@ fn own_light(v: VertexOut, sun_seen: f32, under_cloud: f32) -> vec3<f32> {
 // the tip, the sun's wrap past the terminator `TUFT_WRAP` and its transmission behind `TUFT_TRANSMIT`, the sky's
 // colour kept `TUFT_SKY_TINT`, and the ground's `TUFT_GROUND` returned from below.
 const TUFT_STRAW: vec3<f32> = vec3<f32>(1.07, 1.03, 0.9);
+// `specular.x` of our grass cards past this is their brightness (`grass::GRASS_MARK`); their sunlit tips' lift, wrap,
+// occlusion and sun at the foot, and the share of height both reach 1 at.
+const GRASS_MARK: f32 = 4.0;
+const GRASS_TIP: vec3<f32> = vec3<f32>(1.12);
+const GRASS_WRAP: f32 = 0.3;
+const GRASS_BASE: f32 = 0.45;
+const GRASS_SUN_BASE: vec2<f32> = vec2<f32>(0.25, 0.5);
+const GRASS_RISE: f32 = 0.9;
 const TUFT_PALE: vec2<f32> = vec2<f32>(0.06, 0.16);
 const TUFT_SNOW: vec2<f32> = vec2<f32>(0.3, 0.5);
 const TUFT_DARK_LIFT: f32 = 1.5;

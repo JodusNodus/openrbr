@@ -90,6 +90,7 @@ impl Renderer {
         let lamps_light = self.lamps_light();
         self.lamp_matrix = self.sun.as_ref().filter(|_| lamps_light).and_then(|_| self.lamp_shadow_matrix());
         let eye = camera::eye(view_projection);
+        self.stream_grass(eye);
         // The sky's tables first: the game's light follows their day light (`game_light`).
         let mut profiler = self.profiler.take();
         self.update_skylight(&mut profiler);

@@ -30,6 +30,7 @@ mod foliage;
 pub mod game_camera;
 pub mod ghost;
 pub mod glass;
+pub mod grass;
 mod height_fog;
 pub mod hud;
 pub mod icon;

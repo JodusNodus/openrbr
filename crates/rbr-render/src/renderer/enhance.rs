@@ -28,6 +28,9 @@ pub struct Enhance {
     /// own mean colour, and the stage's baked vertex tint is eased (`ground_scan` in `shader.wgsl`,
     /// [`super::road_scan`]; ours).
     pub ground: bool,
+    /// A grass field over the ground near the road, streamed about the eye ([`crate::grass`]; ours, a proof of concept:
+    /// not in `all`).
+    pub grass: bool,
     /// Our lighting in place of the game's look: the physically based sky, its haze and fog, sun shafts and volumetric
     /// clouds with their shadows ([`crate::skylight`], [`crate::renderer::cloud_volume`]), real-time sun shadows near
     /// the eye and sunlit foliage ([`SunShadow`](crate::sun::SunShadow)), the stage's ambient occlusion computed from
@@ -164,12 +167,13 @@ impl AntiAliasing {
 }
 
 impl Enhance {
-    pub const NAMES: [&str; 13] = [
+    pub const NAMES: [&str; 14] = [
         "anisotropy",
         "asphalt",
         "cabin",
         "contact",
         "decals",
+        "grass",
         "gravel",
         "ground",
         "lighting",
@@ -180,7 +184,7 @@ impl Enhance {
         "wet",
     ];
 
-    /// A comma-separated list of [`Enhance::NAMES`], or `all`.
+    /// A comma-separated list of [`Enhance::NAMES`], or `all` (every one but `grass`).
     pub fn parse(list: &str) -> Option<Enhance> {
         let mut enhance = Enhance::default();
         for name in list.split(',') {
@@ -194,6 +198,7 @@ impl Enhance {
                         decals: true,
                         gravel: true,
                         ground: true,
+                        grass: enhance.grass,
                         lighting: true,
                         marks: true,
                         particles: true,
@@ -213,6 +218,7 @@ impl Enhance {
                 "decals" => enhance.decals = true,
                 "gravel" => enhance.gravel = true,
                 "ground" => enhance.ground = true,
+                "grass" => enhance.grass = true,
                 "lighting" => enhance.lighting = true,
                 "marks" => enhance.marks = true,
                 "particles" => enhance.particles = true,

@@ -34,7 +34,7 @@ const CELLS: [(f32, f32); 2] = [(1.0, 0.6), (4.0, 0.4)];
 const DEEP: f32 = 0.08;
 
 /// Whether `draw` of `mesh` is the ground: world-anchored, opaque and unlit, with the ground's mip bias.
-fn ground(mesh: &Mesh, draw: &Draw) -> bool {
+pub(crate) fn ground(mesh: &Mesh, draw: &Draw) -> bool {
     mesh.anchor == Anchor::World
         && mesh.layer == Layer::Solid
         && draw.state.shade.is_none()

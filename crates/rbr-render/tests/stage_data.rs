@@ -278,7 +278,7 @@ fn every_stage_draws_its_ground_by_level_of_detail() {
                 match draw.lod {
                     Lod::Near => near += 1,
                     Lod::Far => far += 1,
-                    Lod::Always => {}
+                    Lod::Always | Lod::Close => {}
                 }
                 if draw.state.mip_bias {
                     biased += 1;

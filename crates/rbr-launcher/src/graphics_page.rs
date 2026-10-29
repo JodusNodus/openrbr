@@ -37,6 +37,11 @@ pub const GRAPHICS_LABELS: [(&str, &str); Enhance::NAMES.len()] = [
          into hard black shapes",
     ),
     (
+        "Dense grass",
+        "A field of grass blades over the grassy ground within 20 m of the road, swaying in the wind, drawn within 50 m \
+         of the camera. Needs Lighting. Costs frame time (about 1.5 ms at 1080p) and about 150 MB of video memory",
+    ),
+    (
         "Enhanced gravel",
         "Gravel and dirt roads get the fine grain and relief of a scanned gravel surface, lit by the sun, over the \
          stage's own road colour (about 0.1 ms)",
@@ -74,8 +79,10 @@ pub fn graphics_index(name: &str) -> usize {
     Enhance::NAMES.iter().position(|n| *n == name).expect("an Enhance name")
 }
 
-/// The additions on by default: all but the tyre marks, not yet reviewed in play. The cabin light costs next to nothing.
-pub const DEFAULT_GRAPHICS: Graphics = [true, true, true, true, true, true, true, true, false, true, true, true, true];
+/// The additions on by default: all but the grass (a proof of concept) and the tyre marks, not yet reviewed in play. The
+/// cabin light costs next to nothing.
+pub const DEFAULT_GRAPHICS: Graphics =
+    [true, true, true, true, true, false, true, true, true, false, true, true, true, true];
 
 /// The render scales the Graphics & sound page offers, percent of the window's width and height (`viewer --render-scale`): the
 /// frame is drawn smaller and the post pass scales it up, for high refresh rates at 1440p and above. 100, the first,

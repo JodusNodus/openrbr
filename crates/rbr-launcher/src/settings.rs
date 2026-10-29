@@ -994,6 +994,7 @@ mod tests {
                 Some(false),
                 Some(false),
                 None,
+                Some(true),
                 None,
                 None,
                 None,
@@ -1097,7 +1098,7 @@ mod tests {
             text.contains("wipers = intermittent\ndials = off\nhide_wheel = on\nhud_hide = progress,car\n"),
             "{text}"
         );
-        assert!(text.contains("anisotropy = on\ncabin = off\ncontact = off\nwater = on\n"), "{text}");
+        assert!(text.contains("anisotropy = on\ncabin = off\ncontact = off\ngrass = on\nwater = on\n"), "{text}");
         assert!(text.contains("start_time = 16:30\nperf_log = on\n"), "{text}");
         assert_eq!(Settings::parse("[launcher]\nperf_log = maybe\n").perf_log, None);
         assert_eq!(Settings::parse("").perf_log, None);

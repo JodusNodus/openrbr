@@ -1122,9 +1122,10 @@ mod tests {
         let all = enhance_list(&[true; Enhance::NAMES.len()]).unwrap();
         assert_eq!(
             all,
-            "anisotropy,asphalt,cabin,contact,decals,gravel,ground,lighting,marks,particles,snow,water,wet"
+            "anisotropy,asphalt,cabin,contact,decals,grass,gravel,ground,lighting,marks,particles,snow,water,wet"
         );
-        assert_eq!(Enhance::parse(&all), Enhance::parse("all"));
+        // `all` is every addition but the grass.
+        assert_eq!(Enhance::parse(&all), Enhance::parse("all,grass"));
         let defaults = enhance_list(&DEFAULT_GRAPHICS).unwrap();
         assert_eq!(defaults, "anisotropy,asphalt,cabin,contact,decals,gravel,ground,lighting,particles,snow,water,wet");
         for name in ["asphalt", "gravel", "snow"] {

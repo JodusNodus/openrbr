@@ -32,7 +32,8 @@ SETTINGS = {
 }
 # Copied from the player's settings: where the game and NGP are.
 KEEP = ('install_folder', 'ngp_physics', 'ngp_dll', 'rsf_root')
-COMMON = ['--no-hud', '--enhance', 'all', '--detail', 'ultra', '--anti-aliasing', 'taa', '--reflections', 'high',
+# The most the renderer draws: `all` leaves out the grass.
+COMMON = ['--no-hud', '--enhance', 'all,grass', '--detail', 'ultra', '--anti-aliasing', 'taa', '--reflections', 'high',
           '--at-periods', '5']
 # What a shot's `view` adds to the viewer's arguments (a fly-by is a chase view with a camera by the road).
 VIEWS = {

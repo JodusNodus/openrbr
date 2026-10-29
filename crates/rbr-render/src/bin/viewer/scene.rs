@@ -64,6 +64,8 @@ pub struct Scene {
     pub ghost: Option<ghost::Session>,
     /// How much sun gets into the cabin, with the cabin light (`car::cabin::SunIn`).
     pub cabin_sun: Option<car::cabin::SunIn>,
+    /// The grass streamed about the eye (`--enhance grass`, [`rbr_render::grass`]).
+    pub grass: Option<std::sync::Arc<rbr_render::grass::Field>>,
 }
 
 impl Scene {
@@ -85,6 +87,9 @@ impl Scene {
         }
         renderer.set_precipitation(self.precipitation);
         renderer.set_cabin_sun(self.cabin_sun.clone());
+        if let Some(grass) = &self.grass {
+            renderer.set_grass(grass.clone());
+        }
         if let Some(live) = &self.live {
             renderer.set_interactive_poses(&live.interactive_poses);
         }
@@ -180,6 +185,7 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
                 hud: args.hud,
                 ghost: None,
                 cabin_sun: None,
+                grass: None,
             })
         }
         (stage_name, car_name) => {
@@ -187,10 +193,11 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
             let maps = data.install().join("Maps");
             progress(Step::Stage);
             let mut stage = stage::load(&maps, name, args.selection).map_err(|e| e.to_string())?;
-            if args.enhance.gravel || args.enhance.asphalt || args.enhance.snow || args.enhance.ground {
+            let grass = args.enhance.grass && args.enhance.lighting;
+            if args.enhance.gravel || args.enhance.asphalt || args.enhance.snow || args.enhance.ground || grass {
                 stage.mark_dry_roads(&maps);
             }
-            if args.enhance.ground {
+            if args.enhance.ground || grass {
                 stage.mark_ground(&maps);
             }
             stage.atmosphere.fog = args.fog;
@@ -219,6 +226,10 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
             if args.enhance.decals {
                 rbr_render::decals::blend_ground_decals(&mut stage);
             }
+            let grass = grass.then(|| rbr_render::grass::add(&mut stage)).flatten().map(|field| {
+                eprintln!("grass: {} ground triangles", field.triangles());
+                std::sync::Arc::new(field)
+            });
             progress(Step::Characters);
             let mut characters = load_characters(data, name, &mut stage, args);
             // Before the car: the playback keeps the car's mesh indices.
@@ -398,6 +409,7 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
                 hud: args.hud,
                 ghost,
                 cabin_sun,
+                grass,
             })
         }
     }

@@ -140,6 +140,7 @@ pub fn stage_textures(stage: &Stage) -> BTreeSet<TextureRef> {
         .keys()
         .copied()
         .filter(|&key| key.set == TextureSet::Stage && !sky.contains(&key) && Some(key) != start_board)
+        .filter(|key| stage.texture_names.get(key).is_none_or(|name| name.file_name != crate::grass::TEXTURE))
         .collect()
 }
 

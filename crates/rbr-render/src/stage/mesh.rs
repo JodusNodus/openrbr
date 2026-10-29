@@ -97,6 +97,8 @@ pub enum Lod {
     Always,
     Near,
     Far,
+    /// Drawn only under [`CLOSE_DISTANCE`] (ours: the grass, [`crate::grass`]).
+    Close,
 }
 
 /// The near-to-far switch distance, metres: `g_renderQuality.m_unk10`, which each quality preset sets
@@ -105,6 +107,8 @@ pub enum Lod {
 pub const LOD_DISTANCE: f32 = 600.0;
 /// Width of the band below [`LOD_DISTANCE`] where both versions draw, metres (0x10027590).
 pub const LOD_BAND: f32 = 50.0;
+/// How near the camera, metres, a [`Lod::Close`] draw's block's box centre must be to show (ours).
+pub const CLOSE_DISTANCE: f32 = 50.0;
 
 impl Lod {
     /// The level of a chunk's draw list (1 near, 3 far, anything else always).
@@ -122,6 +126,7 @@ impl Lod {
             Lod::Always => true,
             Lod::Near => distance < LOD_DISTANCE,
             Lod::Far => distance > LOD_DISTANCE - LOD_BAND,
+            Lod::Close => distance < CLOSE_DISTANCE,
         }
     }
 }

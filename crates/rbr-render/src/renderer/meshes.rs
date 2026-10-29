@@ -126,11 +126,15 @@ impl Packing {
             return;
         }
         let vertex_count = self.vertices.len() as u32;
-        // Storage too, for the sky's occlusion to write into (`sky_occlusion.wgsl`).
+        // Storage too, for the sky's occlusion to write into (`sky_occlusion.wgsl`), and read back for the grass's
+        // light (`Renderer::set_grass`).
         let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("mesh vertices"),
             contents: cast_slice(&std::mem::take(&mut self.vertices)),
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
+            usage: wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::STORAGE,
         });
         let indices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("mesh indices"),
@@ -315,6 +319,97 @@ impl Renderer {
                 draw.casts_shadow = slots.contains(&slot) && draw.bind.shade.is_some() && draw.pipeline.depth_write;
             }
         }
+    }
+
+    /// Streams `field`'s grass into the stage's grass tile meshes ([`crate::grass::add`]), about the eye each frame, in
+    /// the light computed at load for the ground under it.
+    pub fn set_grass(&mut self, field: Arc<crate::grass::Field>) {
+        let tiles = self.meshes.iter().enumerate().filter_map(|(i, m)| {
+            let draw = m.draws.iter().find(|d| d.lod == Lod::Close)?;
+            Some((i, draw.indices.len() / 6))
+        });
+        let tiles = tiles.collect();
+        let light = if self.ground_light.is_some() { self.grass_light(&field) } else { Vec::new() };
+        self.grass = Some(crate::grass::Ring::new(field, tiles, light));
+    }
+
+    /// The light of the corners of `field`'s ground triangles ([`crate::grass::Light`]), read back from the vertex
+    /// buffers: one copy of each mesh's span of the vertices wanted. Open sky where the read fails.
+    fn grass_light(&self, field: &crate::grass::Field) -> Vec<[crate::grass::Light; 3]> {
+        let gpu_mesh = |mesh: usize| self.slots.get(mesh).copied().flatten();
+        let mut spans: HashMap<usize, Range<u32>> = HashMap::new();
+        for (mesh, corners) in field.corners() {
+            let Some(gpu) = gpu_mesh(mesh) else { continue };
+            let (low, high) = (corners.iter().min().unwrap_or(&0), corners.iter().max().unwrap_or(&0));
+            let span = spans.entry(gpu).or_insert(*low..*high + 1);
+            *span = span.start.min(*low)..span.end.max(*high + 1);
+        }
+        let size = size_of::<Vertex>() as u64;
+        let mut encoder =
+            self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("grass light") });
+        // Each mesh's span and its first vertex in the read.
+        let mut read = HashMap::new();
+        let mut at = 0;
+        for (&gpu, span) in &spans {
+            read.insert(gpu, (span.start, at));
+            at += span.len() as u64;
+        }
+        let readback = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("grass light"),
+            size: at.max(1) * size,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        for (gpu, span) in &spans {
+            let slot = self.meshes[*gpu].slot;
+            let source = vertex_offset(slot) + u64::from(span.start) * size;
+            encoder.copy_buffer_to_buffer(
+                &self.buffers[slot.buffer].vertices,
+                source,
+                &readback,
+                read[gpu].1 * size,
+                span.len() as u64 * size,
+            );
+        }
+        self.queue.submit([encoder.finish()]);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        readback.slice(..).map_async(wgpu::MapMode::Read, move |result| {
+            let _ = sender.send(result);
+        });
+        let mapped =
+            self.device.poll(wgpu::PollType::wait_indefinitely()).ok().and_then(|_| receiver.recv().ok()?.ok());
+        let vertices: Vec<Vertex> = match mapped {
+            Some(()) => bytemuck::pod_collect_to_vec(&readback.slice(..).get_mapped_range().expect("mapped above")),
+            None => return Vec::new(),
+        };
+        readback.unmap();
+        field
+            .corners()
+            .map(|(mesh, corners)| {
+                let Some(&(start, first)) = gpu_mesh(mesh).and_then(|gpu| read.get(&gpu)) else {
+                    return Default::default();
+                };
+                corners.map(|c| crate::grass::Light::of(&vertices[(first + u64::from(c - start)) as usize]))
+            })
+            .collect()
+    }
+
+    /// Fills the grass tile meshes the eye at `eye` now wants ([`crate::grass::Ring::update`]).
+    pub(super) fn stream_grass(&mut self, eye: Vec3) {
+        let Some(mut ring) = self.grass.take() else { return };
+        for (index, vertices, bounds) in ring.update(eye) {
+            let mesh = &mut self.meshes[index];
+            if !vertices.is_empty() {
+                let buffer = &self.buffers[mesh.slot.buffer].vertices;
+                self.queue.write_buffer(buffer, vertex_offset(mesh.slot), cast_slice(&vertices));
+            }
+            mesh.bounds = Some((bounds.center, bounds.half_extent));
+            // Only the tile's cards are drawn: past them the mesh holds an earlier tile's.
+            for draw in &mut mesh.draws {
+                draw.indices.end = draw.indices.start + (vertices.len() / 4 * 6) as u32;
+            }
+        }
+        self.grass = Some(ring);
     }
 
     /// Shows or hides stage mesh `index` (the car's interior or exterior set, by camera view).
