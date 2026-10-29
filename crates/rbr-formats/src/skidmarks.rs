@@ -111,24 +111,19 @@ pub fn texture(data: &Data) -> Result<Vec<u8>, String> {
         .ok_or_else(|| format!("{}: skidmarks.dds is truncated", path.display()))
 }
 
-/// The `; "name"` comment lines of the `Skidmarks` section, one per record in order, or empty names when the section
-/// does not have one for every record.
-fn labels(lines: &[&str], count: usize) -> Vec<String> {
+/// The `; "name"` comment lines of the `Skidmarks` section in order. [`parse`] uses them only when there is one
+/// per record, else every record is unnamed.
+fn labels(lines: &[&str]) -> Vec<String> {
     let is_title = |line: &str, title: &str| line.trim().strip_prefix(';').is_some_and(|t| t.trim() == title);
     let start = lines.iter().position(|line| is_title(line, "Skidmarks")).unwrap_or(0);
     let end = lines.iter().position(|line| is_title(line, "Skidmark Aliases")).unwrap_or(lines.len());
-    let names: Vec<String> = lines[start..end]
+    lines[start..end]
         .iter()
         .filter_map(|line| {
             let comment = line.trim().strip_prefix(';')?.trim();
             Some(comment.strip_prefix('"')?.strip_suffix('"')?.to_string())
         })
-        .collect();
-    if names.len() == count {
-        names
-    } else {
-        vec![String::new(); count]
-    }
+        .collect()
 }
 
 /// The value lines of a file after `header` (a `;  <Title>` comment line), each with its line number.
@@ -148,8 +143,12 @@ pub fn parse(text: &str) -> Result<Skidmarks, ParseError> {
     let mut values =
         values_after(&lines, "Skidmarks").ok_or(ParseError { line: 0, message: "no Skidmarks section" })?;
     let count: u32 = field(&mut values)?;
-    let mut records = Vec::with_capacity(count as usize);
-    for label in labels(&lines, count as usize) {
+    let names = labels(&lines);
+    let named = names.len() == count as usize;
+    // No reservation: `count` comes from the file; the loop below fails at the first missing value line.
+    let mut records = Vec::new();
+    for k in 0..count {
+        let label = if named { names[k as usize].clone() } else { String::new() };
         let [material] = fields::<u32, 1>(&mut values)?;
         let [texture] = fields::<u32, 1>(&mut values)?;
         let rgb = fields::<f32, 3>(&mut values)?;
@@ -181,7 +180,7 @@ pub fn parse(text: &str) -> Result<Skidmarks, ParseError> {
     let mut values = values_after(&lines, "Skidmark Aliases")
         .ok_or(ParseError { line: 0, message: "no Skidmark Aliases section" })?;
     let count: u32 = field(&mut values)?;
-    let mut aliases = Vec::with_capacity(count as usize);
+    let mut aliases = Vec::new();
     for _ in 0..count {
         aliases.push(fields::<u32, 2>(&mut values).map(|[from, to]| (from, to))?);
     }
@@ -259,6 +258,15 @@ mod tests {
     fn a_zero_count_section_has_no_records() {
         let parsed = parse(";  Skidmarks\r\n0 ;number\r\n;  Skidmark Aliases\r\n0 ;n\r\n").expect("parse");
         assert_eq!(parsed, Skidmarks::default());
+    }
+
+    #[test]
+    fn huge_counts_are_an_error() {
+        // `u32::MAX` records would be a huge allocation up front; the section ends after one line.
+        let text = ";  Skidmarks\r\n4294967295 ;number\r\n;  Skidmark Aliases\r\n0 ;n\r\n";
+        assert!(parse(text).is_err());
+        let text = ";  Skidmarks\r\n0 ;number\r\n;  Skidmark Aliases\r\n4294967295 ;n\r\n";
+        assert!(parse(text).is_err());
     }
 
     #[test]
