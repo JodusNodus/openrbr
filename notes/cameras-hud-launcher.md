@@ -191,7 +191,8 @@ carry the layout (`gauges.rs`) and the drawing rules (`dials`).
   from its last start, so a replay needs the same install, setup and profile, else it stops with a digest error.
   While watching there is no device input, pause menu or ghost saving: P or Space pauses, R starts over, the
   camera key cycles the views, V resets the mouse look, Esc closes.
-- Replays tab (`replay_page.rs`): cached, newest-first headers from `<files>/replays`, searched by title or filename;
+- Replays tab, after Car setup (`pages::Page::TABS`, `replay_page.rs`): cached, newest-first headers from
+  `<files>/replays`, searched by title or filename or conditions;
   malformed and unfinished files stay visible with their error. Rows show the stage time, recorded time in UTC and
   saved road/cloud/precipitation/fog overrides; details include the stage start time and included penalties. A live
   window saves its last SPL1 beside the replay as `.rrp.splits`, distinguishing a finish, DNF and an interrupted drive;

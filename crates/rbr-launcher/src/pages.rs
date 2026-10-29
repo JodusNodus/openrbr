@@ -23,9 +23,9 @@ pub enum Page {
     /// The quick race: car, stage, conditions, the race options and Start.
     Drive,
     Championship,
-    Replays,
     /// The car setup.
     Setup,
+    Replays,
     Controls,
     /// The window, the camera, the HUD, the pace notes, the sound and the renderer's additions.
     Graphics,
@@ -38,8 +38,8 @@ impl Page {
     const TABS: [(Page, &'static str); 7] = [
         (Page::Drive, "Drive"),
         (Page::Championship, "Championship"),
-        (Page::Replays, "Replays"),
         (Page::Setup, "Car setup"),
+        (Page::Replays, "Replays"),
         (Page::Controls, "Controls"),
         (Page::Graphics, "Graphics & sound"),
         (Page::Settings, "Settings"),
