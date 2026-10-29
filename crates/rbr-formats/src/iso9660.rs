@@ -6,6 +6,7 @@
 //! of 4 GB and more, no interleaving), no Rock Ridge or UDF. The primary volume descriptor's reserved bytes are not
 //! looked at: the retail disc has non-zero bytes there (1395-2047), which libarchive refuses.
 
+use std::collections::HashSet;
 use std::io::{self, Read, Seek, SeekFrom};
 
 /// The logical sector size: descriptors, directories and extents start on these.
@@ -60,7 +61,10 @@ pub fn read_tree<R: Read + Seek>(image: &mut R) -> io::Result<Vec<Entry>> {
     }
     let (start, size, _) = joliet.or(primary).ok_or_else(|| invalid("no primary volume descriptor"))?;
     let mut entries = Vec::new();
-    walk(image, start, size, "", joliet.is_some(), &mut entries, 0)?;
+    // Extents already walked: directory records can point back at an ancestor, which re-walked every level
+    // would expand exponentially.
+    let mut visited = HashSet::from([start]);
+    walk(image, start, size, "", joliet.is_some(), &mut entries, &mut visited, 0)?;
     Ok(entries)
 }
 
@@ -71,6 +75,7 @@ fn walk<R: Read + Seek>(
     prefix: &str,
     joliet: bool,
     entries: &mut Vec<Entry>,
+    visited: &mut HashSet<u64>,
     depth: u32,
 ) -> io::Result<()> {
     if depth > 16 || size > 16 << 20 {
@@ -102,8 +107,8 @@ fn walk<R: Read + Seek>(
         let (start, size, dir) = extent(record);
         let path = if prefix.is_empty() { name.to_owned() } else { format!("{prefix}/{name}") };
         entries.push(Entry { path: path.clone(), dir, start, size });
-        if dir {
-            walk(image, start, size, &path, joliet, entries, depth + 1)?;
+        if dir && visited.insert(start) {
+            walk(image, start, size, &path, joliet, entries, visited, depth + 1)?;
         }
     }
     Ok(())
@@ -236,6 +241,21 @@ mod tests {
         entries.iter().map(|e| (e.path.as_str(), e.dir)).collect()
     }
 
+    /// A minimal image: the root (sector 18) with one file (sector 19, `"abc"`).
+    fn tiny_image() -> Vec<u8> {
+        let mut image = vec![0u8; 20 * 2048];
+        put(&mut image, 16, &descriptor(1, &record(&[0], 18, 2048, true)));
+        put(&mut image, 17, &descriptor(255, &[]));
+        put(
+            &mut image,
+            18,
+            &[record(&[0], 18, 2048, true), record(&[1], 18, 2048, true), record(b"A.;1", 19, 3, false)]
+                .concat(),
+        );
+        put(&mut image, 19, b"abc");
+        image
+    }
+
     #[test]
     fn reads_the_plain_tree_despite_the_reserved_bytes() {
         let entries = read_tree(&mut Cursor::new(image(false))).unwrap();
@@ -259,6 +279,54 @@ mod tests {
         let mut rest = Vec::new();
         file.read_to_end(&mut rest).unwrap();
         assert_eq!(rest, b"bc");
+    }
+
+    #[test]
+    fn damaged_images_never_panic() {
+        let image = tiny_image();
+        crate::damage::never_panics(&image, &[0, 0x7f, 0xff], |b| {
+            let _ = read_tree(&mut Cursor::new(b));
+        });
+    }
+
+    #[test]
+    fn directories_pointing_back_do_not_expand() {
+        // A folder pointing back at the root: the old walk re-read it at every level, blowing up.
+        let mut image = tiny_image();
+        image[18 * 2048..19 * 2048].fill(0);
+        put(
+            &mut image,
+            18,
+            &[record(&[0], 18, 2048, true), record(&[1], 18, 2048, true), record(b"SUB", 18, 2048, true)]
+                .concat(),
+        );
+        assert_eq!(paths(&read_tree(&mut Cursor::new(image)).unwrap()), [("SUB", true)]);
+        // A two-folder loop: the root holds A, A holds B, B points back at A.
+        let mut image = vec![0u8; 22 * 2048];
+        put(&mut image, 16, &descriptor(1, &record(&[0], 18, 2048, true)));
+        put(&mut image, 17, &descriptor(255, &[]));
+        put(
+            &mut image,
+            18,
+            &[record(&[0], 18, 2048, true), record(&[1], 18, 2048, true), record(b"A", 20, 2048, true)]
+                .concat(),
+        );
+        put(
+            &mut image,
+            20,
+            &[record(&[0], 20, 2048, true), record(&[1], 18, 2048, true), record(b"B", 21, 2048, true)]
+                .concat(),
+        );
+        put(
+            &mut image,
+            21,
+            &[record(&[0], 21, 2048, true), record(&[1], 20, 2048, true), record(b"BACK", 20, 2048, true)]
+                .concat(),
+        );
+        assert_eq!(
+            paths(&read_tree(&mut Cursor::new(image)).unwrap()),
+            [("A", true), ("A/B", true), ("A/B/BACK", true)]
+        );
     }
 
     #[test]
