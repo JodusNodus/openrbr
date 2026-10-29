@@ -2174,7 +2174,7 @@ const GROUND_MAGNIFIED: vec2<f32> = vec2<f32>(0.4, 1.0);
 const GROUND_KEEP: f32 = 0.7;
 const ASPHALT_BLUR: f32 = 3.0;
 const ASPHALT_MEAN: f32 = 6.0;
-const ASPHALT_GREY: vec2<f32> = vec2<f32>(0.15, 0.3);
+const ASPHALT_GREY: vec2<f32> = vec2<f32>(0.1, 0.18);
 // The scan's strengths (detail, relief, hollows) on the paved mesh's grass shoulders: what it was before the road's.
 const ASPHALT_SHOULDER: vec3<f32> = vec3<f32>(0.5, 0.35, 0.24);
 const ASPHALT_LINE: vec2<f32> = vec2<f32>(1.1, 1.3);
