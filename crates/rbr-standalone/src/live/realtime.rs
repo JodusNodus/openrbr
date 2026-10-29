@@ -122,8 +122,7 @@ pub fn serve_realtime<'a>(
     let step = f64::from(live.clock.step);
     let period = Duration::from_secs_f64(step);
     let mut stats = Stats::default();
-    // Game time not answered yet, and the step the next answer starts at.
-    let (mut unanswered, mut answer_from) = (0.0, live.next_step());
+    let mut answering = Answering::new(&live);
     loop {
         let feed = wake.wait_while(lock.lock().unwrap(), |f| !f.running && f.end.is_none()).unwrap();
         if feed.end.is_some() {
@@ -157,15 +156,17 @@ pub fn serve_realtime<'a>(
             if std::mem::replace(&mut lock.lock().unwrap().restart, false) {
                 // The stage starts over in process, answered with its first frame like the first RESUME's.
                 live.restart();
-                unanswered = 0.0;
+                if let Some(log) = log.as_mut() {
+                    log.write_all(&Logged::RESTART.to_bytes()).map_err(|e| e.to_string())?;
+                }
                 (origin, ticks) = (Instant::now(), 0);
                 let mut payload = Input { frames: 0, ..input }.to_bytes();
                 if let Some(own) = pilot.as_mut().and_then(|p| p.payload(&live, None)) {
                     payload = own;
                 }
                 last = live.answer(&payload)?;
-                answer_from = live.next_step();
-                logged(&mut log, &live, payload, 1, answer_from - live.start)?;
+                answering = Answering::new(&live);
+                logged(&mut log, &live, payload, 1, live.next_step() - live.start)?;
                 write(&mut output, &last).map_err(|e| e.to_string())?;
                 stats.answers += 1;
                 continue;
@@ -183,14 +184,8 @@ pub fn serve_realtime<'a>(
             if substeps > 0 {
                 write(&mut output, &step_record(&live, seq).to_bytes()).map_err(|e| e.to_string())?;
             }
-            unanswered += f64::from(periods) * step;
-            let answers = (unanswered / f64::from(STEP_SECONDS) + ANSWER_SLACK) as u32;
-            if answers > 0 {
-                unanswered = (unanswered - f64::from(answers) * f64::from(STEP_SECONDS)).max(0.0);
-                live.picture();
-                let echo = Input { flags: 0, frames: if answers == 1 { 0 } else { answers.min(255) as u8 }, ..input };
-                last = live.answer_bytes(&echo.to_bytes(), answer_from, live.next_step() - answer_from);
-                answer_from = live.next_step();
+            if let Some(answer) = answering.after(&mut live, periods, input) {
+                last = answer;
                 write(&mut output, &last).map_err(|e| e.to_string())?;
                 stats.answers += 1;
             }
@@ -203,6 +198,37 @@ pub fn serve_realtime<'a>(
 
 /// The fraction of a 7 ms answer period that counts as whole: the steps' f64 sum misses 7 ms by an ulp.
 const ANSWER_SLACK: f64 = 1e-6;
+
+/// The answers of a clocked run: one per 7 ms of game time, standing for the frames since the last.
+struct Answering {
+    /// Game time not answered yet, s.
+    unanswered: f64,
+    /// The step the next answer starts at.
+    from: u32,
+}
+
+impl Answering {
+    /// From the frame `live` answered last.
+    fn new(live: &Live) -> Answering {
+        Answering { unanswered: 0.0, from: live.next_step() }
+    }
+
+    /// After a frame of `periods` steps' time that took `input`: the answer, once the time makes up 7 ms (the input
+    /// echoed with the answer's periods, more than one after a stall).
+    fn after(&mut self, live: &mut Live, periods: u32, input: Input) -> Option<Vec<u8>> {
+        self.unanswered += f64::from(periods) * f64::from(live.clock.step);
+        let answers = (self.unanswered / f64::from(STEP_SECONDS) + ANSWER_SLACK) as u32;
+        if answers == 0 {
+            return None;
+        }
+        self.unanswered = (self.unanswered - f64::from(answers) * f64::from(STEP_SECONDS)).max(0.0);
+        live.picture();
+        let echo = Input { flags: 0, frames: if answers == 1 { 0 } else { answers.min(255) as u8 }, ..input };
+        let answer = live.answer_bytes(&echo.to_bytes(), self.from, live.next_step() - self.from);
+        self.from = live.next_step();
+        Some(answer)
+    }
+}
 
 /// The step record after a frame: the force the wheel gets (through the racing gate) and the car's control now, and
 /// the input `seq` the frame took.
@@ -244,6 +270,8 @@ pub fn serve_frames<'a>(
         return Err("--frames: not a frame stream (RTF1)".to_owned());
     }
     let (mut frames, mut checked, mut steps) = (0, 0, 0);
+    // The frame that starts the stage: the first, and the first after a restart.
+    let mut first = true;
     let mut bytes = [0; LOGGED_BYTES];
     loop {
         match input.read_exact(&mut bytes) {
@@ -251,13 +279,18 @@ pub fn serve_frames<'a>(
             r => r.map_err(|e| e.to_string())?,
         }
         let mut frame = Logged::from_bytes(&bytes);
+        if frame.is_restart() {
+            live.restart();
+            first = true;
+            continue;
+        }
         // `--pilot` replaces each frame's payload with its own (screenshots of a drive nobody plays).
         if let Some(own) = pilot.as_mut().and_then(|p| p.payload(&live, last.as_deref())) {
             frame.payload = own;
         }
         let (pre, substeps) = live.run(&frame.payload, frame.periods, true)?;
         // The first frame is the snapshot's own call, whose steps count from the image's.
-        let substeps = if frames == 0 { live.next_step() - live.start } else { substeps };
+        let substeps = if std::mem::take(&mut first) { live.next_step() - live.start } else { substeps };
         if frame.checked() {
             let digest = realtime::digest(&pure::frame_bytes(&live.playback.pure.mem));
             if (substeps, digest) != (frame.substeps, frame.digest) {
@@ -275,6 +308,121 @@ pub fn serve_frames<'a>(
         (frames, steps) = (frames + 1, steps + substeps);
     }
     Ok((live, format!("{frames} frames ({steps} steps), {checked} compared, all equal")))
+}
+
+/// How `--replay` runs the drive's frames.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Pace {
+    /// On the clock, as the drive ran them: the viewer watches.
+    Clock,
+    /// Back to back, as fast as the answers are read (a video's offline render); the output ends with the frames.
+    Free,
+}
+
+/// `--replay`: serves the real-time protocol with a replay's `frames` (`rbr_recording::replay`, the frames of its last
+/// start) in place of the viewer's input, each run as the clock ran it and compared with the drive's substeps and
+/// digest. The viewer's PAUSE and RESUME stop and go on, RESTART starts the replay over; at its end the clock waits
+/// for a RESTART or the input's end, or under [`Pace::Free`] the run ends. Returns the run and the comparison's line;
+/// an error at the first frame that differs.
+pub fn serve_replay<'a>(
+    mut live: Live<'a>,
+    frames: &[Logged],
+    input: impl Read + Send + 'static,
+    mut output: impl Write,
+    pace: Pace,
+) -> Result<(Live<'a>, String), String> {
+    let (first, rest) = frames.split_first().ok_or("the replay has no frames")?;
+    let shared: Shared = Arc::default();
+    let reader = Arc::clone(&shared);
+    thread::spawn(move || read_feed(input, reader));
+    let (lock, wake) = &*shared;
+    let write = |out: &mut dyn Write, bytes: &[u8]| out.write_all(bytes).and_then(|()| out.flush());
+    let compare = |live: &Live, at: usize, frame: &Logged, substeps: u32| {
+        let digest = realtime::digest(&pure::frame_bytes(&live.playback.pure.mem));
+        if !frame.checked() || (substeps, digest) == (frame.substeps, frame.digest) {
+            return Ok(());
+        }
+        Err(format!(
+            "the replay differs at frame {at}: {substeps} substeps, digest {digest:#018x}; the drive's {} substeps, \
+             {:#018x} (another build, install, setup or profile than the drive's)",
+            frame.substeps, frame.digest
+        ))
+    };
+    // The stage's start: the first frame, answered before the clock runs.
+    let start = |live: &mut Live<'a>, output: &mut dyn Write| -> Result<Answering, String> {
+        let answer = live.answer(&first.payload)?;
+        compare(live, 0, first, live.next_step() - live.start)?;
+        write(output, &answer).map_err(|e| e.to_string())?;
+        Ok(Answering::new(live))
+    };
+    let feed = wake.wait_while(lock.lock().unwrap(), |f| !f.first && f.end.is_none()).unwrap();
+    if feed.end.is_some() {
+        drop(feed);
+        return Ok((live, "not watched".to_owned()));
+    }
+    drop(feed);
+    let mut answering = start(&mut live, &mut output)?;
+    let period = Duration::from_secs_f64(f64::from(live.clock.step));
+    let (mut next, mut steps) = (0, 0u64);
+    'run: loop {
+        let feed = wake.wait_while(lock.lock().unwrap(), |f| !f.running && f.end.is_none()).unwrap();
+        if feed.end.is_some() {
+            break;
+        }
+        let resumes = feed.resumes;
+        drop(feed);
+        let (mut origin, mut ticks) = (Instant::now(), 0u64);
+        loop {
+            let Some(frame) = rest.get(next) else {
+                if pace == Pace::Free {
+                    break 'run;
+                }
+                // The end: the last answer stays until a restart, a pause or the input's end.
+                let feed = wake
+                    .wait_while(lock.lock().unwrap(), |f| {
+                        f.end.is_none() && f.running && !f.restart && f.resumes == resumes
+                    })
+                    .unwrap();
+                if feed.end.is_some() || !feed.running || feed.resumes != resumes {
+                    continue 'run;
+                }
+                drop(feed);
+                (origin, ticks) = (Instant::now(), 0);
+                continue;
+            };
+            ticks += u64::from(frame.periods);
+            if pace == Pace::Clock {
+                thread::sleep((origin + period.mul_f64(ticks as f64)).saturating_duration_since(Instant::now()));
+            }
+            {
+                let mut feed = lock.lock().unwrap();
+                if feed.end.is_some() || !feed.running || feed.resumes != resumes {
+                    continue 'run;
+                }
+                if std::mem::take(&mut feed.restart) {
+                    drop(feed);
+                    live.restart();
+                    answering = start(&mut live, &mut output)?;
+                    (next, steps, origin, ticks) = (0, 0, Instant::now(), 0);
+                    continue;
+                }
+            }
+            let (_, substeps) = live.run(&frame.payload, frame.periods, false)?;
+            compare(&live, next + 1, frame, substeps)?;
+            (next, steps) = (next + 1, steps + u64::from(substeps));
+            if substeps > 0 {
+                write(&mut output, &step_record(&live, 0).to_bytes()).map_err(|e| e.to_string())?;
+            }
+            let input = match Payload::read(&frame.payload) {
+                Ok(Payload::Input(input)) => input,
+                _ => Input::default(),
+            };
+            if let Some(answer) = answering.after(&mut live, frame.periods, input) {
+                write(&mut output, &answer).map_err(|e| e.to_string())?;
+            }
+        }
+    }
+    Ok((live, format!("{} of {} frames ({steps} steps) run, all equal", next + 1, frames.len())))
 }
 
 /// The clock's figures, printed at the end.

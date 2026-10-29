@@ -17,7 +17,8 @@
 //!
 //! `--frames-out FILE` logs every frame the clock ran as a [`Logged`] record after [`LOG_MAGIC`], and `--frames FILE`
 //! (or `-`, stdin) runs such frames instead of the clock, answering each: a log replays the live drive bit for bit,
-//! and a tool steps in lockstep by writing a frame and reading its answer ([`Logged::unchecked`]).
+//! and a tool steps in lockstep by writing a frame and reading its answer ([`Logged::unchecked`]). A restart is logged
+//! as [`Logged::RESTART`], and the frames after it run from the stage start again (`crate::replay`).
 
 use crate::CONTROL_BYTES;
 
@@ -124,6 +125,13 @@ pub struct Logged {
 }
 
 impl Logged {
+    /// The stage started over (`RESTART`): a frame of no periods.
+    pub const RESTART: Logged = Logged { payload: [0; CONTROL_BYTES], periods: 0, substeps: 0, digest: 0 };
+
+    pub fn is_restart(&self) -> bool {
+        self.periods == 0
+    }
+
     pub fn to_bytes(&self) -> [u8; LOGGED_BYTES] {
         let mut out = [0; LOGGED_BYTES];
         out[..CONTROL_BYTES].copy_from_slice(&self.payload);
