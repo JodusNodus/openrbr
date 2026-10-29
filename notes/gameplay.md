@@ -13,6 +13,7 @@ Mechanics in `tick.rs` (clock, clamp, whole steps, `facc`, settle counts) and `g
 work); 7 ms steps and the 160 settle steps in `rbr_recording::clock`. Check: `tests/schedule.rs` (all four drives).
 
 - The step is 0.007 s from retail `Root/physics.rbz` (the CHELALIC `physics.dat` copy's 0.01 is not loaded).
+- The frame's physics call is the physics' `Vf0C` (0x526a10).
 
 ## Control payload
 
@@ -21,6 +22,7 @@ Words, pack bytes, flag map and the NGP handler in `control.rs` (`QuantizedContr
 `tests/recordings.rs`. Words: throttle, brake, handbrake, clutch, steering (float), flags, gear, aux.
 
 - Measured: throttle 1.0 speeds the car up; brake 0 to 1 (`control.rs` cites this note for both).
+- Steering comes back out through `Unpack` (0x48c9c0): `byte * 2 / 255`.
 
 ### Device poll
 
@@ -44,8 +46,8 @@ Mechanics in `filter.rs` (grid, curve, `Step`, `Pack`, `notify_a`, `Reset`, prof
 `new_game`). Checks: `tests/filter_peek.rs` (grid and zero-input path per step), `tests/filter_vectors.rs` with
 `harness/vector_specs/gameplay_filter.py` (curve and `Pack` fuzzed).
 
-- RSF's renamed-away file leaves the built-in grid, whose digital steering runs at a tenth of the retail file's
-  rates (not in code).
+- RSF renames the install's file to `PC_InputFilter.ini.bak`, leaving the built-in grid, whose digital steering runs at a tenth of the retail file's rates (not in code).
+- Live play takes the profile grid from `--saves`/`--profile` on the NGP path only; FRM1 holds the payload after the filter, so `--boot` never runs it.
 
 ## Stage states
 
@@ -75,6 +77,7 @@ Mechanics in `flow.rs` (flow words, finish, replay limit, retire codes, end page
 byte again).
 
 - tanner-corolla runs 874 steps past the finish with the clock stopped (evidence for the 20 s timer rule).
+- tanner-corolla: finish 233.67441 s, splits 69.84889 and 143.56372 s, the go frame getting no time; boot and live give it a step (233.68141, 69.855896, 143.57072 s).
 - Full replay buffer (`ReplayRuns`), not in code: `E19ClsScan` (0x499ff0) keeps runs of equal nine-byte controls
   (max 0xffff steps each); at run index 0x20f56 `E19QccFire` (0x49af10) emits no control, the step still runs, then
   `TicPhysicsRecording` (0x47f4fb) emits `CSigEndRace` with 1 and zero times (a control changing every step fills
@@ -91,6 +94,7 @@ path (`--seed` is the viewer's). Evidence drives: `drive-rcv-help-corolla-34`, `
 `-retire-impreza00-45` (checks in `rbr-gameplay/tests/race_clock_peek.rs`,
 `rbr-render/tests/scripted_data.rs`).
 
+- The flip spectators are five `load_car_flipN.lua`, cosmetic; `run_car_flip.lua` never runs.
 - Bird strike feeds only the sound. Crash-site scripts are unused in retail.
 
 ## Race options
@@ -98,6 +102,8 @@ path (`--seed` is the viewer's). Evidence drives: `drive-rcv-help-corolla-34`, `
 Mechanics in `race_options.rs` (menu words, damage level, aids, penalties, gate). Checks: level 1 with default aids
 (tanner-corolla 13000/13000), level 3 (tanner-damage 12120/12120), championship Rookie and Champion on
 tanner-corolla.
+
+- The aids go into the control unit's setup through `InitializeCarSetting` (0x547530).
 
 - Not checked: levels 0 and 2, non-default aids, auto gears.
 
@@ -107,6 +113,7 @@ Mechanics in `weather.rs` (daemon, season-table draw, grip path); ours in `rbr-s
 `--season-row`, `--wear`, `--wetness`) and the launcher. Sky, fog, precipitation, windscreen and wipers are
 presentation: [renderer.md](renderer.md), [sound.md](sound.md).
 
+- Any season-table row starts like Random with that row (`--weather 1 --season-row K`); good rows come from `misc/nice_w.ini`, bad rows from `bad_w.ini`.
 - Wet surfaces are separate physics records with lower friction (wet/dry static 0.71-0.88, not in code).
 
 ## Championship and service
