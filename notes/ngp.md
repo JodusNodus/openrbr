@@ -206,11 +206,11 @@ about `+0x9a0` times `+0x9c0`/`+0x9c4` (`inv_arm`, `inv_rack` from 0x53b900; nam
 0x4e76c0). Per frame `EmitForce` 0x491930 -> `E28_GetFFBVal` 0x4c5f90 -> `m = trunc(-10000 x)` -> `SetFFBValue` 0x4c6b40. Rumble
 (`HandleDamage`, `HandleNoise`) never reaches DirectInput.
 
-NGP keeps the torque and gate and changes the curve and output (`ngp::ffb::curve`, `sensitivity`,
+NGP keeps the torque and gate and changes the curve and output (`ngp::ffb::curve`, NGP's `0x10042120`; `sensitivity`,
 `rbr_gameplay::ffb::{magnitude, dead_zone, racing_gate}`, `rbr_render::ffb::Wheel`; launcher `[ffb]`,
 `rbr-standalone --ffb-sensitivity G,T,S`, `--trace-out` `.ext` vs `harness/rsf_compare.py`):
 
-- The racing gate's exe detail, past `0x5403e0` case 0xb (`0x1003c3eb`): it holds when `[[0x8951d0] + 4]` is set
+- The racing gate's exe detail, past `0x5403e0` case 0xb (`0x5407b2`, called from 778 `0x1003c3eb`): it holds when `[[0x8951d0] + 4]` is set
   (not traced), or in app state 1 with FFB on (`0x1660ed4`) and `0x5fe390(0)` on `[0x167ea70]` (slot 0 not running,
   `+0x24 != 2`, or past its end `+0x4`; not shown to be the start timer). Ours gates on app state 1 alone, where
   the drives open it (cachy wheel trace, autopilot: 0 through load, countdown, after finish).
@@ -260,8 +260,9 @@ module docs; drive observations only:
 - Unused FFB keys `[NGP]` `adaptiveFFB`, `ffbBufferCycles`, `ffbMinFPS`: dead in 778 and 779 (a key builder and
   accessor each at 779 `0x10072fa0`, `0x10073490`, `0x10073dd0` that nothing calls, jumps to or holds the address
   of; settings init 779 `0x1009c1c0` reads the others).
-- Profile: on, 1.0, normal, autocenter off (not in the session). Rotation per car not seen applied (sysfs `range`
-  540 before and after drive2).
+- Profile: on, 1.0, normal, autocenter off (not in the session). Rotation per car (`NGPCarMenu.ini` `[Default]`
+  `AdjustSteeringRotation` (1), `[car<id>]` `steeringrotation`, else `cars_data.json` `steering_wheel`) not seen
+  applied (sysfs `range` 540 before and after drive2).
 - Aids: drive1/drive2 all off, the profile agrees; drive2/2 45276/45486 equal with them.
 - Head gasket: RSF 10, test install 1 (RSF's toggle: on 10, off 1); scale and bias in
   `ngp::layout::runtime::head_gasket`.

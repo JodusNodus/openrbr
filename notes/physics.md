@@ -259,8 +259,8 @@ Fences (`.fnc`) are cloth and never touch the car.
 
 ## Damage
 
-`src/car_body/damage*.rs` (offsets, functor tables, levels and clamp in the file docs). Load-table check:
-`load_defs::damage_ops_tables_match_lcb1_load_dump`.
+`src/car_body/damage*.rs` (offsets, functor tables, levels and clamp in the file docs). Four table values at
+`+0x2a88..+0x2b90` are 0.1f: `load_defs::damage_ops_tables_match_lcb1_load_dump`.
 
 ## Tweak keys
 
