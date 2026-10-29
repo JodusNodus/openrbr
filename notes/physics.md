@@ -177,230 +177,90 @@ SpringStore>`), never `dyn`, so the `Mem` path compiles as before.
 
 ## Physics core
 
-`src/physics_core/`: the model is `math` (vectors, matrices, force accumulation, mounted body), `detect` (box
-cells, edge sweep, grid bounds), `detectors` (gates, probe box, step fraction), `contact`, `passenger` (spring,
-pull, time decode), `pacing` (clock, single and sub-stepping), `signal` (trap rule, placement kinds), `prof`,
-`debug`. Everything touching memory or calling the original is in `layout/`: object images and constructors
-(`construct`, `material`, `mounted*`, `passenger_ctor`, `physics_object`, `setup`, `flags`), walks and host traits
-(`contact_walk`, `detect_calls`, `detector_calls`, `detector_hosts`, `collide_work`, `signal_emit`, `step_forward`).
-`CPhysics` (0xf8): `+0x1c` contact hit, `+0x20/+0x24/+0x28` state, def, scratch. CScratch `+0x10` is the solver,
-`+0xe848` the handler stack (top `+0xe888`, -1 empty). Detectors walk the node, not `this`: `PenCheck` det =
-`{0x73f5b4, 1.0, scratch+0x10, state}`, `Work6a70` det = `{0x73f7b0, f, scratch+0x10}`. `E46Mat` (10 floats):
-`Mul`, `ScaleRows` use row vectors, `XformRows`, `MulVec` column vectors; `ScaleRows` lane 3 is `x*m3 + y*m6 +
-z*m9`. `E46_IdxWrite` (0x528980) clamps below to `(0,1,0)`, above to `(n-2,n-1,1)`.
-
-Signals: every `CMultiSignal1::Emit` is one template (instances differ in the logged name, `EMIT_NAMES` in
-`rbr-hybrid`). A set guard logs `E01Log(6, 0, ...)` and returns; a count of 32 or more logs `E01Log(7, 0, ...)` and
-runs `int3` (entry + 0x3d), so the bindings decline only that (`layout::emit_traps`, `signal::traps`);
-`physics_core_vectors` `emit_*_matches` replay the guard path. `E01Log` (0x43c8e0) is `GameLog` (0x490f50): the sink
-of (channel, level) from 0x7c29d8 and 0x7c615c; the debugger's sink (0x4dedb0) formats into 0x7ece58 and copies the
-text to an `operator new` block for `OutputDebugStringA`, the file sink (0x4ded80) writes nothing with no log file
-open. `game_log::format` is msvcr71's `vsprintf`, `%f` through `$I10_OUTPUT`'s 96-bit arithmetic (`game_log::ld12`,
-its power tables read from the DLL in a test): `game_log_vectors`, 4000 direct calls.
+`src/physics_core/` (model per quantity in the file headers; everything touching memory or calling the original in
+`layout/`; logs in `src/game_log/`, table search in `src/math/table.rs`). Detector vtables `PenCheck`/`Work6a70`
+take `0x73f5b4`/`0x73f7b0` (structure in `layout/detector_calls.rs`). Handler-stack base `+0xe848` (top `+0xe888`,
+-1 empty). The row/column helpers are `mul_rows`/`transform_xyz`, not the exe's `XformRows`/`MulVec` names. The emit
+guard's `int3` sits at entry + 0x3d. `game_log_vectors`: 4000 direct calls.
 
 ## Rigid body
 
-`src/rigid_body/`. `CSolid` (0x3d0). NTweak values sit at `+0xc` (CReal) or `+0x10` (CVector) of the member. Def
-(`+0x34`): inverse inertia `+0x130`, `InverseMass` `+0x16c`. Body: flags byte `+0x60` (0x4 contact body, 0x8 contact
-list), parent `+0x44`, quaternion `+0x100` (w last), position `+0x140`, `w` `+0x190`, `v` `+0x1c0`, history
-`+0x200`/`+0x220`, progress `+0x290`, window start `+0x2a0`/`+0x330`, force `+0x370`, accel `+0x320`/`+0x380`.
-
-- `Accum250` (S60): `F = MB560(gravity CDef+0x160b0, S30) / InverseMass`, into `Accum340` (`+0x370 += v * +0xd0`).
-- `Vf25x` (S64): vote `Vf81x`, contact list `BigB` (0x52c220) when flag 8, `+0x380 = R(F * InverseMass)` from
-  `+0x370`, `+0x320` from the torque shell, then clears `+0x370` and `+0x310`.
-- `Vf27x` (S6C): `w += alpha dt`, `v += a dt`; with flag 8, `|v|^2 < 1e-5` zeroes `v` and `|w|^2 < 1e-5` zeroes `w`;
-  `VfC8(dt, lin, ang)` (`q = normalize(M83DD0((0.5 dt w, 1), q))`, `p += dt v`, parent path, flag-8 track progress
-  via `SampleBig` 0x50b300); estimates `(x - x_prev)/dt`, filters `0.2 old + 0.8 est`; history copies; `E43Vf6C`;
-  `Vf24x` sleep; emit `CSigMrRBodyState` (its 16-byte position copy at `+0x14` overwrites the quaternion's x:
-  original).
-- `VfDx(a)` (0x52cfd0): if `a < progress`, `q = normalize(a q + (1-a) q_start)`, `p = a p + (1-a) p_start`; root
-  link `this+0x160`. `VfEx(a)` (0x52d110): `s = (1 - progress) a`, quaternion turned by `0.5 s w`, position by the
-  full `s v`, progress 1.
-- `Vf74x` (0x52a0e0), impulse: `v += J * InverseMass`, `w += 0.6 * I^-1 (r x J)`.
-- `BigB` per record: `dir * 5000 * clamp(0.5 fraction)` plus, when `|W| > 1e-4`, `(W/|W|) * clamp(5 weight) *
-  min(|W|, 10) * -50`, in that order.
-- `BigA` (`contact.rs`): the contact record `e` reads as `id`, `stiffness` (`+0x10`, the force slope; zero selects
-  the gravity branch), `force_cap` (`+0x14`, caps the force, selects the capped branch when above zero),
-  `tangent_cap_0/1` (`+0x18`/`+0x1c`, neutral names: their mean times the normal force caps the tangential push).
-  Inputs: the contact, the body's `inverse_mass` (`def+0x16c`), the world's `MaxTimeStep` (`CDef+0x1608c`, scales
-  the tangential push), the caller's `range` (the vote passes 1.0; scales the gravity stiffness). The hit writes the
-  transformed force and its torque (`Impulse::force`/`torque`, applied as force/torque through slots 28/29). Offsets
-  stay in `layout::contacts::load_contact`.
+`src/rigid_body/` (`layout/` offsets; contact record in `layout::contacts::load_contact`; behavior per function in
+the file docs: `force.rs`, `integrate.rs`, `impulse.rs`, `contact.rs`, `contact_list.rs`, `window.rs`). The step's
+S60/S64/S6C are slots 25/27 (code: `Vf25x`/`Vf27x`, no S-numbers). Flag 0x4 at `+0x60` is the parent-updates-child
+bit, not a "contact body" name.
 
 ## Car body
 
-Original to Rust modules (`layout/` holds the offsets and callee addresses): `Vf6cx` `step.rs` (`step_car`),
-`Vf28x` `publish.rs`, `Vf64x` `forces.rs`, `UpdateSeed` `control.rs`, `ApplySeed` `setup.rs`, `UpdateMrr`
-`wiring.rs`, `Update9AF0` `retire.rs`, `Sample9800` `sensors.rs`, E36 helpers `helpers.rs`, aero
-`wall_friction.rs`; `ports.csv` maps each address.
-
-`src/car_body/`. `CCar`: def `+0x34`, grid `+0x64`, damage handler `+0x3cc` (copied to `+0x9f4`), wheels `+0x470`,
-hinged `+0x480`, mounted `+0x490`, drive `+0x4b0`, engine `+0x690`, lights `+0x838`, VCU scratch `+0x850`,
-passenger `+0x8b0`, state `+0xa00`. `Vf6cx`: timer `+0x1670 -= dt` (floor 0), brake-wall ray, `+0x166c`
-penetration, speed `+0x15fc`. The 28-byte brake-wall hit is `step::WallHit` (`normal`, dimensionless `penetration`
-`+0x10`, `perpendicular` `+0x14`, `flags` `+0x18`; `+0xc` is unwritten residue the port round-trips, the impulse may
-rewrite the bytes and the penetration is re-read after it). Mounted gates are neutral names by use:
-`mounted_step_ready` (state word 1, the body steps), `mounted_detach_ready` (state word 2, the detach path runs;
-0x521920/0x521940). Hinged/mounted slots clear through `CarStore` (`hinged_body`, `clear_hinged_body`,
-`clear_mounted_body`), the speed sum through `set_speed_sum`. `Hook`: steer slew of `+0xafc` toward `+0x16a4` at
-20/s, rack `+0xb0c`, VCU, drive (0x50a1e0), `E43Vf58`, `Damp66D0`, FFB filter `Hook1FF0`. Drag `Sim7DC0`: `-0.5 Cd A
-|v| v` (`def+0x4490`, `+0x4480`), arm `(0,0,0.05)`, spin damping `-5(|w|-5)^2 w/|w|` above 5 rad/s. `Sim7AD0` weighs
-by `clamp(0.01 speed)` of the raw speed. `Xform6870` calls `ComposeA` with no pushes of its own. `Snap9360`
-(0x4e9360, StepEngine with `+0x9e4` set; 0 in every snapshot) emits the animated replay's state
-(`CSigCarStateAnimatedReplay`, 0x4e85b0); its payload's first 16 bytes and an absent wheel's pair are stale stack.
-The car's `CMultiSignal1::Emit` template logs `E01Log(6, 0, 0x730358, name)` and returns when busy; an index `>=
-0x20` logs and traps (`int3`). Debug graphs (`graph`): `CGraph2D::Push` (0x495090, car `+0x16ac`, CDef `+0x160e0`
-bit 0x10) and `CGraph1D::Push` (0x494cf0, engine, bit 0x200) sample every period-th push into a ring; both bits are
-clear in retail.
+`src/car_body/` (module per function in the file headers; offsets and callee addresses in `layout/`; `ports.csv`
+maps each address). `Xform6870` calls `ComposeA` with no pushes of its own.
 
 ## Jointed bodies
 
-`src/entities/` (hinged; the model is in `hinge_*.rs` by quantity: pose, limit springs, end stops with restitution,
-pivot and slip torques, solve; `layout/` has the offsets) and `src/physics_core/` (mounted, passenger).
-`CHingedRigidBody` (0x660, vtable 0x73d23c): `+0x3d0` is the owner car, not a def. Angles `+0x3e8+4i`, `+0x3fc`,
-rate `+0x40c`. `SimCF10(idx)` limit term per Block60 (any idx: SimEA80 passes 0 and 1) (`def+0x1f0+0x60i`, mode 2
-active); `SimCFF0` sums `(y*c1 + z*c2) + x*c0` and returns `(r1*c1 + r2*c2) + r0*c0`, negating when unordered.
-`SimEFE0` stores the angle as float bits at `+0x3fc` and copies the rotation from `+0x100`. `CMountedRigidBody`
-(0x590): owner `+0x3d0`. `CPassenger::Step` (0x523160): spring `M29E0` (30000, 900).
+Hinged model per quantity in `src/entities/hinge_*.rs`, offsets in `layout/`; mounted and passenger in
+`src/physics_core/`. All sizes, offsets and rules in the file docs.
 
 ## Wheel
 
-`src/wheel/`: model modules name quantities (`axes::wobbled_axle`, `refresh::hub_frame`, `sector::pick_sector`,
-`contact::mix_contacts`); memory, the store seam and calls out are in `layout/` with every address. A CDef real is
-read at `+0xc` of its key's offset (`SteeringRodLength` `+0x230` read at `+0x23c`), which is how the refresh's words
-got their names: `WishboneLength`, `WishboneSign`, `SteeringSign`, `StrutDimX`, `DriveAxleMountOffset`, `IsSteered`,
-and the NGP damage keys (`TopMountDamageForceThreshold`, `TopMountDamageMaxForce`, `HubDamageTorqueThreshold`,
-`HubDamageMaxTorque`, `AxisInclinationDamageAngle`) for the damage record at `+0x7f0` (`+0` up damage, `+4` side
-damage, `+0x10` hub damage; names by use). The real after `StrutDimX` (`+0x3fc`) is read as the strut's z extent;
-the key table lists `StrutDimZ` at `+0x400`.
-
-`M3DD30` (0x53dd30, slot 96): clamp travel `+0x5bc` to the strut range, frames, spin `+0xa50` from
-`car.Fwd6DB0(+0xeb4)`, ground probe (`M3D520`; off ground sets `+0xebc = 0`), tyre step on `wheel+0xf00` (the
-wheel's own scratch is `+0x800`), strut: `v = (v + dt m (g + o1 + o2 + f34)) / (1 + dt m o3)` with `m = def+0x16c`,
-`g` from `CCar::GetA48` (0x4e6730), clamped to ±100, `x += dt v`, no int conversions. Host calls take the callee's
-entry stack pointer from the asm's pushes.
-
-- `Unk94d0` (0x5394d0, `layout::split_on_sub`): splits `v` (xyz only) on the sub-object's axis `sub+0x20`; remainder
-  to `wheel+0xe40`, its lane 3 the stale stack word at `((esp-4)&~0xf)-0x14`; returns `wheel+0xe40`. Unicorn picks
-  between two NaNs the x87 way (larger significand, then positive), not SSE's first operand, so its records differ
-  from `math::sse` in NaN sign only (seen both orders).
-- `M3B880` (0x53b880, `refresh_travel`): only the clamp of `+0xedc` to 0 has an effect; its overlay (0x539bb0) and
-  the ClearBias/ComputeTravel/TravelRange calls write only their own frame (direct records with every flag
-  combination: no other write). Returns the flag word when bit 0x400 is clear, else the old `+0xedc`.
-- `E51Wheel::Ctor` (0x53b6e0): with an owner it wakes the solid through `CSolid::E43Vf90` (0x52bf30) on the wheel.
-- `CSolid::Step77` (0x529d30, `vote::probe_ground`): plain thiscall `ret 8`. `Step77` and `M3B880` run from
-  `CWheel::Vf28` (per frame), not in the physics step.
+`src/wheel/` (quantities in the model modules, memory and calls out in `layout/`; CDef-key reals in `refresh.rs`
+and `refresh_pose.rs`, NGP damage keys in `data/ngp-lsp-keys.md`). The asm has no int conversions. Unicorn picks
+between two NaNs the x87 way, so its records differ from `math::sse` in NaN sign only.
 
 ## Tyre
 
-`src/tyre/`. `CScratch::Step` (0x5360c0) on `wheel+0xf00`: `CopyFrom` (39 material words), `Align`, `ContactPatch`,
-`ComputeSlip` (`s = M dir`, `v_long = R w + s1`, `slip = -(s1/R) - w`), `Accumulate`, `SplitSlip`, `SolvePatch`
-(`StepInner`, `TyreClamp`), `SolveForces`, `Sign`, `HeatStep`, outputs. `this+0x378` is the spin. Quirks: `F[0x7A]`
-multiplied by `e3` twice; `Accumulate` and `WriteOutputs` multiply by a zeroed register (output `+0x98` always 0);
-`F[0xC5]*0.1` rounds before `*F[0xFC]`; `SolveA` and `SolveDispatch` recurse into each other. `HeatStep`: SSE
-`k*0.5 + b + a`, `e-n` rounded to f32, `DamperStep1*c` kept double. `+0x414` is the wear table pointer
-(`store_wear_table`, `CScratch::Set414` 0x532490; eight sector wear words the heat step reads and writes).
-
-Name map (exe entry to Rust module): `Align` = `contact_frame::build`, `Accumulate` = `soil::soil_drag`, `Sign` =
-`forces::rolling_torque`, `Friction` = `hold::hold` (low-speed torque about the normal), `TyreClamp` =
-`grip::clamp_deflection`, `ClampGrip`/`SolvePair` = `grip::limit_to_friction_circle`/`limit_sticking`, `SplitSlip`
-= `slip::weigh_models` (sticking/sliding weights over 1 to 2 m/s), `SolveDirs` = `slip::slip_directions`,
-`SolvePatch` = `sliding::solve_sliding`, `StepInner` = `patch_forces`, `ComputeOutputs` = `friction_limits`,
-`BlendTable` = `surface::surface_friction`, `FillOutputs`/`WriteOutputs` = `noise_signal`/`output_block`,
-`SolveA..D`/`SolveDispatch` =
-`solve::solve_tread_only`/`solve_both`/`solve_neither`/`solve_carcass_only`/`solve_contact`,
-`TableStep`/`RelaxStep` = `relax::relax_sector`/`relax`. Field names are by use (tweak keys where they exist);
-`StepInner` reads the scratch's own words (its record is `scratch+0x20`; the binding declines any other record).
+`src/tyre/` (stage order and name map in `entries.rs`, record layouts in `layout/`). `F[0x7A]` is multiplied by `e3`
+twice; `F[0xC5]*0.1` rounds before `*F[0xFC]`.
 
 ## Spring-damper
 
-`src/spring_damper/`. `CSpringDamper` at `wheel+0xec4` (def `+4`, state `+8`, fade pointer `+0x10` read without a
-check; its writer is not found). `Step(x, y, z)` (0x52e090) with `y = x + def[0x41c]`: main spring `ks (L0 - (x -
-Hm))`, series helper `ks kh/(ks+kh) (Hl + L0 - x)` when engaged; bump stop `(Lo - y) kb`, droop `(Hi - y) kd`;
-high-speed damping above the breakpoints with offset `(ch - c) v_break`; fade when `27000 < s[0] F` adds `((F -
-27000)/18000)^2`. `UpdateForces` (0x52dd70): `max(400, (1-0.7f) bump)`, `(1-0.3f) rebound`, `(1-0.8f) hs_bump`.
-Shared kernels after it (0x52e350-0x52e8a0) serve engine and tyre too: `heat_flow` (DamperStep1: `(hot - cold) * h *
-area`, NGP swaps in `heat_flow_to_air`), `conduction` (DamperStep2: `-(gradient * k * area)`, NGP swaps in
-`ngp::heat::conduction`), `kelvin_to_celsius` (DamperBiasSub), `accumulate_heat`/`accumulate_heat_scaled`
-(DamperAccumA/B: `temperature += heat / capacity`), `solve_response`/`solve_scale`/`solve_numerator`
-(DamperUpdateA/B/C: one term of `response = numerator / denominator * scale * R`, every caller passes dry air's
-287). Native suspension (`spring_damper/suspension.rs`): `Suspension` owns definition, controller, fade and
-effective damping and runs the whole lifecycle as pure typed code: setup adoption (`CopyStateToDef`), damping
-recompute (`UpdateForces`), reset (`ResetOutputs`, `UpdateAndReset`), NGP's wrapper plus `Step` (bump rubber,
-rebound scale, latch, force step, restore). The `layout` primitives and the `rbr-hybrid` wrapper only load/store
-`Mem` at the edge, each within its original footprint. The reset hands its payload to the host as a typed damper
-event (`Host::emit_damper`; the pure host keeps it for the game, the emulator keeps the manager fan-out). The live
-picture runs that reset once a frame, so SND1 carries the frame's payloads and the sound model reads per-frame
-data; the headless trace runs no frames and keeps the accumulated words (drive2 attempt 5 with the lifecycle
-routed through it).
+`src/spring_damper/` (lifecycle in `suspension.rs`, kernels in the model docs, `Mem` edge in `layout/`; damper
+events via `Host::emit_damper`). `CSpringDamper`'s fade pointer `+0x10` is read without a check; its writer is not
+found.
 
 ## Engine and driveline
 
-`src/engine_driveline/` (model: `engine::next_random`, `drive_line::hermite`, `sim::find_bracket`; drive-line table
-in `layout/drive_line.rs`). Drive state: gear `+0x54c`, commanded gear `+0x570`, engine speed `+0x45c` (rad/s),
-clutch slip `+0x60`. `Set4570` (0x504570): a NaN lock takes the upper clamp and stays NaN. Clutch `M93A0`
-(0x5093a0): lock and slip with latch `+0x368`. Engine state: speed `+0x188`, cut flags `+0x168..+0x174`
-(`SimE010` sets one when `x <= limit` or unordered). LCG `s*0x2000081 + 0xe623f41d`. `Sim8E20` (0x518e20) clamps
-`b` to ±1151.917, filters `+0x188 = 0.3 b + 0.7 old`, returns the clamped `b` in st0 (callers multiply by
-`0x73a2e0`); `Sim7D30` is the turbo energy step (shaft clamp 20943.951 rad/s).
+`src/engine_driveline/` (model in `engine.rs`/`drive_line.rs`/`sim.rs`, drive-line table in
+`layout/drive_line.rs`, offsets in `layout/`). `Set4570` (0x504570): a NaN lock takes the upper clamp and stays
+NaN. `SimE010` sets a cut flag when `x <= limit` or unordered. `Sim8E20` (0x518e20) returns the clamped `b` in st0
+(callers multiply by `0x73a2e0`). Clutch `M93A0` (0x5093a0): lock and slip with latch `+0x368`, slip `+0x60`.
 
 ## VCU
 
-`src/vcu/`. `CScratchSim::Step` (0x537f50): `Update` (gears), clutch (`UpdateC` when launch mode, else the fixed
-clutch), `UpdateCut`, pedal routing (swapped when `vcu_enabled && b+0x58`), `UpdateE` (diff locks), neutral light,
-cooldown decay. Per the asm: gear-2 and gear-0 requests jump to the tail with lockout `def+0x168`; the first-gear
-neutral request needs `rpm > 5000`; `b+0x58 = brake > throttle` (strict); the lockout is written only on a request;
-`UpdateE` uses one speed key `Get4540 * 0.3` for all three maps; `E50_QuerySlip` rounds the rpm to f32 before the
-ratio. The pedal and speed tables (`table_blend`, `lookup_pair_table`, `lock_max`) are x87 chains: they round at the
-thread's precision (PC53 in NGP's race; RSF drive2 attempt 5 parted at its first launch without it).
+`src/vcu/` (`CScratchSim::Step` 0x537f50 sequence, tables and locks in the file docs). RSF drive2 attempt 5 parted
+at its first launch without PC53 rounding of the pedal and speed tables.
 
 ## Ground and surfaces
 
-`src/entities/ground.rs`. `CGround` is one static node; queries go to the host at `g_7c755c` (slot 0 `S00`).
-`VfE8` (0x51c6f0) record: `o[0..7] = out[0..7]`, `o[8] = out[10]`, `o[9] = out[11]`, `o[10] = out[9]`, `o[11..12] =
-0`, `o[13] = out[12]`, `o[14] = this`. `CollideInit` (0x51bd30) takes its second grid pass on bit 3 of `bodyA+0x60`.
+`src/entities/ground.rs` (queries to the host at `g_7c755c`; `VfE8` 0x51c6f0 record; `CollideInit` 0x51bd30 second
+pass on bit 3 of `bodyA+0x60`).
 
 ## Collision and contacts
 
-`src/collision/`, `src/rigid_body/`. `src/collision/` is a model plus its layout: geometry and arithmetic in
-physical terms (`overlap`, `triangle`, `obb`, `face_sweep`, `edge_pair`, `mesh_grid`, `mesh_hit`, `cells`,
-`grid_contact`, `brake_wall`, `contact_solver`), game memory, the original's calls and sequencing in `layout/` (the
-`*_hosts`, `body_slots`, `event_pool`, `e36_collect`, `wall_tree`, `list`/`links`/`sort`/`state` modules). Brake
-wall: `RaycastEntry` (0x4e4960) tests `(x, y)`; `out` = normal, `+0x10` penetration `1 - perp/along`, `+0x14`
-perp, `+0x18` flags (bit 0 from index bit 15). The wall table is read eight floats at an 8-byte stride (original;
-keep). `Impulse640` (0x529640): 4th argument is a time (`dt`), 3rd unused. Event solve `M_C1A0` (0x4fc1a0): `dot =
-PlaneDiff . n`; acts when `dot < -1` or flags 0x800 and 0x1000; `k = clamp(-0.05 dot)`, `mu` and `e` lerped by `k`
-from the material (`FB720` picks `+0x80`/`+0xac` by flag 0x800, `hi` when weight > 0.5); `a = -(1+e) dot / f88`;
-friction `min(|a| mu, |q|)`; `Emit4DC0` applies `+J` to A and `-J` to B. `M_D760X` halves the ray direction,
-`M_DE40X` its argument `c`. `E36SphereBox` sums `dz + dy + dx` in x87. ABI: `MinMaxA` writes min to `p2`, max of the
-upper vector to `p3`; `Scaled` takes out, then scalar; `BoxHit` sets only `AL`.
+`src/collision/` (geometry in physical terms; game memory, calls and sequencing in `layout/`) and
+`src/rigid_body/` contact files. The wall table is read eight floats at an 8-byte stride (original; keep).
+`Impulse640` (0x529640): 4th argument a time (`dt`), 3rd unused. `E36SphereBox` sums `dz + dy + dx` in x87.
+`BoxHit` sets only `AL`.
 
 ## Entities
 
-`src/entities/`. Frames carry no transform (hooks return their input). `E90SegPool::Init` (0x601270) owns a `new[]`
-array with the count word before it, built and torn down by the CRT vector iterators with `E90Seg::E90Seg`/`~E90Seg`
-(0x600ff0, 0x601030). `CEntity` (0x64): siblings `+0x10/+0x14/+0x18`, exclusion set `+0x2c` (count, pointers), sort
-key `+0x30`, def `+0x34`, parent `+0x44`, children `+0x48` head, `+0x4c` tail, `+0x50` count, flags `+0x60 = arg |
-1`. Walks are pre-order over children whose `S80() != 0`.
+`src/entities/` (hooks, `E90SegPool`, walks in the file docs). `E90SegPool::Init` (0x601270) owns a `new[]` array
+with the count word before it. Walks are pre-order over children whose `S80() != 0`.
 
 ## Scenery
 
-Scenery collision comes from the `.trk` collision meshes (kind `0x16`, loader 0x46e300), not `.col`. Static meshes
-are emitted at load as hard collision. `E46_Notify67d0` (0x5267d0) makes one `CSolid` per placement through
-`E39_EntfCreate` (0x502070; index = `physics.lsp` `DefManager` order: 1 `GENERIC`, 13 `STREET_SIGN`, 21
+Scenery collision comes from the `.trk` collision meshes (kind `0x16`, loader 0x46e300), not `.col`, emitted at
+load as hard collision. Placements to solids in `stage/layout/placement.rs` (`E46_Notify67d0` 0x5267d0,
+`E39_EntfCreate` 0x502070; index = `physics.lsp` `DefManager` order: 1 `GENERIC`, 13 `STREET_SIGN`, 21
 `BANNER_FENCE`, 24 `PIG`, 25 `TRAFFIC_CONE`, 28 `LOG`, 30 `LOG_POLE`, 31/32 wooden fence bar/pole). `GENERIC`
-(trees, rocks, poles, snowwall, bushes, spectators) has inverse mass 0 and never wakes; props sleep in list460
-until a contact wakes them (`E38_004FCA20` 0x4fca20), then emit `CSigSolidGeneralState` from `CSolid::Vf28`
-(0x52c620) with id = handle `0x9c40` + the `.lbs` (1,6) record index. A contact's surface is the mesh material byte
-(e.g. `0x79` Bendable_Tree, tested by `E37Flag4AC0` 0x4f4ac0). A woken prop's velocity lane w is stale stack
-(reaches inf/NaN, never x-z): `E43Vf6C` adds it with `math::sse`. Fences (`.fnc`) are cloth and never touch the car.
+has inverse mass 0 and never wakes; props sleep in list460 until a contact wakes them (`E38_004FCA20` 0x4fca20),
+then emit `CSigSolidGeneralState` from `CSolid::Vf28` (0x52c620), id = handle `0x9c40` + the `.lbs` (1,6) record
+index. A contact's surface is the mesh material byte (`0x79` Bendable_Tree, tested by `E37Flag4AC0` 0x4f4ac0).
+Fences (`.fnc`) are cloth and never touch the car.
 
 ## Damage
 
-`src/car_body/damage*.rs`. `Vf08x` (0x4ec140) scales the impact by 0.08; `Slot1` (0x4f12a0) ignores `dmg <= 500`
-when flag 0x80000 is clear, else multiplies by `+0x3dec`. Zones at `+0x2214` (0x58 each), damage `min(v, 1)` at
-`+0x3808`. `Slot4` (0x4f1000) level `+0x3df0`: 1 gives (0.5, 0.5, 0.2), 2 (0.8, 0.95, 0.6), 3 (1, 1, 1). Four table
-values at `+0x2a88..+0x2b90` are 0.1f: `load_defs::damage_ops_tables_match_lcb1_load_dump`.
+`src/car_body/damage*.rs` (offsets, functor tables, levels and clamp in the file docs). Load-table check:
+`load_defs::damage_ops_tables_match_lcb1_load_dump`.
 
 ## Tweak keys
 
