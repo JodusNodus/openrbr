@@ -490,6 +490,10 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     var paved_flat = 0.0;
     var paved_grey = 1.0;
     var paved_line = 0.0;
+    // How much of the paved mesh's non-grey shoulder strip this pixel is (`road_shoulder_mask`).
+    var shoulder_mask = 0.0;
+    // The factor easing the off-road ground's pale texels (`ground_pale_ease`).
+    var ground_pale = 1.0;
     // The near ground gets the fine structure its thinly spread texture lacks (`terrain_detail`).
     if (detail_draw() && stage_frame() && mode.cutout == 0u && mode.detail.z != 0.0) {
         // On the banks the texture's streaks are blurred out first (`terrain_even`); the flat keeps its filtering.
@@ -514,6 +518,7 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             let top = max(probe.r, max(probe.g, probe.b));
             paved_grey = 1.0 - smoothstep(ASPHALT_GREY.x, ASPHALT_GREY.y, (top - min(probe.r, min(probe.g, probe.b))) / max(top, 1e-3));
             paved_share = paved_share * paved_grey;
+            shoulder_mask = road_shoulder_mask(v.world, v.wet.x, paved_grey);
         }
         paved_flat = paved_share;
         let blur = steep * TERRAIN_EVEN
@@ -531,6 +536,13 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
                 even = mix(even, surface, paved_line);
             }
             surface = even;
+        }
+        if (GROUND) {
+            var mean = terrain_even(texture0, v.uv0, levels.x, GROUND_MEAN).rgb;
+            if (second_draw()) {
+                mean = mix(mean, terrain_even(texture1, v.uv1, levels.y, GROUND_MEAN).rgb, second.a * v.color.a);
+            }
+            ground_pale = mix(1.0, ground_pale_ease(surface, mean), ground_share(v) * ground_near(v.world));
         }
         // With the ground scan the stage's own high pass is a share of what it was, on the ground the scan covers, and
         // on the paved road with the asphalt scan.
@@ -622,7 +634,7 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             if (share > 0.0) {
                 let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal), dot(v.normal, v.normal) > 1e-8);
                 let seen = select(1.0, sun_seen, own);
-                colour = mix(colour, ground_scan(colour, v.world, n, face_dx, face_dy, seen, surface), share);
+                colour = mix(colour, ground_scan(colour * ground_pale, v.world, n, face_dx, face_dy, seen, surface), share);
             }
         }
         if (GRAVEL || ASPHALT || SNOW) {
@@ -640,6 +652,9 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             let paved = smoothstep(0.75, 0.95, v.wet.x);
             if (ASPHALT && paved > 0.0) {
                 colour = colour * mix(1.0, road_scan(1, paved_uv, paved_dx, paved_dy, seen, paved_grey), paved);
+            }
+            if (GROUND && ASPHALT && shoulder_mask > 0.0) {
+                colour = road_shoulder(colour, shoulder_mask, road_scan(0, loose_uv, loose_dx, loose_dy, seen, 1.0));
             }
             let snow_uv = v.world.xz / SCAN_TILE[2];
             let snow_dx = dpdx(snow_uv);
@@ -2241,6 +2256,26 @@ fn ground_patches(world: vec3<f32>, n: vec3<f32>, dx: vec3<f32>, dy: vec3<f32>) 
     return mix(vec3<f32>(1.0), tint, GROUND_MIX) * stones;
 }
 
+// The off-road ground's texture colour `surface` over its local mean (the texture `GROUND_MEAN` levels blurrier): its pale
+// texels (dried straw, white at a grazing view) past `GROUND_PALE` times the mean's brightness are eased to the power
+// `GROUND_PALE_FLAT` of the excess, and the factor is returned. The calming works on the verge only: it fades out between
+// `GROUND_CALM` metres from the eye, the hill beyond keeps its look.
+const GROUND_MEAN: f32 = 5.0;
+const GROUND_CALM: vec2<f32> = vec2<f32>(12.0, 30.0);
+const GROUND_PALE: f32 = 1.1;
+const GROUND_PALE_FLAT: f32 = 0.3;
+
+fn ground_near(world: vec3<f32>) -> f32 {
+    return 1.0 - smoothstep(GROUND_CALM.x, GROUND_CALM.y, distance(world, frame.eye.xyz));
+}
+
+fn ground_pale_ease(surface: vec3<f32>, mean: vec3<f32>) -> f32 {
+    let luma = vec3<f32>(0.2126, 0.7152, 0.0722);
+    let ratio = dot(surface, luma) / max(dot(mean, luma), 1e-3);
+    let eased = GROUND_PALE * pow(max(ratio / GROUND_PALE, 1.0), GROUND_PALE_FLAT);
+    return select(1.0, eased / ratio, ratio > GROUND_PALE);
+}
+
 // Whether the face is rock, stone wall or concrete, 0 to 1: its `surface` colour (the stage's own texture) is grey or cool
 // (its red and green over its blue, against its brightest channel, under `GROUND_ROCK_AT`; soil and grass are warm or
 // green) and the face is steep (its facet's up component, under `GROUND_STEEP`: cuttings, rock walls, parapets). A flat
@@ -2337,6 +2372,32 @@ fn ground_scan(colour_in: vec3<f32>, world: vec3<f32>, n: vec3<f32>, dx: vec3<f3
     let relief = 1.0 + lit * sun_seen * GROUND_RELIEF * smoothstep(0.02, 0.15, to_sun.y);
     let scanned = colour_in * clamp(tint * relief * (1.0 - hollows), vec3<f32>(0.3), vec3<f32>(2.0));
     return mix(scanned, vec3<f32>(dot(scanned, luma)), rock * GROUND_ROCK_GREY);
+}
+
+// The paved mesh's shoulder strip (renderer choice, `Enhance::ground` with `asphalt`): the part of the paved mesh that
+// is not the road's grey (`ASPHALT_GREY`) is a smooth grass-and-brown band between the asphalt and the verge. It takes
+// dirt and gravel: its brightness in a dry earth's hue (`SHOULDER_DIRT`, Poly Haven's Brown Mud Dry's mean over its
+// brightness) by `SHOULDER_SAT`, `SHOULDER_DIM` darker, with the gravel scan's grain, over `SHOULDER_KEEP` of its own
+// colour. Its boundary toward the asphalt is frayed by noise at `SHOULDER_FRAY` metres (a crumbly edge), where the grey
+// measure crosses `SHOULDER_AT`.
+const SHOULDER_AT: vec2<f32> = vec2<f32>(0.3, 0.7);
+const SHOULDER_FRAY: vec2<f32> = vec2<f32>(0.45, 0.3);
+const SHOULDER_DIRT: vec3<f32> = vec3<f32>(1.23, 0.97, 0.66);
+const SHOULDER_KEEP: f32 = 0.2;
+const SHOULDER_SAT: f32 = 0.4;
+const SHOULDER_DIM: f32 = 0.9;
+
+fn road_shoulder_mask(world: vec3<f32>, paved: f32, grey: f32) -> f32 {
+    let fray = SHOULDER_FRAY.y * (value_noise(world / SHOULDER_FRAY.x) + 0.5 * value_noise(world / (0.3 * SHOULDER_FRAY.x)) - 0.75);
+    return smoothstep(0.75, 0.95, paved) * smoothstep(SHOULDER_AT.x, SHOULDER_AT.y, 1.0 - grey + fray);
+}
+
+// The lit `colour` of the shoulder strip under its dirt and gravel, `mask` of it (`road_shoulder_mask`), `gravel` the
+// gravel scan's factor there.
+fn road_shoulder(colour: vec3<f32>, mask: f32, gravel: f32) -> vec3<f32> {
+    let y = dot(colour, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let dirt = SHOULDER_DIM * y * mix(vec3<f32>(1.0), SHOULDER_DIRT, SHOULDER_SAT);
+    return mix(colour, dirt * gravel, mask * (1.0 - SHOULDER_KEEP));
 }
 
 // A scan normal's stage direction from its stored x and y (OpenGL: y up the image, which is the stage's -z).

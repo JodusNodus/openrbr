@@ -711,6 +711,13 @@ their own colour; a flat grey verge (gravel) keeps the tint.
 Rock to grey: rock gives up `GROUND_ROCK_GREY` 0.85 of its lit colour for grey (its texture's cast and the light's tint are
 mostly not its own), steepness `GROUND_STEEP` 0.75 to 0.97 (softer); `ground_scan` takes and returns the lit colour.
 
+Road shoulder (2026-10-29, without the scanned earth of `render/ground-scan` round 3): the paved mesh's non-grey band between
+the asphalt and the verge (`road_shoulder_mask`, frayed by noise at `SHOULDER_FRAY` 0.45 m) takes dirt and gravel: its
+brightness in a dry earth's hue (`SHOULDER_DIRT` 1.23, 0.97, 0.66, Brown Mud Dry's mean over its brightness) by
+`SHOULDER_SAT` 0.4, `SHOULDER_DIM` 0.9, the gravel scan's grain, over `SHOULDER_KEEP` 0.2 of its own colour. The verge's
+pale texels (straw, white at a grazing view) past `GROUND_PALE` 1.1 of the texture's local mean (`GROUND_MEAN` 5 levels
+blurrier) are eased to the power `GROUND_PALE_FLAT` 0.3, within `GROUND_CALM` 12 to 30 m of the eye.
+
 Lighting, in pieces (all with `lighting`; each measured on its own before the merge):
 
 - Sky: Hillaire sky, aerial perspective, height fog, light shafts; the tables are stored in display colours once per sky
