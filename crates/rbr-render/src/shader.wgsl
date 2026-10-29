@@ -485,6 +485,11 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     if (!stage_frame() && !camera_anchored()) {
         surface = surface * backdrop_detail(v.world);
     }
+    // With the asphalt scan the paved road's texture colour over its local mean (`ASPHALT_MEAN`), see `albedo_remap` below.
+    var paved_mean = vec3<f32>(1.0);
+    var paved_flat = 0.0;
+    var paved_grey = 1.0;
+    var paved_line = 0.0;
     // The near ground gets the fine structure its thinly spread texture lacks (`terrain_detail`).
     if (detail_draw() && stage_frame() && mode.cutout == 0u && mode.detail.z != 0.0) {
         // On the banks the texture's streaks are blurred out first (`terrain_even`); the flat keeps its filtering.
@@ -494,17 +499,43 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         // Only where the texture is magnified past `GROUND_MAGNIFIED` (its smear): a crisp one keeps its own detail.
         let texels = vec2<f32>(textureDimensions(texture0));
         let native = min(length(dpdx(v.uv0) * texels), length(dpdy(v.uv0) * texels));
+        let magnified = 1.0 - smoothstep(GROUND_MAGNIFIED.x, GROUND_MAGNIFIED.y, native);
+        // The paved mesh's shoulders carry grass textures: only a grey texture (the road's) takes the asphalt's treatment.
+        var paved_share = select(0.0, smoothstep(0.75, 0.95, v.wet.x), ASPHALT);
+        if (paved_share > 0.0) {
+            paved_mean = terrain_even(texture0, v.uv0, levels.x, ASPHALT_MEAN).rgb;
+            if (second_draw()) {
+                paved_mean = mix(paved_mean, terrain_even(texture1, v.uv1, levels.y, ASPHALT_MEAN).rgb, second.a * v.color.a);
+            }
+            var probe = terrain_even(texture0, v.uv0, levels.x, ASPHALT_BLUR).rgb;
+            if (second_draw()) {
+                probe = mix(probe, terrain_even(texture1, v.uv1, levels.y, ASPHALT_BLUR).rgb, second.a * v.color.a);
+            }
+            let top = max(probe.r, max(probe.g, probe.b));
+            paved_grey = 1.0 - smoothstep(ASPHALT_GREY.x, ASPHALT_GREY.y, (top - min(probe.r, min(probe.g, probe.b))) / max(top, 1e-3));
+            paved_share = paved_share * paved_grey;
+        }
+        paved_flat = paved_share;
         let blur = steep * TERRAIN_EVEN
-            + select(0.0, GROUND_BLUR * ground_share(v) * (1.0 - smoothstep(GROUND_MAGNIFIED.x, GROUND_MAGNIFIED.y, native)), GROUND);
+            + select(0.0, GROUND_BLUR * ground_share(v) * magnified, GROUND)
+            + ASPHALT_BLUR * paved_share * magnified;
         if (blur > 0.0) {
             var even = terrain_even(texture0, v.uv0, levels.x, blur).rgb;
             if (second_draw()) {
                 even = mix(even, terrain_even(texture1, v.uv1, levels.y, blur).rgb, second.a * v.color.a);
             }
+            // The painted lines stay crisp: where the blurred road is brighter than its mean, it is paint, with its own texels.
+            if (paved_share > 0.0) {
+                let luma = vec3<f32>(0.2126, 0.7152, 0.0722);
+                paved_line = smoothstep(ASPHALT_LINE.x, ASPHALT_LINE.y, dot(even, luma) / max(dot(paved_mean, luma), 1e-3));
+                even = mix(even, surface, paved_line);
+            }
             surface = even;
         }
-        // With the ground scan the stage's own high pass is a share of what it was, on the ground the scan covers.
-        surface = surface * mix(1.0, terrain_detail(v, steep), select(1.0, 1.0 - ground_share(v) * (1.0 - GROUND_KEEP), GROUND));
+        // With the ground scan the stage's own high pass is a share of what it was, on the ground the scan covers, and
+        // on the paved road with the asphalt scan.
+        let keep = (1.0 - select(0.0, ground_share(v) * (1.0 - GROUND_KEEP), GROUND)) * (1.0 - paved_share * (1.0 - ASPHALT_KEEP));
+        surface = surface * mix(1.0, terrain_detail(v, steep), keep);
     }
     let night = frame.night.x != 0.0;
     // With the computed occlusion the stage's light is ours (`own_light`), its sun shadowed by what hides the sun.
@@ -512,7 +543,16 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     // The texture's linear albedo, which under our physical light is brought to the measured ranges (`albedo_remap`).
     var albedo = pow(surface, vec3<f32>(2.2));
     if (own) {
-        albedo = albedo_remap(albedo);
+        let remapped = albedo_remap(albedo);
+        albedo = remapped;
+        // `albedo_remap`'s cut steepens through the road's brightness (up to 2.6 times its contrast, the flecks of the
+        // texture's fine variation): the paved road takes the cut of its local mean, with its own variation over it, and
+        // its painted lines (brighter than the mean) the plain cut.
+        if (paved_flat > 0.0) {
+            let mean = pow(paved_mean, vec3<f32>(2.2));
+            let evened = albedo_remap(mean) * albedo / max(mean, vec3<f32>(1e-4));
+            albedo = mix(remapped, mix(evened, remapped, paved_line), paved_flat);
+        }
     }
     var sun_seen = 1.0;
     var colour: vec3<f32>;
@@ -592,21 +632,21 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             let loose_dy = dpdy(loose_uv);
             let loose = smoothstep(0.05, 0.3, v.wet.x) * (1.0 - smoothstep(0.6, 0.9, v.wet.x));
             if (GRAVEL && loose > 0.0) {
-                colour = colour * mix(1.0, road_scan(0, loose_uv, loose_dx, loose_dy, seen), loose);
+                colour = colour * mix(1.0, road_scan(0, loose_uv, loose_dx, loose_dy, seen, 1.0), loose);
             }
             let paved_uv = v.world.xz / SCAN_TILE[1];
             let paved_dx = dpdx(paved_uv);
             let paved_dy = dpdy(paved_uv);
             let paved = smoothstep(0.75, 0.95, v.wet.x);
             if (ASPHALT && paved > 0.0) {
-                colour = colour * mix(1.0, road_scan(1, paved_uv, paved_dx, paved_dy, seen), paved);
+                colour = colour * mix(1.0, road_scan(1, paved_uv, paved_dx, paved_dy, seen, paved_grey), paved);
             }
             let snow_uv = v.world.xz / SCAN_TILE[2];
             let snow_dx = dpdx(snow_uv);
             let snow_dy = dpdy(snow_uv);
             let snowy = 1.0 - smoothstep(-0.9, -0.3, v.wet.x);
             if (SNOW && snowy > 0.0) {
-                colour = colour * mix(1.0, road_scan(2, snow_uv, snow_dx, snow_dy, seen), snowy);
+                colour = colour * mix(1.0, road_scan(2, snow_uv, snow_dx, snow_dy, seen, 1.0), snowy);
             }
         }
         // The ground around the roads is soaked too, a little less (`GROUND_SOAK` of the road's, by the wetness).
@@ -2082,23 +2122,27 @@ fn ground_detail(world: vec3<f32>) -> f32 {
 // Parallax (4 to 24 steps within 25 m) looked the same on gravel in stills and cost 0.35 to 1.3 ms of the scene at
 // 1440p, so it was left out.
 const SCAN_TILE: vec3<f32> = vec3<f32>(3.0, 2.0, 2.0);
-const SCAN_DETAIL: vec3<f32> = vec3<f32>(0.5, 0.5, 0.5);
-const SCAN_RELIEF: vec3<f32> = vec3<f32>(0.35, 0.35, 0.35);
-const SCAN_HOLLOWS: vec3<f32> = vec3<f32>(0.24, 0.24, 0.24);
+const SCAN_DETAIL: vec3<f32> = vec3<f32>(0.5, 1.2, 0.5);
+const SCAN_RELIEF: vec3<f32> = vec3<f32>(0.35, 0.6, 0.35);
+const SCAN_HOLLOWS: vec3<f32> = vec3<f32>(0.24, 0.4, 0.24);
 // The least a scan's factor darkens to: the snow scan's dark marks (footprints, debris) otherwise read as dirt.
 const SCAN_FLOOR: vec3<f32> = vec3<f32>(0.0, 0.0, 0.88);
 
 // Scan `layer`'s factor on the colour at `uv` (its tiles), with the derivatives `dx` and `dy` taken in uniform control
 // flow, `sun_seen` of the sun reaching the ground there.
-fn road_scan(layer: i32, uv: vec2<f32>, dx: vec2<f32>, dy: vec2<f32>, sun_seen: f32) -> f32 {
+fn road_scan(layer: i32, uv: vec2<f32>, dx: vec2<f32>, dy: vec2<f32>, sun_seen: f32, grey: f32) -> f32 {
+    var strength = vec3<f32>(SCAN_DETAIL[layer], SCAN_RELIEF[layer], SCAN_HOLLOWS[layer]);
+    if (layer == 1) {
+        strength = mix(ASPHALT_SHOULDER, strength, grey);
+    }
     let scan = textureSampleGrad(road_scans, road_scan_sampler, uv, layer, dx, dy);
     let mean = textureSampleLevel(road_scans, road_scan_sampler, uv, layer, 20.0);
-    let detail = mix(1.0, scan.r / max(mean.r, 1e-3), SCAN_DETAIL[layer]);
+    let detail = mix(1.0, scan.r / max(mean.r, 1e-3), strength.x);
     let to_sun = -frame.sun.xyz;
     let n = scan_normal(scan.gb);
     let lit = clamp((dot(n, to_sun) - dot(scan_normal(mean.gb), to_sun)) / max(to_sun.y, 0.05), -1.0, 1.0);
-    let relief = 1.0 + lit * sun_seen * SCAN_RELIEF[layer] * smoothstep(0.1, 0.35, to_sun.y);
-    let hollows = 1.0 - SCAN_HOLLOWS[layer] * (mean.a - scan.a);
+    let relief = 1.0 + lit * sun_seen * strength.y * smoothstep(0.1, 0.35, to_sun.y);
+    let hollows = 1.0 - strength.z * (mean.a - scan.a);
     return max(detail * relief * hollows, SCAN_FLOOR[layer]);
 }
 
@@ -2128,6 +2172,13 @@ const GROUND_HUE: f32 = 0.3;
 const GROUND_BLUR: f32 = 0.75;
 const GROUND_MAGNIFIED: vec2<f32> = vec2<f32>(0.4, 1.0);
 const GROUND_KEEP: f32 = 0.7;
+const ASPHALT_BLUR: f32 = 3.0;
+const ASPHALT_MEAN: f32 = 6.0;
+const ASPHALT_GREY: vec2<f32> = vec2<f32>(0.15, 0.3);
+// The scan's strengths (detail, relief, hollows) on the paved mesh's grass shoulders: what it was before the road's.
+const ASPHALT_SHOULDER: vec3<f32> = vec3<f32>(0.5, 0.35, 0.24);
+const ASPHALT_LINE: vec2<f32> = vec2<f32>(1.1, 1.3);
+const ASPHALT_KEEP: f32 = 0.0;
 
 // How much of the pixel is the off-road ground: the vertices' mark against the road's share.
 fn ground_share(v: VertexOut) -> f32 {
