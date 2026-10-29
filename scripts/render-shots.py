@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Reference shots: renders the shots of data/shots.json (1080p, every enhancement) into a folder.
 
-    scripts/render-shots.py [--out DIR] [--only NAME...] [--list] [--compare OLD_DIR] [--dry]
+    scripts/render-shots.py [--out DIR] [--only NAME...] [--jobs N] [--list] [--compare OLD_DIR] [--dry]
                             [--previews DIR [--no-render]] [--gallery FILE] [--diff DIR]
 
 Each shot is a stage, a car, a `view` (VIEWS), the clock, a launcher selection (weather), viewer arguments and the
@@ -20,6 +20,7 @@ writes the markdown page of the shots (docs/shots/README.md). `--compare OLD_DIR
 earlier render, worst first; with `--diff DIR` it also writes the difference, times 8, as a 1080p JPEG.
 """
 import argparse, json, os, subprocess, sys, tempfile, time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -44,6 +45,8 @@ VIEWS = {
 DROP = {'--fullscreen': 0, '--title': 1, '--ghost-weather': 1, '--present': 1, '--fps': 0,
         '--hud-hide': 1, '--size': 1, '--quit-after': 1}
 SIZE = '1920x1080'
+# Shots rendered at once: a shot's load and drive are mostly one thread, its peak memory up to 5 GB (580 at 1080p).
+JOBS = 3
 
 
 def files_folder(given):
@@ -195,6 +198,7 @@ def main():
     ap.add_argument('--home', help="the player's files folder (default $RERBR_HOME or ~/.local/share/rerbr)")
     ap.add_argument('--size', default=SIZE, help='WIDTHxHEIGHT (3840x2160 for marketing renders)')
     ap.add_argument('--only', nargs='*', default=[], metavar='NAME')
+    ap.add_argument('--jobs', type=int, default=JOBS, help=f'shots rendered at once (default {JOBS}; each takes up to 5 GB)')
     ap.add_argument('--list', action='store_true')
     ap.add_argument('--dry', action='store_true', help='print each command instead of running it')
     ap.add_argument('--previews', type=Path, metavar='DIR', help='also write JPEGs of the shots to DIR')
@@ -227,10 +231,11 @@ def main():
 
 
 def render(a, home, shots):
-    """Renders `shots` into --out; the names of those that rendered."""
+    """Renders `shots` into --out, --jobs at a time; the names of those that rendered."""
     a.out.mkdir(parents=True, exist_ok=True)
     manifest = {'tools': tool_versions(a.build), 'size': a.size, 'shots': {}}
-    for shot in shots:
+
+    def one(shot):
         png = a.out / f"{shot['name']}.png"
         tmp, lines = launcher_command(a.build, home, shot, a.size)
         try:
@@ -238,17 +243,22 @@ def render(a, home, shots):
             check_car(command, shot)
             if a.dry:
                 print(' '.join(map(repr, command)))
-                continue
+                return None
             began = time.time()
             done = subprocess.run(command, env=env, capture_output=True, text=True)
             png.with_suffix('.log').write_text(' '.join(map(repr, command)) + '\n\n' + done.stderr + done.stdout)
             print(f"{shot['name']}: {'ok' if done.returncode == 0 else 'FAILED ' + str(done.returncode)} "
-                  f"in {time.time() - began:.0f} s")
+                  f"in {time.time() - began:.0f} s", flush=True)
             if done.returncode:
                 print(done.stderr[-800:], file=sys.stderr)
-            manifest['shots'][shot['name']] = {'exit': done.returncode, 'command': command}
+            return {'exit': done.returncode, 'command': command}
         finally:
             subprocess.run(['rm', '-rf', tmp])
+
+    with ThreadPoolExecutor(1 if a.dry else a.jobs) as pool:
+        for shot, result in zip(shots, pool.map(one, shots)):
+            if result:
+                manifest['shots'][shot['name']] = result
     if not a.dry:
         (a.out / 'manifest.json').write_text(json.dumps(manifest, indent=1) + '\n')
     return [n for n, r in manifest['shots'].items() if r['exit'] == 0]
