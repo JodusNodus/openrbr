@@ -8,10 +8,13 @@ use crate::particles::gpu::SPRITE_SIZE as SIZE;
 pub const PUFF: u32 = 0x1000;
 pub const DROP: u32 = 0x1001;
 pub const WISP: u32 = 0x1002;
+pub const DUST: u32 = 0x1003;
+/// A thrown stone: the drop's shape, drawn apart so [`super::super::sim`] can cap its size on screen.
+pub const STONE: u32 = 0x1004;
 
 /// Every sprite of the spray, by id.
-pub fn all() -> [(u32, Vec<u8>); 3] {
-    [(PUFF, draw(puff)), (DROP, draw(drop)), (WISP, draw(wisp))]
+pub fn all() -> [(u32, Vec<u8>); 5] {
+    [(PUFF, draw(puff)), (DROP, draw(drop)), (WISP, draw(wisp)), (DUST, draw(billow)), (STONE, draw(drop))]
 }
 
 /// A sprite of `texel` at each texel centre, `x` and `y` from -1 to 1 (y up).
@@ -64,6 +67,19 @@ fn wisp(x: f32, y: f32) -> [f32; 4] {
     let lumps = 0.5 * noise(x, y, 3.0) + 0.3 * noise(x, y, 6.0) + 0.2 * noise(x, y, 12.0);
     let alpha = (1.0 - r2).max(0.0).powf(1.5) * smooth(0.3, 0.7, lumps);
     [1.0, 1.0, 1.0, alpha]
+}
+
+/// A billowing dust puff: a ball of cauliflower lobes (the noise's ridges, warped by a coarser noise), its colour
+/// darker in the folds between lobes and on its underside so a cloud of them reads as a mass with shaded creases.
+fn billow(x: f32, y: f32) -> [f32; 4] {
+    let r2 = x * x + y * y;
+    let (wx, wy) = (x + 0.22 * (noise(x, y, 3.0) - 0.5), y + 0.22 * (noise(y, x, 3.0) - 0.5));
+    let ridge = |cells: f32| 1.0 - (2.0 * noise(wx, wy, cells) - 1.0).abs();
+    let lobes = 0.5 * ridge(3.0) + 0.3 * ridge(6.0) + 0.2 * ridge(12.0);
+    let body = smooth(0.0, 0.45, 1.0 - r2);
+    let alpha = body * smooth(0.38, 0.68, lobes + 0.25 * (1.0 - r2));
+    let shade = (0.6 + 0.6 * smooth(0.35, 0.95, lobes)) * (0.86 + 0.14 * (y * 0.5 + 0.5));
+    [shade, shade, shade, alpha]
 }
 
 /// A round drop, bright at its middle.

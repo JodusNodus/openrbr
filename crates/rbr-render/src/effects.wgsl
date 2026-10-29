@@ -94,6 +94,11 @@ fn scene_distance(clip: vec4<f32>) -> f32 {
 // How much sunlight reaches stage point `world` past the cascades' casters (1 lit, 0 shaded); 1 beyond the cascades
 // or without them.
 fn sun_reach(world: vec3<f32>) -> f32 {
+    return sun_reach_wide(world, 1.0);
+}
+
+// `sun_reach` with its 4 taps `spread` times as far apart.
+fn sun_reach_wide(world: vec3<f32>, spread: f32) -> f32 {
     if (effects.sun.w == 0.0) {
         return 1.0;
     }
@@ -116,10 +121,26 @@ fn sun_reach(world: vec3<f32>) -> f32 {
     let texel = 1.0 / f32(textureDimensions(effects_sun_map).x);
     var lit = 0.0;
     for (var k = 0; k < 4; k++) {
-        let offset = (vec2<f32>(f32(k & 1), f32(k >> 1)) - 0.5) * 2.0 * texel;
+        let offset = (vec2<f32>(f32(k & 1), f32(k >> 1)) - 0.5) * 2.0 * spread * texel;
         lit += textureSampleCompareLevel(effects_sun_map, effects_sun_sampler, uv + offset, cascade, clip.z - 0.002);
     }
     return lit / 4.0;
+}
+
+// The sun reaching dust: a scattering volume sees the shadow averaged along the view ray through the puff's depth
+// (`DUST_TAPS` taps over its radius either side) and over a wider filter (`DUST_SPREAD` texels), so a tree's shadow
+// is a soft shaft and not a print of its trunks.
+const DUST_TAPS: i32 = 7;
+const DUST_SPREAD: f32 = 2.5;
+const DUST_DEPTH: f32 = 1.0;
+fn dust_sun_reach(world: vec3<f32>, radius: f32) -> f32 {
+    let ray = normalize(world - effects.eye.xyz);
+    var lit = 0.0;
+    for (var k = 0; k < DUST_TAPS; k++) {
+        let along = f32(k) / f32(DUST_TAPS - 1) * 2.0 - 1.0;
+        lit += sun_reach_wide(world + ray * (along * DUST_DEPTH * radius), DUST_SPREAD * (1.0 + 0.15 * along));
+    }
+    return lit / f32(DUST_TAPS);
 }
 
 // Henyey-Greenstein phase for scattering by `g` at cosine `c` between the light's travel and the view (toward the

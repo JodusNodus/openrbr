@@ -168,6 +168,29 @@ const EROSION: f32 = 0.55;
 const SOFT: f32 = 0.6;
 const WISP_EROSION: f32 = 0.08;
 const WISP_SOFT: f32 = 2.0;
+// Screen size (the puff's radius over its distance) over which the sprite softens, the mip it blurs to, the power
+// that thins its rim and the share of its opacity kept at full size.
+const DUST_BLUR: vec2<f32> = vec2<f32>(0.12, 0.5);
+const DUST_LOD: f32 = 2.5;
+const DUST_THIN: f32 = 0.8;
+const DUST_SEE: f32 = 0.7;
+// Close up, within `DUST_CLOSE` metres of the eye (full inside the first, none beyond the second), a puff has no
+// outline of its own: its opacity is a radial falloff (`DUST_CLOSE_FALL` power of 1 - r^2, flat at the rim) times
+// the blurred sprite's lumps (`DUST_CLOSE_LUMP` of it without them) at the peak `DUST_CLOSE_PEAK`, and the erosion
+// `DUST_CLOSE_EROSION` cuts the thin outer part into wisps. The sky's light on it is x`DUST_SKY` where the sun is
+// shaded (a canopy shades the sky as well; dust is the road's colour, so dim), x`DUST_CLOSE_SKY` more close up.
+const DUST_CLOSE: vec2<f32> = vec2<f32>(3.0, 9.0);
+const DUST_CLOSE_LOD: f32 = 1.5;
+const DUST_CLOSE_FALL: f32 = 1.5;
+const DUST_CLOSE_LUMP: f32 = 0.35;
+const DUST_CLOSE_PEAK: f32 = 0.5;
+const DUST_CLOSE_EROSION: f32 = 0.5;
+const DUST_CLOSE_SKY: f32 = 0.6;
+const DUST_SKY: f32 = 0.4;
+const DUST_SUN: f32 = 2.2;
+const DUST_RIM: f32 = 2.0;
+const DUST_SHADOW: f32 = 0.7;
+const DUST_BOUNCE: f32 = 0.8;
 const NEGLIGIBLE: f32 = 0.001;
 // The share of the lamps' glow a wisp takes: its great size would hold the tail lamps' red as a blot.
 const WISP_LAMPS: f32 = 0.2;
@@ -190,7 +213,19 @@ fn soft_noise(p: vec3<f32>) -> f32 {
 
 @fragment
 fn fs_soft(in: Out) -> @location(0) vec4<f32> {
-    let texel = textureSample(sprites, sprite_sampler, in.uv, in.layer);
+    // Billowing dust softens with its size on screen (`DUST_BLUR`): a large or near puff shows a blurred, thinner rim
+    // with its lumps inside, a small distant one keeps its crisp edge.
+    let dust_puff = in.additive < -2.5;
+    let span = in.radius / max(distance(in.centre, effects.eye.xyz), 0.1);
+    let soften = select(0.0, smoothstep(DUST_BLUR.x, DUST_BLUR.y, span), dust_puff);
+    let close = select(0.0, 1.0 - smoothstep(DUST_CLOSE.x, DUST_CLOSE.y, distance(in.centre, effects.eye.xyz)), dust_puff);
+    let sharp = textureSample(sprites, sprite_sampler, in.uv, in.layer);
+    let blurred = textureSampleLevel(sprites, sprite_sampler, in.uv, in.layer, soften * DUST_LOD + close * DUST_CLOSE_LOD);
+    var texel = select(sharp, blurred, dust_puff);
+    let across = vec2<f32>(in.uv.x * 2.0 - 1.0, 1.0 - in.uv.y * 2.0);
+    let fall = pow(clamp(1.0 - dot(across, across), 0.0, 1.0), DUST_CLOSE_FALL);
+    let profile = fall * mix(DUST_CLOSE_LUMP, 1.0, texel.a) * DUST_CLOSE_PEAK;
+    texel.a = mix(pow(texel.a, 1.0 + DUST_THIN * soften) * mix(1.0, DUST_SEE, soften), profile, close);
     // Under a thousandth the fragment changes no pixel: its corners and the sprite's clear rim skip the rest.
     if (texel.a * in.color.a < NEGLIGIBLE) {
         discard;
@@ -201,8 +236,9 @@ fn fs_soft(in: Out) -> @location(0) vec4<f32> {
     let density = texel.a * in.color.a;
     // A wisp (the wheel spray's mist, `additive` -1) is faint by design: the erosion would eat all of it, so it keeps
     // a little, and it fades away from the eye by its size instead of filling a view from inside.
-    let wisp = in.additive < -0.5;
-    let erosion = select(EROSION, WISP_EROSION, wisp);
+    let dust = in.additive < -2.5;
+    let wisp = in.additive < -0.5 && !dust;
+    let erosion = select(select(EROSION, WISP_EROSION, wisp), mix(EROSION, DUST_CLOSE_EROSION, close), dust);
     let eaten = clamp((density - erosion * (1.0 - grain) * (1.0 - density)) / max(density, 1e-3), 0.0, 1.0);
     let near = select(1.0, smoothstep(in.radius, 3.0 * in.radius, distance(in.centre, effects.eye.xyz)), wisp);
     let visible = density * eaten * near;
@@ -211,7 +247,7 @@ fn fs_soft(in: Out) -> @location(0) vec4<f32> {
     }
     // The wet road's spray (`additive` -2) fades in over twice the depth, smoothly: it lifts off the road instead of
     // ending in a cut line.
-    let lifts = in.additive < -1.5;
+    let lifts = in.additive < -1.5 && !dust;
     let depth = clamp(SOFT * in.radius, 0.05, 1.5) * select(1.0, WISP_SOFT, lifts);
     let gap = scene_distance(in.position) - distance(in.world, effects.eye.xyz);
     let reach = clamp(gap / depth, 0.0, 1.0);
@@ -230,10 +266,19 @@ fn fs_soft(in: Out) -> @location(0) vec4<f32> {
     let to_sun = -effects.sun.xyz;
     let wrapped = clamp((dot(n, to_sun) + WRAP) / (1.0 + WRAP), 0.0, 1.0);
     let thin = 1.0 - clamp(density, 0.0, 1.0);
-    let scatter = SCATTER * phase(dot(effects.sun.xyz, toward), FORWARD) * mix(0.4, 1.0, thin);
-    let through = mix(1.0, 1.0 - SELF_SHADOW, clamp(density * facing, 0.0, 1.0));
-    let sky = mix(1.0 - BOUNCE, 1.0, n.y * 0.5 + 0.5);
-    let sun = sun_reach(in.world) * (DIFFUSE * wrapped * through + scatter);
+    // Billowing dust (`additive` -3): its thin sunlit rim glows by forward scattering (`DUST_RIM`), its dense core
+    // and underside are self-shadowed (`DUST_SHADOW`, `DUST_BOUNCE`).
+    var sun_seen = 0.0;
+    if (dust) {
+        sun_seen = dust_sun_reach(in.world, in.radius);
+    } else {
+        sun_seen = sun_reach(in.world);
+    }
+    let rim = select(0.0, DUST_RIM * (1.0 - facing) * thin, dust);
+    let scatter = (SCATTER + rim) * phase(dot(effects.sun.xyz, toward), FORWARD) * mix(0.4, 1.0, thin);
+    let through = mix(1.0, 1.0 - select(SELF_SHADOW, DUST_SHADOW, dust), clamp(density * facing, 0.0, 1.0));
+    let sky = mix(1.0 - select(BOUNCE, DUST_BOUNCE, dust), 1.0, n.y * 0.5 + 0.5) * select(1.0, mix(DUST_SKY, 1.0, sun_seen) * mix(1.0, DUST_CLOSE_SKY, close), dust);
+    let sun = sun_seen * (DIFFUSE * select(1.0, DUST_SUN, dust) * wrapped * through + scatter);
     let lamps = lamp_glow(lamps_at(in.world)) * select(1.0, WISP_LAMPS, wisp);
     var rgb: vec3<f32>;
     if (effects.day_sky.w > 0.0) {

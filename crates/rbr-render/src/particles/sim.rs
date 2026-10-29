@@ -388,7 +388,7 @@ pub struct Billboard {
     pub centre: [f32; 3],
     pub layer: f32,
     pub axis_u: [f32; 3],
-    /// 1 additive, -1 a wisp, -2 a holed wisp (`fs_soft`).
+    /// 1 additive, -1 a wisp, -2 a holed wisp, -3 billowing dust (`fs_soft`).
     pub additive: f32,
     pub axis_v: [f32; 3],
     pub color: [f32; 4],
@@ -425,6 +425,12 @@ const SMOKE_WEIGHT: f32 = 0.05;
 const SMOKE_DENSITY: f32 = 2.0;
 /// Ours: the wet road's holed spray sprite; its billboards are marked -2 (`fs_soft` lifts them off the ground softly).
 const WISP_SPRITE: u32 = super::wheel_spray::sprites::WISP;
+/// Ours: the dry dust's billowing sprite; its billboards are marked -3 (`fs_soft` lights it as a plume).
+const DUST_SPRITE: u32 = super::wheel_spray::sprites::DUST;
+/// Ours: the thrown stones' sprite, and the most a stone may be across, in metres per metre from the eye (about four
+/// pixels at 1080p), so one near the camera stays a speck.
+const STONE_SPRITE: u32 = super::wheel_spray::sprites::STONE;
+const STONE_SCREEN: f32 = 0.0027;
 /// Ours: particles closer to the eye than this fade out, over the next metre.
 const NEAR_FADE: f32 = 0.3;
 
@@ -454,9 +460,10 @@ impl Simulation {
                 } else {
                     MIN_SIZE
                 };
-                let [w, h] = look.size(t).map(|s| (s * p.scale).max(least));
                 let centre = to_stage(p.position);
                 let distance = centre.distance(facing.eye);
+                let most = if look.sprite == STONE_SPRITE { distance * STONE_SCREEN } else { f32::MAX };
+                let [w, h] = look.size(t).map(|s| (s * p.scale).min(most).max(least));
                 color[3] *= ((distance - NEAR_FADE) / 1.0).clamp(0.0, 1.0);
                 if look.attenuation[1] > look.attenuation[0] {
                     let [start, end] = look.attenuation;
@@ -479,7 +486,9 @@ impl Simulation {
                     centre: centre.to_array(),
                     layer: layer as f32,
                     axis_u: axis_u.to_array(),
-                    additive: if look.wisp && look.sprite == WISP_SPRITE {
+                    additive: if look.sprite == DUST_SPRITE {
+                        -3.0
+                    } else if look.wisp && look.sprite == WISP_SPRITE {
                         -2.0
                     } else if look.wisp {
                         -1.0
