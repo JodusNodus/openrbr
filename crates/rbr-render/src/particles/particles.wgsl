@@ -174,6 +174,15 @@ const DUST_BLUR: vec2<f32> = vec2<f32>(0.12, 0.5);
 const DUST_LOD: f32 = 2.5;
 const DUST_THIN: f32 = 0.8;
 const DUST_SEE: f32 = 0.7;
+// Close up, within `DUST_CLOSE` metres of the eye (full inside the first, none beyond the second), a puff is
+// wispier still: the extra mip, rim power, the share of its opacity kept, the erosion in place of `EROSION` and the
+// share of the sky's light it takes in shade (`DUST_SKY`: it is the road's colour, dim under a canopy).
+const DUST_CLOSE: vec2<f32> = vec2<f32>(3.0, 9.0);
+const DUST_CLOSE_LOD: f32 = 1.5;
+const DUST_CLOSE_THIN: f32 = 0.6;
+const DUST_CLOSE_SEE: f32 = 0.55;
+const DUST_CLOSE_EROSION: f32 = 0.2;
+const DUST_SKY: f32 = 0.4;
 const DUST_SUN: f32 = 2.2;
 const DUST_RIM: f32 = 2.0;
 const DUST_SHADOW: f32 = 0.7;
@@ -205,10 +214,12 @@ fn fs_soft(in: Out) -> @location(0) vec4<f32> {
     let dust_puff = in.additive < -2.5;
     let span = in.radius / max(distance(in.centre, effects.eye.xyz), 0.1);
     let soften = select(0.0, smoothstep(DUST_BLUR.x, DUST_BLUR.y, span), dust_puff);
+    let close = select(0.0, 1.0 - smoothstep(DUST_CLOSE.x, DUST_CLOSE.y, distance(in.centre, effects.eye.xyz)), dust_puff);
     let sharp = textureSample(sprites, sprite_sampler, in.uv, in.layer);
-    let blurred = textureSampleLevel(sprites, sprite_sampler, in.uv, in.layer, soften * DUST_LOD);
+    let blurred = textureSampleLevel(sprites, sprite_sampler, in.uv, in.layer, soften * DUST_LOD + close * DUST_CLOSE_LOD);
     var texel = select(sharp, blurred, dust_puff);
-    texel.a = pow(texel.a, 1.0 + DUST_THIN * soften) * mix(1.0, DUST_SEE, soften);
+    texel.a = pow(texel.a, 1.0 + DUST_THIN * soften + DUST_CLOSE_THIN * close)
+        * mix(1.0, DUST_SEE, soften) * mix(1.0, DUST_CLOSE_SEE, close);
     // Under a thousandth the fragment changes no pixel: its corners and the sprite's clear rim skip the rest.
     if (texel.a * in.color.a < NEGLIGIBLE) {
         discard;
@@ -221,7 +232,7 @@ fn fs_soft(in: Out) -> @location(0) vec4<f32> {
     // a little, and it fades away from the eye by its size instead of filling a view from inside.
     let dust = in.additive < -2.5;
     let wisp = in.additive < -0.5 && !dust;
-    let erosion = select(EROSION, WISP_EROSION, wisp);
+    let erosion = select(select(EROSION, WISP_EROSION, wisp), mix(EROSION, DUST_CLOSE_EROSION, close), dust);
     let eaten = clamp((density - erosion * (1.0 - grain) * (1.0 - density)) / max(density, 1e-3), 0.0, 1.0);
     let near = select(1.0, smoothstep(in.radius, 3.0 * in.radius, distance(in.centre, effects.eye.xyz)), wisp);
     let visible = density * eaten * near;
@@ -254,7 +265,7 @@ fn fs_soft(in: Out) -> @location(0) vec4<f32> {
     let rim = select(0.0, DUST_RIM * (1.0 - facing) * thin, dust);
     let scatter = (SCATTER + rim) * phase(dot(effects.sun.xyz, toward), FORWARD) * mix(0.4, 1.0, thin);
     let through = mix(1.0, 1.0 - select(SELF_SHADOW, DUST_SHADOW, dust), clamp(density * facing, 0.0, 1.0));
-    let sky = mix(1.0 - select(BOUNCE, DUST_BOUNCE, dust), 1.0, n.y * 0.5 + 0.5);
+    let sky = mix(1.0 - select(BOUNCE, DUST_BOUNCE, dust), 1.0, n.y * 0.5 + 0.5) * select(1.0, mix(DUST_SKY, 1.0, sun_reach(in.world)), dust);
     let sun = sun_reach(in.world) * (DIFFUSE * select(1.0, DUST_SUN, dust) * wrapped * through + scatter);
     let lamps = lamp_glow(lamps_at(in.world)) * select(1.0, WISP_LAMPS, wisp);
     var rgb: vec3<f32>;
