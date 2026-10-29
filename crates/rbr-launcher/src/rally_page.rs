@@ -53,7 +53,7 @@ use rbr_gameplay::service::{self, ParkState, Rules, ServicePark};
 use rbr_gameplay::setup::SeasonSetup;
 use rbr_gameplay::weather::Season;
 
-use crate::pages::WARN;
+use crate::pages::{Issue, WARN};
 
 /// A stage to drive: the extra `rbr-standalone` arguments (the season's options and the rally's files), the tyre and
 /// the road wear.
@@ -64,6 +64,8 @@ pub struct StageStart {
     pub wear: u32,
     /// The setup row picked for the stage.
     pub setup: SeasonSetup,
+    /// `last_tyre` before the stage's pick: what a stage that never starts restores.
+    pub prev_tyre: u32,
 }
 
 /// What the page asks of the launcher.
@@ -421,7 +423,14 @@ impl RallyPage {
         let row = row.ok_or(format!("map {map} has no weather row"))?;
         let letter = ['M', 'N', 'E', 'O', 'S'].get(table.rows[row].letter as usize).copied().unwrap_or('M');
         let stage = RallyStage { map, letter, row, hour: 12, minute: 0 };
-        Ok(StageStart { stage, args: Vec::new(), tyre: 0, wear: 1, setup: SeasonSetup::Current })
+        Ok(StageStart {
+            stage,
+            args: Vec::new(),
+            tyre: 0,
+            wear: 1,
+            setup: SeasonSetup::Current,
+            prev_tyre: self.last_tyre,
+        })
     }
 
     /// The tyre stage `index` runs on: the pick (the surface's dry one by default) after a service, else the car's.
@@ -450,9 +459,10 @@ impl RallyPage {
         let mut args = championship_args(options, false_starts, start);
         args.extend(["--rally-next".to_owned(), self.next_event(index).name().to_owned()]);
         args.extend(stage_args);
+        let prev_tyre = self.last_tyre;
         self.driving = true;
         self.last_tyre = tyre;
-        Ok(StageStart { stage, args, tyre, wear, setup })
+        Ok(StageStart { stage, args, tyre, wear, setup, prev_tyre })
     }
 
     fn files(here: &Path) -> (PathBuf, PathBuf, PathBuf) {
@@ -498,6 +508,15 @@ impl RallyPage {
         self.season_stage_done(times, drivable);
     }
 
+    /// A stage that never started (its viewer failed to launch): undo what `stage_start` set (or the trial's
+    /// flags), so the championship and the season save stay exactly as they were and the player can retry. The
+    /// status keeps the reason.
+    pub(crate) fn abort_stage_start(&mut self, prev_tyre: u32) {
+        self.driving = false;
+        self.practice = false;
+        self.last_tyre = prev_tyre;
+    }
+
     /// Opens the park for the current service stop, on the car's repair tree: under NGP (`ngp`: its `physics.rbz`) the
     /// tree of the car NGP has in the slot, with NGP's rules (the launcher's: an RSF car in slot 5 gets the archive's
     /// slot 5 tree, as a quick race's RSF car runs there); without, the retail one with 1.02's (the tests').
@@ -536,6 +555,7 @@ impl RallyPage {
         car_name: &str,
         ngp: &Path,
         car_row: &mut dyn FnMut(&mut Ui, u32) -> bool,
+        blocker: Option<&Issue>,
     ) -> Option<Request> {
         if let Err(e) = &self.rallies {
             ui.colored_label(WARN, e);
@@ -638,7 +658,10 @@ impl RallyPage {
                         // No service before the stage: the stage loop starts it on the car as it is.
                         ui.label(format!("Tyres {}, setup as driven", crate::catalog::tyre_label(self.last_tyre)));
                     }
-                    let go = ui.add_enabled(!self.driving, egui::Button::new(format!("Drive SS{}", index + 1)));
+                    let go = ui.add_enabled(
+                        !self.driving && blocker.is_none(),
+                        egui::Button::new(format!("Drive SS{}", index + 1)),
+                    );
                     if go.clicked() {
                         match self.stage_start(here, index) {
                             Ok(start) => request = Some(Request::Launch(start)),
@@ -649,6 +672,9 @@ impl RallyPage {
                         request = Some(Request::Setup);
                     }
                 });
+                if let Some(issue) = blocker.filter(|_| !self.driving) {
+                    ui.colored_label(WARN, &issue.text);
+                }
             }
             RallyPhase::Service(stop) if c.damage().is_none() => {
                 // The rally's start (the season's welcome page): a fresh car, nothing to repair.
@@ -722,7 +748,9 @@ impl RallyPage {
                                 self.turn_done();
                             }
                             for (label, map) in [("Yard trial", 72), ("Stage trial", 71)] {
-                                if ui.add_enabled(!self.driving, egui::Button::new(label)).clicked() {
+                                let trial =
+                                    ui.add_enabled(!self.driving && blocker.is_none(), egui::Button::new(label));
+                                if trial.clicked() {
                                     match self.trial(season, map) {
                                         Ok(start) => {
                                             (self.driving, self.practice) = (true, true);
@@ -733,6 +761,9 @@ impl RallyPage {
                                 }
                             }
                         });
+                        if let Some(issue) = blocker.filter(|_| !self.driving) {
+                            ui.colored_label(WARN, &issue.text);
+                        }
                     }
                     Some(Turn::Over) => {
                         ui.strong("The season is over.");
@@ -1037,6 +1068,29 @@ fn now_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A stage that never starts (its viewer failed to launch): what `stage_start` set is undone, and a trial's
+    /// flags with it, so the championship and the season save stay exactly as they were and the player can retry.
+    /// Needs no game data and spawns nothing; the full launch-failure path needs a viewer (the ignored
+    /// `a_live_two_stage_championship_runs_through_the_turns` covers a launch end to end).
+    #[test]
+    fn a_stage_that_never_starts_is_forgotten() {
+        let here = std::env::temp_dir().join(format!("rbr-launcher-abort-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&here);
+        std::fs::create_dir_all(&here).unwrap();
+        let mut page = RallyPage::new(&Data::new(here.join("data"), None));
+        (page.driving, page.practice, page.last_tyre) = (true, false, 5);
+        page.abort_stage_start(4);
+        assert!(!page.driving && !page.practice);
+        assert_eq!(page.last_tyre, 4);
+        // A trial that never starts: the trial flags go, the tyre (never picked) stays.
+        (page.driving, page.practice) = (true, true);
+        page.abort_stage_start(4);
+        assert!(!page.driving && !page.practice);
+        assert_eq!(page.last_tyre, 4);
+        assert!(page.championship.is_none() && page.run.is_none());
+        std::fs::remove_dir_all(&here).unwrap();
+    }
 
     #[test]
     fn the_start_time_goes_to_the_stage_as_hours_and_minutes() {

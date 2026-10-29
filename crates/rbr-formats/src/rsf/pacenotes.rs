@@ -156,7 +156,9 @@ pub fn parse(text: &str) -> Result<Vec<Note>, String> {
         .ok_or("no [PACENOTES] count")?
         .parse::<usize>()
         .map_err(|e| format!("[PACENOTES] count: {e}"))?;
-    let mut notes = Vec::with_capacity(count);
+    // No reservation: `count` comes from the file and can be `usize::MAX`; the loop below fails at the first
+    // missing section.
+    let mut notes = Vec::new();
     for k in 0..count {
         let name = format!("P{k}");
         let section = sections.iter().find(|s| s.name == name).ok_or_else(|| format!("no [{name}]"))?;
@@ -278,6 +280,13 @@ mod tests {
         assert!(notes[1].sticky());
         // OVERCREST (16) standing in for OVERCREST_NOLINK (2269).
         assert_eq!(notes[2].kind, 16);
+    }
+
+    #[test]
+    fn a_huge_count_is_an_error() {
+        // `usize::MAX` notes would overflow the reservation; the file ends after the header.
+        let text = "[PACENOTES]\ncount = 18446744073709551615\n";
+        assert!(parse(text).is_err());
     }
 
     #[test]

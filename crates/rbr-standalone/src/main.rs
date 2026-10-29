@@ -116,7 +116,7 @@ use rbr_gameplay::control::QuantizedControl;
 use rbr_gameplay::weather::{self, Season};
 use rbr_physics::snapshot::Snapshot;
 use rbr_recording::replay::Replay;
-use rbr_recording::{Frame, Frames};
+use rbr_recording::Frame;
 
 use args::{Args, USAGE};
 use physics::{on_big_stack, payload, why};
@@ -284,7 +284,7 @@ fn events(args: &Args, out: &Path, data: &Data, race: &boot::Race, stage: &Stage
         let live = live::Live::boot(data, &args.stage, race, stage, args.marker_settings, true)?;
         events_out::write(live, stage, recording, out)
     })
-    .expect("the events run panicked outside a step");
+    .unwrap_or_else(|e| Err(format!("the events run panicked outside a step: {}", why(&*e))));
     match r {
         Ok(written) => {
             eprintln!("rbr-standalone: {} steps of events in {}", written.steps, out.display());
@@ -312,7 +312,16 @@ fn autopilot(args: &Args, out: &Path, data: &Data, race: Option<&boot::Race>, st
         },
         _ => vec![],
     };
-    let frames: Vec<Frame> = Frames::new(&bytes).map_while(Result::ok).collect();
+    let frames: Vec<Frame> = match rbr_recording::read_all(&bytes) {
+        Ok(frames) => frames,
+        Err(e) => {
+            match &args.recording {
+                Some(path) => eprintln!("{}: {e}", path.display()),
+                None => eprintln!("{e}"),
+            }
+            return ExitCode::FAILURE;
+        }
+    };
     let r = on_big_stack(|| {
         let (mut live, head, control) = if let Some(race) = race {
             let live = live::Live::boot(data, &args.stage, race, stage, args.marker_settings, false)?;

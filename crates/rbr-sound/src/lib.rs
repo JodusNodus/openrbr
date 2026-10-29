@@ -255,28 +255,34 @@ impl Player {
         }
     }
 
-    /// Plays the car's FMOD bank (`fmod`) instead of its 1.02 engine, turbo and transmission voices.
+    /// Plays the car's FMOD bank (`fmod`) instead of its 1.02 engine, turbo and transmission voices. The loop
+    /// waves are cloned and the mixing tree is built before taking the mixer lock; only the swap runs under it,
+    /// and the old bank drops after it is released, so the audio callback never waits on the work.
     pub fn use_fmod(&mut self, car: FmodCar) {
-        if let Ok(mut mixer) = self.mixer.lock() {
-            mixer.set_fmod(car.loop_waves(), car.waves.clone(), &car.buses);
-        }
+        let rate = self.mixer.lock().map(|mixer| mixer.rate()).unwrap_or(44100);
+        let prepared = Mixer::prepare_fmod(car.loop_waves(), car.waves.clone(), &car.buses, rate);
+        let old = if let Ok(mut mixer) = self.mixer.lock() { Some(mixer.swap_fmod(prepared)) } else { None };
+        drop(old);
         self.models.fmod = Some(car);
     }
 
-    /// Calls the notes with a co-driver mod instead of 1.02's co-driver, muted as the co-driver switch is.
+    /// Calls the notes with a co-driver mod instead of 1.02's co-driver, muted as the co-driver switch is. The
+    /// samples are copied before taking the mixer lock; only the swap runs under it.
     pub fn use_codriver(&mut self, mut custom: CustomCoDriver) {
-        if let Ok(mut mixer) = self.mixer.lock() {
-            mixer.set_voice(custom.samples());
-        }
+        let prepared: Vec<Arc<data::Wave>> = custom.samples().iter().cloned().map(Arc::new).collect();
+        let old = if let Ok(mut mixer) = self.mixer.lock() { Some(mixer.swap_voice(prepared)) } else { None };
+        drop(old);
         custom.muted = self.models.codriver.muted;
         self.models.custom = Some(custom);
     }
 
-    /// Gives the H-shifter's grind its sample (`Loop::Grind`).
+    /// Gives the H-shifter's grind its sample (`Loop::Grind`). The seamless loop is built before taking the mixer
+    /// lock; only the swap runs under it.
     pub fn set_grind(&mut self, wave: data::Wave) {
-        if let Ok(mut mixer) = self.mixer.lock() {
-            mixer.set_grind(wave);
-        }
+        let prepared = Arc::new(crate::mixer::voices::seamless(&wave));
+        drop(wave);
+        let old = if let Ok(mut mixer) = self.mixer.lock() { Some(mixer.swap_grind(prepared)) } else { None };
+        drop(old);
     }
 
     /// The H-shifter's grind at `pitch` (1 = the sample's rate), or silent.

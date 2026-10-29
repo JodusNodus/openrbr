@@ -666,15 +666,8 @@ mod tests {
             (KIND_GEOMETRY, SUBTYPE_DAMAGEABLE, mesh_body(true)),
             (KIND_HELPER, SUBTYPE_HELPER, node_body("parent", 1, -1)),
         ]);
-        for cut in 0..bytes.len() {
-            let _ = parse(&bytes[..cut]);
-        }
-        for at in BANNER.len()..bytes.len() {
-            for value in [0u8, 0x7f, 0xff] {
-                let mut copy = bytes.clone();
-                copy[at] = value;
-                let _ = parse(&copy);
-            }
-        }
+        crate::damage::never_panics(&bytes, &[0, 0x7f, 0xff], |b| {
+            let _ = parse(b);
+        });
     }
 }

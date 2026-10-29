@@ -8,3 +8,4 @@ original/*
 original/retail-1.0/*
 !original/retail-1.0/install.SHA256SUMS
 .DS_Store
+__pycache__/

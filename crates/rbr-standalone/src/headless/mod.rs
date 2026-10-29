@@ -26,7 +26,7 @@ use rbr_hybrid::pure::{self, Compare, Playback, ReadTrace};
 use rbr_hybrid::timekeeper::layout as keeper_layout;
 use rbr_physics::snapshot::Snapshot;
 use rbr_recording::sound::TyreMax;
-use rbr_recording::{Frame, Frames, CONTROL_BYTES};
+use rbr_recording::{Frame, CONTROL_BYTES};
 
 use crate::args::Args;
 use crate::boot;
@@ -572,7 +572,13 @@ pub fn run_all(args: &Args, data: &Data, stage: &StageData, race: Option<&boot::
             return ExitCode::FAILURE;
         }
     };
-    let frames: Vec<Frame> = Frames::new(&bytes).map_while(Result::ok).collect();
+    let frames: Vec<Frame> = match rbr_recording::read_all(&bytes) {
+        Ok(frames) => frames,
+        Err(e) => {
+            eprintln!("{}: {e}", recording.display());
+            return ExitCode::FAILURE;
+        }
+    };
     let mask = pure::static_mask(&frames);
     let mut ok = true;
     let boot = ["boot".to_string()];

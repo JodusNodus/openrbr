@@ -18,6 +18,10 @@ const PIXEL_FORMAT_SIZE: u32 = 32;
 const PF_FOURCC: u32 = 0x4;
 const PF_RGB: u32 = 0x40;
 
+/// Largest width or height accepted, in texels: the D3D9 maximum. Retail files are at most 2048 wide. Larger
+/// dimensions are corruption, and their block counts would overflow `usize` arithmetic below.
+const MAX_DIMENSION: u32 = 16384;
+
 /// Byte offsets within the header (from the start of the file).
 const OFFSET_HEIGHT: usize = 12;
 const OFFSET_WIDTH: usize = 16;
@@ -89,7 +93,9 @@ impl<'a> Dds<'a> {
         let mut rest = self.data;
         let (mut width, mut height) = (self.width, self.height);
         for _ in 0..self.mip_count {
-            let len = level_len(width, height, self.format);
+            let Some(len) = level_len(width, height, self.format) else {
+                break;
+            };
             let Some((data, tail)) = rest.split_at_checked(len) else {
                 break;
             };
@@ -102,11 +108,12 @@ impl<'a> Dds<'a> {
     }
 }
 
-/// Bytes of one mip level: whole blocks per row and column, at least one block.
-fn level_len(width: u32, height: u32, format: Format) -> usize {
+/// Bytes of one mip level: whole blocks per row and column, at least one block. `None` when the block count
+/// overflows (only for dimensions above [`MAX_DIMENSION`], which [`parse`] rejects).
+fn level_len(width: u32, height: u32, format: Format) -> Option<usize> {
     let blocks_x = width.div_ceil(format.block_edge()).max(1) as usize;
     let blocks_y = height.div_ceil(format.block_edge()).max(1) as usize;
-    blocks_x * blocks_y * format.block_len()
+    blocks_x.checked_mul(blocks_y)?.checked_mul(format.block_len())
 }
 
 /// Parse failure.
@@ -180,6 +187,9 @@ pub fn parse(bytes: &[u8]) -> Result<Dds<'_>, Error> {
     if width == 0 || height == 0 {
         return Err(Error::Header { what: "zero dimension" });
     }
+    if width > MAX_DIMENSION || height > MAX_DIMENSION {
+        return Err(Error::Header { what: "dimensions" });
+    }
     // Retail files leave the `DDSD_MIPMAPCOUNT` flag clear but store the count (4), so the field
     // is read whenever it is non-zero.
     let mip_count = u32_at(bytes, OFFSET_MIP_COUNT).max(1);
@@ -189,7 +199,10 @@ pub fn parse(bytes: &[u8]) -> Result<Dds<'_>, Error> {
     }
 
     let data = &bytes[HEADER_LEN..];
-    let expected: usize = (0..mip_count).map(|level| level_len(width >> level, height >> level, format)).sum();
+    let expected: usize = (0..mip_count)
+        .map(|level| level_len(width >> level, height >> level, format))
+        .sum::<Option<usize>>()
+        .ok_or(Error::Header { what: "dimensions" })?;
     let data = data.get(..expected).ok_or(Error::Length { expected, found: data.len() })?;
     Ok(Dds { width, height, format, mip_count, data })
 }
@@ -218,8 +231,11 @@ pub fn to_rgba8(bytes: &[u8]) -> Option<Vec<u8>> {
     let lanes = [lane(masks[0])?, lane(masks[1])?, lane(masks[2])?];
     let alpha_lane = if alpha { Some(lane(masks[3])?) } else { None };
     let (width, height) = (u32_at(header, OFFSET_WIDTH), u32_at(header, OFFSET_HEIGHT));
+    if width == 0 || height == 0 || width > MAX_DIMENSION || height > MAX_DIMENSION {
+        return None;
+    }
     let mips = u32_at(header, OFFSET_MIP_COUNT).max(1);
-    if mips > width.max(height).max(1).ilog2() + 1 {
+    if mips > width.max(height).ilog2() + 1 {
         return None;
     }
     let texels: usize = (0..mips).map(|l| ((width >> l).max(1) * (height >> l).max(1)) as usize).sum();
@@ -338,7 +354,7 @@ mod tests {
         bytes[OFFSET_PF_SIZE..OFFSET_PF_SIZE + 4].copy_from_slice(&PIXEL_FORMAT_SIZE.to_le_bytes());
         bytes[OFFSET_PF_FLAGS..OFFSET_PF_FLAGS + 4].copy_from_slice(&PF_FOURCC.to_le_bytes());
         bytes[OFFSET_FOURCC..OFFSET_FOURCC + 4].copy_from_slice(b"DXT1");
-        let data: usize = (0..mips).map(|l| level_len(width >> l, height >> l, Format::Dxt1)).sum();
+        let data: usize = (0..mips).map(|l| level_len(width >> l, height >> l, Format::Dxt1).unwrap()).sum();
         bytes.resize(HEADER_LEN + data, 0);
         bytes
     }
@@ -404,6 +420,27 @@ mod tests {
         assert_eq!(sizes, vec![32, 8]);
         bytes[OFFSET_RGBA_MASKS..OFFSET_RGBA_MASKS + 4].copy_from_slice(&0xff_0000u32.to_le_bytes());
         assert_eq!(parse(&bytes), Err(Error::Format { fourcc: [0; 4] }));
+    }
+
+    #[test]
+    fn damaged_files_never_panic() {
+        let bytes = dxt1(8, 8, 1);
+        crate::damage::never_panics(&bytes, &[0, 0x7f, 0xff], |b| {
+            let _ = parse(b);
+        });
+    }
+
+    #[test]
+    fn huge_dimensions_are_an_error() {
+        // 0xFFFFFFFF dimensions overflowed the block count (a panic in debug, a wrap in release).
+        let mut bytes = dxt1(8, 8, 1);
+        bytes[OFFSET_WIDTH..OFFSET_WIDTH + 4].copy_from_slice(&u32::MAX.to_le_bytes());
+        bytes[OFFSET_HEIGHT..OFFSET_HEIGHT + 4].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert_eq!(parse(&bytes), Err(Error::Header { what: "dimensions" }));
+        // The plain-texel path multiplies the dimensions too: an RGB file with the same header.
+        bytes[OFFSET_PF_FLAGS..OFFSET_PF_FLAGS + 4].copy_from_slice(&PF_RGB.to_le_bytes());
+        bytes[OFFSET_RGB_BITS..OFFSET_RGB_BITS + 4].copy_from_slice(&32u32.to_le_bytes());
+        assert_eq!(to_rgba8(&bytes), None);
     }
 
     #[test]

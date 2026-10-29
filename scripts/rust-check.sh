@@ -7,7 +7,8 @@
 # The change is HEAD against its merge base with integration/handoff, or main when there is no integration branch (on
 # that branch itself: against HEAD^1, the merge's first parent), or against RUST_CHECK_BASE. A change to Cargo.toml or Cargo.lock checks every crate.
 # The vector step runs the store modules of the changed rbr-physics module dirs (every module when other rbr-physics
-# files change); RUST_CHECK_VECTORS="car_body tyre" names them instead, "none" skips them.
+# files or a dir with no store of its own change); RUST_CHECK_VECTORS="car_body tyre" names them instead, "none" skips
+# them. A base, diff or cargo tree that fails is a FAIL, not an empty change.
 # RUST_CHECK_ALL=1 checks every crate and every vector module (the daily full run).
 # The tests read RBR_DATA, RBR_PATCH, RBR_RECORDINGS and the others in docs/development.md "Set up"; unset, the tests
 # that need them skip, and the first line names them. Without RBR_VECTOR_STORE the vector step is skipped.
@@ -36,11 +37,13 @@ if [ -z "${RUST_CHECK_BASE:-}" ]; then
     for ref in integration/handoff origin/integration/handoff main origin/main; do
         git rev-parse -q --verify "$ref^{commit}" >/dev/null && break
     done
-    RUST_CHECK_BASE=$(git merge-base HEAD "$ref")
+    RUST_CHECK_BASE=$(git merge-base HEAD "$ref") ||
+        { echo "rust-check: FAIL (no merge base with $ref; set RUST_CHECK_BASE)"; exit 1; }
 fi
 base=$RUST_CHECK_BASE
 [ "$base" = "$(git rev-parse HEAD)" ] && base=$(git rev-parse HEAD^1)
-changed=$(git diff --name-only "$base" -- Cargo.toml Cargo.lock crates)
+changed=$(git diff --name-only "$base" -- Cargo.toml Cargo.lock crates) ||
+    { echo "rust-check: FAIL (git diff against $base)"; exit 1; }
 all=${RUST_CHECK_ALL:-0}
 # The workspace manifest, or a lock change no crate manifest explains (a dependency update), touches every crate.
 grep -qx 'Cargo.toml' <<<"$changed" && all=1
@@ -50,12 +53,13 @@ crates=()
 if [ "$all" = 1 ]; then
     crates=(--workspace)
 else
+    dependents=""
     for crate in $(sed -n 's|^crates/\(rbr-[a-z-]*\)/.*|\1|p' <<<"$changed" | sort -u); do
-        cargo tree -q -i "$crate" --workspace -e normal,dev --prefix none \
-            --format '{p}' | cut -d' ' -f1
-    done | grep '^rbr-' | sort -u > "/tmp/rust-check-$$-crates.txt"
-    while read -r crate; do crates+=(-p "$crate"); done < "/tmp/rust-check-$$-crates.txt"
-    rm -f "/tmp/rust-check-$$-crates.txt"
+        tree=$(cargo tree -q -i "$crate" --workspace -e normal,dev --prefix none --format '{p}') ||
+            { echo "rust-check: FAIL (cargo tree -i $crate)"; exit 1; }
+        dependents+=$'\n'$tree
+    done
+    for crate in $(cut -d' ' -f1 <<<"$dependents" | grep '^rbr-' | sort -u); do crates+=(-p "$crate"); done
 fi
 
 if [ -n "${RUST_CHECK_VECTORS:-}" ]; then
@@ -67,13 +71,21 @@ elif ! grep -q '^crates/rbr-physics/' <<<"$changed"; then
 elif grep -qE '^crates/rbr-physics/(Cargo\.toml|src/[a-z_]+\.rs|tests/[a-z_]+/)' <<<"$changed"; then
     vectors=""
 else
-    # A module dir's name is its store dir; a vector test names its store dir by the RBR_*_VECTORS it reads.
-    vectors=$( (sed -n 's|^crates/rbr-physics/src/\([a-z_]*\)/.*|\1|p' <<<"$changed"
-        for t in $(grep -E '^crates/rbr-physics/tests/[a-z_]+\.rs$' <<<"$changed"); do
-            [ -f "$t" ] && grep -ohE '"RBR_[A-Z0-9_]+_VECTORS"' "$t" | tr -d '"' | sed 's/^RBR_//; s/_VECTORS$//' |
-                tr A-Z a-z | sed 's/^ent$/entities/'
-        done) | sort -u | tr '\n' ' ')
-    [ -n "$vectors" ] || vectors=none
+    # A module dir's name is its store dir; a vector test names its store dir by the RBR_*_VECTORS it reads. A dir
+    # with no store of its own (math, mem, store, ngp, ...) is shared by the modules: every module runs.
+    stores() { grep -ohE '"RBR_[A-Z0-9_]+_VECTORS"' "$@" | tr -d '"' | sed 's/^RBR_//; s/_VECTORS$//' |
+        tr A-Z a-z | sed 's/^ent$/entities/' | sort -u; }
+    known=$(stores crates/rbr-physics/tests/*.rs)
+    dirs=$(sed -n 's|^crates/rbr-physics/src/\([a-z_]*\)/.*|\1|p' <<<"$changed" | sort -u)
+    tests=$(grep -E '^crates/rbr-physics/tests/[a-z_]+\.rs$' <<<"$changed" | while read -r t; do
+        [ -f "$t" ] && echo "$t"; done)
+    if [ -n "$(comm -23 <(echo "$dirs" | sed '/^$/d') <(echo "$known"))" ]; then
+        vectors=""
+    else
+        # shellcheck disable=SC2086 # a list of test files
+        vectors=$( (echo "$dirs"; [ -z "$tests" ] || stores $tests) | sed '/^$/d' | sort -u | tr '\n' ' ')
+        [ -n "$vectors" ] || vectors=none
+    fi
 fi
 
 if [ "$vectors" != none ] && [ -z "$store" ]; then

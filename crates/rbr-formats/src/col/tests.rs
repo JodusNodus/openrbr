@@ -176,14 +176,7 @@ fn graft_path_must_reach_placeholder() {
 #[test]
 fn truncations_and_flips_never_panic() {
     let good = minimal();
-    for n in 0..good.len() {
-        let _ = parse(&good[..n]);
-    }
-    for i in 0..good.len() {
-        for v in [0u8, 0x20, 0x80, 0xff] {
-            let mut b = good.clone();
-            b[i] = v;
-            let _ = parse(&b);
-        }
-    }
+    crate::damage::never_panics(&good, &[0, 0x20, 0x80, 0xff], |b| {
+        let _ = parse(b);
+    });
 }

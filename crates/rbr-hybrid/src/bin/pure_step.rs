@@ -24,7 +24,7 @@ use std::process::ExitCode;
 
 use rbr_hybrid::pure::{self, Compare, Playback, Stop, Stopped};
 use rbr_physics::snapshot::Snapshot;
-use rbr_recording::{Frame, Frames};
+use rbr_recording::Frame;
 
 struct Run {
     steps: usize,
@@ -158,7 +158,13 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let frames: Vec<Frame> = Frames::new(&bytes).map_while(Result::ok).collect();
+    let frames: Vec<Frame> = match rbr_recording::read_all(&bytes) {
+        Ok(frames) => frames,
+        Err(e) => {
+            eprintln!("{recording}: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
     let mut by_pre: HashMap<u32, usize> = HashMap::new();
     for (i, f) in frames.iter().enumerate() {
         by_pre.entry(f.pre).or_insert(i);

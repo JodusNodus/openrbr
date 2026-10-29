@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use rbr_formats::rsf::{codriver, pacenotes, stage_list};
+use rbr_formats::rsf::{codriver, stage_list};
 use rbr_formats::saves::SaveDir;
 use rbr_gameplay::crt::CrtRand;
 use rbr_gameplay::markers::MarkerSettings;
@@ -148,31 +148,6 @@ pub fn codriver_base_args(mods: &CodriverMods, voice: Option<&str>, style: &str,
         .chain(["--codriver-voice", &voice, "--codriver-style", style, "--codriver-ranges", ranges])
         .map(str::to_owned)
         .collect()
-}
-
-/// The viewer's co-driver mod arguments: the plugin with the voice, style and range set, and the stage's MyPacenotes
-/// file when `my_pacenotes` is on and there is one for the stage `map` (RSF's name for it, and the community stage's).
-pub fn codriver_args(
-    mods: &CodriverMods,
-    voice: Option<&str>,
-    style: &str,
-    ranges: &str,
-    rsf_root: &Path,
-    my_pacenotes: bool,
-    stage_names: &[&str],
-) -> Vec<String> {
-    let mut args = codriver_base_args(mods, voice, style, ranges);
-    if args.is_empty() {
-        return args;
-    }
-    let notes = my_pacenotes
-        .then(|| pacenotes::my_pacenotes_dir(rsf_root))
-        .flatten()
-        .and_then(|dir| pacenotes::my_pacenotes(&dir, stage_names));
-    if let Some(file) = notes {
-        args.extend(["--pacenotes".into(), file.display().to_string()]);
-    }
-    args
 }
 
 /// The viewer and `rbr-standalone` arguments for a boot launch.
@@ -427,7 +402,7 @@ impl Form {
     /// Starts a championship stage on its season-table row (the random preset's row) with the stage's tyres, road
     /// wear and the season's options.
     pub fn start_rally_stage(&mut self, start: rally_page::StageStart) {
-        let rally_page::StageStart { stage, args: mut extra, tyre, wear, setup } = start;
+        let rally_page::StageStart { stage, args: mut extra, tyre, wear, setup, prev_tyre } = start;
         // A finished championship stage is offered to the stage record and the personal best too (`M00480810` calls
         // `M00567330` in every mode but 6, 7 and 9); the trials are practice.
         if extra.iter().any(|a| a == "--championship") {
@@ -465,8 +440,9 @@ impl Form {
             Err(e) => self.status = e,
         }
         if self.child.is_none() {
-            // Not started: the page takes it as a stage left at once.
-            self.rally.stage_closed(&self.here());
+            // The stage never started (the status says why): undo what `stage_start` set, so the championship
+            // and the season save stay exactly as they were and the player can retry.
+            self.rally.abort_stage_start(prev_tyre);
         }
     }
 
@@ -497,43 +473,20 @@ impl Form {
             if !gearbox.sequential {
                 (options.aids.clutch_help, options.aids.auto_gears) = (false, false);
             }
-            viewer_extra.extend(shifter_args(gearbox, Path::new(self.rsf_root.trim())));
+            viewer_extra.extend(shifter_args(gearbox, Path::new(self.rsf().trim())));
         }
         if let Some(mods) = self.codriver_mods.as_ref().filter(|_| self.codriver) {
             // The stage's names for the note lookup: RSF's aliases where there are any, then the launcher's own
             // catalogue names, so the lookup works without an RSF stage list.
             let names = self.stage_note_names(&stage);
             let refs: Vec<&str> = names.iter().map(String::as_str).collect();
-            match self.notes_pack.as_deref() {
-                // The RSF install's MyPacenotes, as before.
-                None => {
-                    let rsf_root = self.rsf();
-                    viewer_extra.extend(codriver_args(
-                        mods,
-                        self.codriver_voice.as_deref(),
-                        &self.codriver_style,
-                        &self.codriver_ranges,
-                        Path::new(rsf_root.trim()),
-                        self.my_pacenotes,
-                        &refs,
-                    ));
-                }
-                // A locally owned note pack: searched by the launcher's own stage names.
-                Some(_) => {
-                    let mut args = codriver_base_args(
-                        mods,
-                        self.codriver_voice.as_deref(),
-                        &self.codriver_style,
-                        &self.codriver_ranges,
-                    );
-                    if !args.is_empty() {
-                        if let Some(file) = self.resolve_notes(&refs) {
-                            args.extend(["--pacenotes".into(), file.display().to_string()]);
-                        }
-                        viewer_extra.extend(args);
-                    }
-                }
+            let mut args =
+                codriver_base_args(mods, self.codriver_voice.as_deref(), &self.codriver_style, &self.codriver_ranges);
+            // The chosen note set's file for the stage (the local pack's or the RSF install's MyPacenotes).
+            if let Some(file) = self.resolve_notes(&refs).filter(|_| !args.is_empty()) {
+                args.extend(["--pacenotes".into(), file.display().to_string()]);
             }
+            viewer_extra.extend(args);
         }
         self.select_setup();
         let setup = match self.setup.current_file(&self.here()) {
@@ -1126,22 +1079,18 @@ mod tests {
     }
 
     #[test]
-    fn codriver_args_name_the_mod_voice_and_the_stage_notes() {
+    fn codriver_args_name_the_mod_and_voice() {
         let tmp = std::env::temp_dir().join(format!("rbr-launcher-codriver-{}", std::process::id()));
-        let notes = tmp.join("Plugins").join("NGPCarMenu").join("MyPacenotes").join("Tanner");
-        std::fs::create_dir_all(&notes).unwrap();
-        std::fs::write(notes.join("tanner.ini"), "").unwrap();
         let plugin = tmp.join("Plugins/Pacenote");
         std::fs::create_dir_all(&plugin).unwrap();
         std::fs::write(plugin.join("PaceNote.ini"), "[SETTINGS]\nsounds=english/steve\n").unwrap();
         let mods = CodriverMods::scan(&tmp.display().to_string()).unwrap();
-        let args = |voice, on| codriver_args(&mods, voice, "Rbr.ini", "Rbr.ini", &tmp, on, &["Tanner"]).join(" ");
+        let args = |voice| codriver_base_args(&mods, voice, "Rbr.ini", "Rbr.ini").join(" ");
         let head = format!("--codriver-mod {} --codriver-voice", mods.dir.display());
         let tail = "--codriver-style Rbr.ini --codriver-ranges Rbr.ini";
-        let found = format!("--pacenotes {}", notes.join("tanner.ini").display());
-        assert_eq!(args(None, true), format!("{head} english/steve {tail} {found}"));
-        assert_eq!(args(Some("Janne"), false), format!("{head} Janne {tail}"));
-        assert_eq!(args(Some(ORIGINAL_VOICE), true), "");
+        assert_eq!(args(None), format!("{head} english/steve {tail}"));
+        assert_eq!(args(Some("Janne")), format!("{head} Janne {tail}"));
+        assert_eq!(args(Some(ORIGINAL_VOICE)), "");
         std::fs::remove_dir_all(&tmp).unwrap();
     }
 
@@ -1296,7 +1245,10 @@ mod tests {
         let defaults = launch(&mut form);
         assert_eq!(value(&defaults, "--codriver-mod"), Some(mods.dir.display().to_string()));
         assert_eq!(value(&defaults, "--codriver-voice"), Some(voice.clone()));
-        let notes = pacenotes::my_pacenotes_dir(&rsf).and_then(|dir| pacenotes::my_pacenotes(&dir, &["Tanner"]));
+        // Unset, the install's largest note set plays (LuppisV3 in an RSF install).
+        let largest = form.rsf_note_sets.first().map(|set| set.name.clone()).unwrap_or_default();
+        let notes = rbr_formats::rsf::pacenotes::my_pacenotes_dir(&rsf)
+            .and_then(|dir| crate::codriver_packs::find_in_set(&dir, &["Tanner"], &largest));
         assert_eq!(value(&defaults, "--pacenotes"), notes.map(|p| p.display().to_string()));
         let stepping = defaults[defaults.iter().position(|a| a == "--live").unwrap()..].to_vec();
 
@@ -1387,7 +1339,7 @@ mod tests {
         assert_eq!(value(&args, "--codriver-mod"), Some(pack.display().to_string()));
         assert_eq!(value(&args, "--codriver-voice").as_deref(), Some("english/steve"));
         let notes =
-            codriver_packs::find_note(&home.join(codriver_packs::NOTES_DIR).join("notes-download"), &["Tanner"]);
+            codriver_packs::find_in_set(&home.join(codriver_packs::NOTES_DIR).join("notes-download"), &["Tanner"], "");
         assert_eq!(value(&args, "--pacenotes"), notes.map(|p| p.display().to_string()));
         assert!(value(&args, "--pacenotes").is_some());
         let stepping = args[args.iter().position(|a| a == "--live").unwrap()..].to_vec();

@@ -217,10 +217,10 @@ tanner-damage 12120/12120, tarmac-lancer 20892/20892, arctic-snow 12490/12490.
 The standalone check for `rbr-standalone` and `rbr-hybrid` changes:
 
 ```sh
-harness/rsf_compare.py $RBR_RECORDINGS/rsf/drive2 --attempt 5 --sections physics --out DIR
+.venv/bin/python -I -B harness/rsf_compare.py $RBR_RECORDINGS/rsf/drive2 --attempt 5 --sections physics --out DIR
 ```
 
-It must print physics PASS 84084/84084 (release builds of `rbr-standalone` and `rsf-settings`). `scripts/remote-rust.sh BIN [args]` runs a Rust binary on the test machine instead
+It must print physics PASS 84084/84084 and exit 0, as it does only when every exact check of the sections run passes (release builds of `rbr-standalone` and `rsf-settings`). `scripts/remote-rust.sh BIN [args]` runs a Rust binary on the test machine instead
 (release build, that machine's copy of the retail data; paths are relative to its home, recordings in
 `rbr-harness-runs/`).
 

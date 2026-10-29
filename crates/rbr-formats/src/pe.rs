@@ -21,6 +21,10 @@ pub struct Image {
     pub sections: Vec<Section>,
 }
 
+/// Sections with a larger virtual size than this are rejected instead of zero-filled: the retail exe's and
+/// NGP.dll's sections are tens of megabytes at most, while a corrupt size of up to 4 GB would allocate gigabytes.
+const MAX_VIRTUAL_SIZE: u32 = 256 << 20;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
     /// No `MZ`/`PE\0\0` headers, or a header past the end of the file.
@@ -29,6 +33,8 @@ pub enum Error {
     NotPe32,
     /// A section's raw data lies outside the file.
     SectionOutOfRange,
+    /// A section's virtual size is above [`MAX_VIRTUAL_SIZE`].
+    SectionTooLarge,
 }
 
 impl Display for Error {
@@ -37,6 +43,7 @@ impl Display for Error {
             Error::BadHeader => "not a PE image",
             Error::NotPe32 => "not a 32-bit PE image",
             Error::SectionOutOfRange => "section data outside the file",
+            Error::SectionTooLarge => "section virtual size above the 256 MiB cap",
         })
     }
 }
@@ -72,6 +79,9 @@ pub fn parse(bytes: &[u8]) -> Result<Image, Error> {
             let header = bytes.get(at..at + 40).ok_or(Error::BadHeader)?;
             let name = String::from_utf8_lossy(&header[..8]).trim_end_matches('\0').to_owned();
             let (virtual_size, address) = (u32_at(header, 8)?, u32_at(header, 12)?);
+            if virtual_size > MAX_VIRTUAL_SIZE {
+                return Err(Error::SectionTooLarge);
+            }
             let (raw_size, raw_at) = (u32_at(header, 16)? as usize, u32_at(header, 20)? as usize);
             let size = virtual_size.max(raw_size as u32) as usize;
             let raw = bytes.get(raw_at..raw_at + raw_size.min(size)).ok_or(Error::SectionOutOfRange)?;
@@ -149,6 +159,23 @@ mod tests {
         assert_eq!(img.read(0x40100c, 8), None);
         assert_eq!(img.section(".data").unwrap().bytes.len(), 0x10);
         assert_eq!(overlay_offset(&image()), Ok(0x188));
+    }
+
+    #[test]
+    fn damaged_files_never_panic() {
+        let bytes = image();
+        crate::damage::never_panics(&bytes, &[0, 0x7f, 0xff], |b| {
+            let _ = parse(b);
+        });
+    }
+
+    #[test]
+    fn a_huge_virtual_size_is_an_error() {
+        // A 4 GB virtual size would zero-fill gigabytes; the retail sections are megabytes.
+        let mut bad = image();
+        let s = 0x58 + 0xe0;
+        bad[s + 8..s + 12].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert_eq!(parse(&bad), Err(Error::SectionTooLarge));
     }
 
     #[test]

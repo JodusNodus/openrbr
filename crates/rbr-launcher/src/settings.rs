@@ -223,6 +223,8 @@ pub struct Settings {
     /// (`codriver_packs::NOTES_DIR`); none each for the RSF install's.
     pub codriver_pack: Option<String>,
     pub notes_pack: Option<String>,
+    /// The note set chosen in it (`codriver_packs::NoteSet`); none for its largest.
+    pub notes_set: Option<String>,
     /// The stage's NGPCarMenu MyPacenotes notes are called (`viewer --pacenotes`); on when unset.
     pub my_pacenotes: Option<bool>,
     /// The HUD shown (`viewer --no-hud` when off).
@@ -464,6 +466,7 @@ impl Settings {
             codriver_ranges: get("codriver_ranges").filter(|v| !v.is_empty()),
             codriver_pack: get("codriver_pack").filter(|v| !v.is_empty()),
             notes_pack: get("notes_pack").filter(|v| !v.is_empty()),
+            notes_set: get("notes_set"),
             my_pacenotes: on_off(get("my_pacenotes")),
             hud: on_off(get("hud")),
             mph: get("units").and_then(|v| match v.as_str() {
@@ -556,6 +559,7 @@ impl Settings {
             ("codriver_ranges", self.codriver_ranges.clone()),
             ("codriver_pack", self.codriver_pack.clone()),
             ("notes_pack", self.notes_pack.clone()),
+            ("notes_set", self.notes_set.clone()),
             ("my_pacenotes", on_off_text(self.my_pacenotes)),
             ("hud", on_off_text(self.hud)),
             ("units", self.mph.map(|v| if v { "mph" } else { "kmh" }.to_owned())),
@@ -774,13 +778,14 @@ impl Form {
             )),
             codriver_pack: settings.codriver_pack.clone(),
             notes_pack: settings.notes_pack.clone(),
+            notes_set: settings.notes_set.clone(),
+            rsf_note_sets: Vec::new(),
             rsf_plugin: false,
             rsf_voices: Vec::new(),
             codriver_styles_differ: false,
             codriver_ranges_differ: false,
             cached_notes_map: u32::MAX,
-            cached_notes_short: String::new(),
-            cached_notes_full: String::new(),
+            notes_summary: Default::default(),
             cached_notes_dirty: true,
             owned_voices: crate::codriver_packs::voice_packs(&home),
             owned_notes: crate::codriver_packs::note_packs(&home),
@@ -879,6 +884,7 @@ impl Form {
             codriver_ranges: Some(self.codriver_ranges.clone()),
             codriver_pack: self.codriver_pack.clone(),
             notes_pack: self.notes_pack.clone(),
+            notes_set: self.notes_set.clone(),
             my_pacenotes: Some(self.my_pacenotes),
             hud: Some(self.hud.show),
             mph: Some(self.hud.mph),
@@ -971,6 +977,7 @@ mod tests {
             codriver_ranges: Some("Rbr.ini".into()),
             codriver_pack: Some("luppis".into()),
             notes_pack: Some("tanner-notes".into()),
+            notes_set: Some(String::new()),
             my_pacenotes: Some(false),
             hud: Some(false),
             mph: Some(true),

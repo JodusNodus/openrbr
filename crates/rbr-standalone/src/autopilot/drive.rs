@@ -39,8 +39,8 @@ impl<'a> Pilot<'a> {
             return Ok(Pilot::Autopilot { driver, report: 0 });
         }
         let bytes = std::fs::read(what).map_err(|e| format!("--pilot {what}: {e}"))?;
-        let frames = rbr_recording::Frames::new(&bytes).map_while(Result::ok);
-        Ok(Pilot::Recording(frames.map(|f| (f.pre, f.control)).collect()))
+        let frames = rbr_recording::read_all(&bytes).map_err(|e| format!("--pilot {what}: {e}"))?;
+        Ok(Pilot::Recording(frames.into_iter().map(|f| (f.pre, f.control)).collect()))
     }
 
     /// The payload for `live`'s next frame, after `last` (its last answer); `None` keeps the viewer's.
