@@ -129,6 +129,7 @@ mod car_browser;
 mod car_packs;
 mod catalog;
 mod codriver_packs;
+mod codriver_page;
 mod command;
 mod controls_page;
 mod disc_install;
@@ -453,6 +454,10 @@ struct Form {
     codriver_pack: Option<String>,
     /// The locally owned stage-note pack (`codriver_packs::NOTES_DIR`), or the RSF install's notes when unset.
     notes_pack: Option<String>,
+    /// The note set chosen in that source (`codriver_packs::NoteSet`); unset or gone: the source's largest.
+    notes_set: Option<String>,
+    /// The RSF install's MyPacenotes note sets, re-read by `rescan_codrivers`.
+    rsf_note_sets: Vec<codriver_packs::NoteSet>,
     /// Whether the RSF folder holds a Pacenote plugin (offered as a source); refreshed by the rescans, never drawn.
     rsf_plugin: bool,
     /// The RSF install's plugin voices, re-read by `rescan_codrivers`: the Co-driver dropdown lists them beside
@@ -462,12 +467,10 @@ struct Form {
     /// `rescan_codrivers`: with one distinct result the row hides (the voice decides the words).
     codriver_styles_differ: bool,
     codriver_ranges_differ: bool,
-    /// The Stage notes row's cached text: the file name (or why the original notes are used) and the full path for
-    /// the tooltip, for the cached map; recomputed when the map, the notes sources, the co-driver switch or voice,
-    /// or an import changes it, never per draw.
+    /// What the co-driver says on the cached map; recomputed when the map, the notes sources, the co-driver switch
+    /// or voice, or an import changes it, never per draw.
     cached_notes_map: u32,
-    cached_notes_short: String,
-    cached_notes_full: String,
+    notes_summary: codriver_packs::NotesSummary,
     cached_notes_dirty: bool,
     /// The owned packs, re-read by `rescan_codrivers`.
     owned_voices: Vec<codriver_packs::VoicePack>,

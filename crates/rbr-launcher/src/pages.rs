@@ -271,7 +271,9 @@ impl Form {
             self.codriver_pack.clone(),
             self.notes_pack.clone(),
             self.my_pacenotes,
+            self.notes_set.clone(),
         );
+        let old_notes = self.notes_inputs();
         ctx.root_ui(|root| {
             egui::Panel::top("tabs").show(root, |ui| {
                 ui.add_space(6.0);
@@ -344,12 +346,9 @@ impl Form {
             self.rescan_codrivers();
             self.normalize_codriver();
         }
-        // The Stage notes row caches its text (its inputs: the note pack, the checkbox, the co-driver switch
-        // and the voice): mark it dirty and repaint, or a switch keeps the old file until the map changes.
-        self.invalidate_notes_cache(
-            ctx,
-            (old_codriver.5.clone(), old_codriver.6, old_codriver.0, old_codriver.1.clone()),
-        );
+        // The notes summary is cached: mark it dirty and repaint, or a switch keeps the old text until the map
+        // changes.
+        self.invalidate_notes_cache(ctx, old_notes);
         if self.bindings != bindings
             || self.ffb != ffb
             || old_selection
@@ -397,6 +396,7 @@ impl Form {
                     self.codriver_pack.clone(),
                     self.notes_pack.clone(),
                     self.my_pacenotes,
+                    self.notes_set.clone(),
                 )
         {
             self.save();

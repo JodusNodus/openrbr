@@ -1,4 +1,5 @@
-//! The Settings page: what the player needs to drive, the game folder, the cars, the advanced paths and the programs.
+//! The Settings page: what the player needs to drive, the game folder, the cars, the co-driver, the advanced paths and
+//! the programs.
 
 use std::path::{Path, PathBuf};
 
@@ -13,7 +14,8 @@ pub const RSF_FIELD: &str = "rsf_root";
 
 impl Form {
     /// What the player needs to drive, a row each with its next step beside it: the game folder, NGP, the cars and the
-    /// wheel; below them the advanced fields (NGP's DLL, the paths that override the folder's parts) and the version.
+    /// wheel; below them the co-driver, the advanced fields (NGP's DLL, the paths that override the folder's parts) and
+    /// the version.
     pub fn settings_page(&mut self, ui: &mut egui::Ui) {
         let running = self.child.is_some();
         section(ui, "Ready to drive");
@@ -124,6 +126,9 @@ impl Form {
                 }
             })
         });
+
+        // The co-driver: a general choice, the same for every stage.
+        self.codriver_section(ui);
 
         ui.add_space(6.0);
         egui::CollapsingHeader::new("Advanced").show(ui, |ui| {
