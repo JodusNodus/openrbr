@@ -50,6 +50,13 @@ for var in $(grep -ohE '"RBR_[A-Z0-9_]+_VECTORS"' crates/rbr-physics/tests/*.rs 
     run_target "$var" "$dir" $(grep -lF "\"$var\"" crates/rbr-physics/tests/*.rs | xargs -n1 basename | sed 's/\.rs$//')
 done
 
+# A module name no vector variable has ran nothing: a FAIL, not a silent pass.
+known=$(grep -ohE '"RBR_[A-Z0-9_]+_VECTORS"' crates/rbr-physics/tests/*.rs | tr -d '"' | sed 's/^RBR_//; s/_VECTORS$//' |
+    tr A-Z a-z | sed 's/^ent$/entities/')
+for m in "$@"; do
+    grep -qx "$m" <<<"$known" || { echo "$m: FAIL (no vector module of that name)"; fail=1; }
+done
+
 [ $# = 0 ] || exit $fail
 
 # The rest needs no records (spring-damper vectors are committed in tests/vectors/).

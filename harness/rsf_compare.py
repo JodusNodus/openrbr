@@ -1,6 +1,6 @@
 """rsf_compare.py SESSION_DIR [--attempt N] --out REPORT_DIR: compares each recorded RSF stage attempt with ReRBR.
 
-Usage: python3 -I -B harness/rsf_compare.py SESSION_DIR --out REPORT_DIR [--attempt N] [--sections LIST]
+Usage: .venv/bin/python -I -B harness/rsf_compare.py SESSION_DIR --out REPORT_DIR [--attempt N] [--sections LIST]
            [--standalone BIN] [--sound BIN] [--input-check BIN] [--ngp-physics FILE] [--rsf-car ID|PACK] [--stage NAME]
            [--setup FILE] [--ffb-sensitivity G,T,S] [--profile pf<name>.rbr] [--damage LEVEL] [--settings BIN]
            [--camera inside|chase|trackside] [--keep-work]
@@ -18,7 +18,8 @@ SESSION_DIR is the session tree rec/capture fetches (notes/verification.md "Comp
 REPORT_DIR/<n>/report.md, summary.json and PNG plots, and REPORT_DIR/index.md lists the attempts' headline numbers.
 --sections takes any of physics,input,ffb,sound (default all). The programs default to this checkout's
 target/release; RBR_DATA, RBR_PATCH, RBR_RSF and RBR_NGP_PHYSICS are read as rbr-standalone reads them. Each exact
-check is PASS or FAIL with its reason: an error, a missing record or a section not run is a FAIL.
+check is PASS or FAIL with its reason: an error, a missing record or a section not run is a FAIL. The exit status
+is 1 when an exact check of the sections run (STA1 aside) is a FAIL.
 
 1. physics: `rbr-standalone --boot --recording <n>/physics.bin --recorded-payload --trace-out` with the stage, car,
    weather and tyre of the attempt's GAM1 (the car an RSF car: --rsf-car, else the pack the stage load opened (OPN1),
@@ -1532,9 +1533,10 @@ def main(argv=None):
     env = dict(os.environ)
     ns = [opts.attempt] if opts.attempt else attempts(opts.session)
     os.makedirs(opts.out, exist_ok=True)
-    rows = []
+    rows, summaries = [], []
     for n in ns:
         summary = compare(opts.session, n, opts, env)
+        summaries.append(summary)
         rows.append(headline(summary))
         print("attempt %d: %s" % (n, " | ".join(rows[-1][1:])))
     with open(os.path.join(opts.out, "index.md"), "w") as f:
@@ -1545,7 +1547,14 @@ def main(argv=None):
         f.write("| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n")
         for row in rows:
             f.write("| [%s](%s/report.md) | %s |\n" % (row[0], row[0], " | ".join(row[1:])))
+    return 0 if all(passed(summary, opts.sections) for summary in summaries) else 1
+
+
+def passed(summary, sections):
+    """Whether every exact check of the sections run passed (the exit status; sound has no verdict)."""
+    gated = {"physics": ("physics",), "input": ("input",), "ffb": ("ffb", "ffb_mapping")}
+    return all(summary["checks"][c]["pass"] for s in sections for c in gated.get(s, ()))
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

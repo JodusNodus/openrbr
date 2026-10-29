@@ -85,9 +85,9 @@ A Rust batch includes:
   set;
 - for physics ports: the hybrid check (`harness/rust_step.py` with every binding over the drive's snapshots and
   recording) with every "run B vs run A" line equal, and fuzzed direct-call records for branches no drive reaches;
-- for changes to `rbr-standalone` or `rbr-hybrid`: `harness/rsf_compare.py $RBR_RECORDINGS/rsf/drive2 --attempt 5
-  --sections physics --out DIR` giving physics PASS 84084/84084 (release builds of `rbr-standalone` and
-  `rsf-settings`; `RBR_NGP_PHYSICS`, `RBR_RSF` set);
+- for changes to `rbr-standalone` or `rbr-hybrid`: `.venv/bin/python -I -B harness/rsf_compare.py
+  $RBR_RECORDINGS/rsf/drive2 --attempt 5 --sections physics --out DIR` giving physics PASS 84084/84084 and exit
+  status 0 (release builds of `rbr-standalone` and `rsf-settings`; `RBR_NGP_PHYSICS`, `RBR_RSF` set);
 - for a format: a test that parses every retail file it covers;
 - for visible or audible systems: before/after captures or a short audio render;
 - short updates to the area's note for verified layouts and behaviour, and a report listing commits, checks and
