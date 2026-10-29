@@ -729,6 +729,11 @@ Calmer verge (2026-10-29): the verge's pale texels (straw, white at a grazing vi
 local mean (`GROUND_MEAN` 5 levels blurrier) are eased to the power `GROUND_PALE_FLAT` 0.3, within `GROUND_CALM` 12 to 30 m
 of the eye. A dirt-and-gravel strip on the paved mesh's non-grey band was dropped: on some stages that band is the whole
 grass verge and bank (580, Peugeot chase: both turned to dirt).
+Shoulders as ground (2026-10-29): the paved mesh's grass and earth (non-grey by the asphalt's test, warm by `ground_rock`'s,
+face up over `SHOULDER_WALL` 0.3 to 0.5) take the ground's treatment instead of the asphalt scan's shoulder strengths, so the
+seam with the terrain beside it (580's straight dark strip) no longer shows; 580's bank, on the paved mesh, turns mossy earth.
+RMSE 580 3.6%, Luceram 2.1%, Gabiria 1.2%, Semetin 0.6%, gravel and snow stages identical; additions off identical; 580 at
+4K scene pass 8.40 to 8.92 ms.
 Far hillside (2026-10-29): from `GROUND_CLUMP_AT` 8 to 18 m out (`ground_far`) the ground texture is read
 `GROUND_FAR_BLUR` 1.5 levels blurrier, its pale texels eased as the verge's, the scan's chroma and grain exponents eased by
 `GROUND_FAR_CALM` 0.6 each, and `ground_clumps` adds grass clumps (value noise at 1.5, 0.7 and 0.32 m: moss green or

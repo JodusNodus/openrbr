@@ -492,6 +492,10 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     var paved_line = 0.0;
     // The factor easing the off-road ground's pale texels (`ground_pale_ease`).
     var ground_pale = 1.0;
+    // How much of the pixel is ground (`ground_share`), with the paved mesh's grass and earth shoulders (`shoulder`, found by
+    // the asphalt's grey test).
+    var ground = ground_share(v);
+    var shoulder = 0.0;
     // The near ground gets the fine structure its thinly spread texture lacks (`terrain_detail`).
     if (detail_draw() && stage_frame() && mode.cutout == 0u && mode.detail.z != 0.0) {
         // On the banks the texture's streaks are blurred out first (`terrain_even`); the flat keeps its filtering.
@@ -516,10 +520,16 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             let top = max(probe.r, max(probe.g, probe.b));
             paved_grey = 1.0 - smoothstep(ASPHALT_GREY.x, ASPHALT_GREY.y, (top - min(probe.r, min(probe.g, probe.b))) / max(top, 1e-3));
             paved_share = paved_share * paved_grey;
+            // The paved mesh's grass and earth shoulders meet the off-road ground: they take its treatment, so no seam
+            // shows. Not a coloured road or wall: only a warm texture (`ground_rock`'s test) on a face under `SHOULDER_WALL`.
+            let warm = smoothstep(GROUND_ROCK_AT.x, GROUND_ROCK_AT.y, (max(probe.r, probe.g) - probe.b) / max(top, 0.05));
+            let up = select(1.0, abs(v.normal.y) * inverseSqrt(dot(v.normal, v.normal)), dot(v.normal, v.normal) > 1e-8);
+            shoulder = (1.0 - paved_grey) * warm * smoothstep(SHOULDER_WALL.x, SHOULDER_WALL.y, up);
+            ground = max(ground, smoothstep(0.75, 0.95, v.wet.x) * shoulder);
         }
         paved_flat = paved_share;
         let blur = steep * TERRAIN_EVEN
-            + select(0.0, (GROUND_BLUR + GROUND_FAR_BLUR * ground_far(v.world)) * ground_share(v) * magnified, GROUND)
+            + select(0.0, (GROUND_BLUR + GROUND_FAR_BLUR * ground_far(v.world)) * ground * magnified, GROUND)
             + ASPHALT_BLUR * paved_share * magnified;
         if (blur > 0.0) {
             var even = terrain_even(texture0, v.uv0, levels.x, blur).rgb;
@@ -539,11 +549,11 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             if (second_draw()) {
                 mean = mix(mean, terrain_even(texture1, v.uv1, levels.y, GROUND_MEAN).rgb, second.a * v.color.a);
             }
-            ground_pale = mix(1.0, ground_pale_ease(surface, mean), ground_share(v) * max(ground_near(v.world), ground_far(v.world)));
+            ground_pale = mix(1.0, ground_pale_ease(surface, mean), ground * max(ground_near(v.world), ground_far(v.world)));
         }
         // With the ground scan the stage's own high pass is a share of what it was, on the ground the scan covers, and
         // on the paved road with the asphalt scan.
-        let keep = (1.0 - select(0.0, ground_share(v) * (1.0 - GROUND_KEEP), GROUND)) * (1.0 - paved_share * (1.0 - ASPHALT_KEEP));
+        let keep = (1.0 - select(0.0, ground * (1.0 - GROUND_KEEP), GROUND)) * (1.0 - paved_share * (1.0 - ASPHALT_KEEP));
         surface = surface * mix(1.0, terrain_detail(v, steep), keep);
     }
     let night = frame.night.x != 0.0;
@@ -638,7 +648,7 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         // The loose roads (gravel and dirt, half the film's share, `stage::Vertex::wet`) take the gravel scan, the paved
         // ones (tarmac, all of it) the asphalt's, the snow (`puddles::SNOW_MARK`) the snow's.
         if (GROUND) {
-            let share = ground_share(v);
+            let share = ground;
             let face_dx = dpdx(v.world);
             let face_dy = dpdy(v.world);
             if (share > 0.0) {
@@ -659,7 +669,8 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             let paved_uv = v.world.xz / SCAN_TILE[1];
             let paved_dx = dpdx(paved_uv);
             let paved_dy = dpdy(paved_uv);
-            let paved = smoothstep(0.75, 0.95, v.wet.x);
+            // With the ground scan, the shoulders take its grain instead (`shoulder`).
+            let paved = smoothstep(0.75, 0.95, v.wet.x) * (1.0 - select(0.0, shoulder, GROUND));
             if (ASPHALT && paved > 0.0) {
                 colour = colour * mix(1.0, road_scan(1, paved_uv, paved_dx, paved_dy, seen, paved_grey), paved);
             }
@@ -2273,6 +2284,8 @@ const ASPHALT_MEAN: f32 = 6.0;
 const ASPHALT_GREY: vec2<f32> = vec2<f32>(0.1, 0.18);
 // The scan's strengths (detail, relief, hollows) on the paved mesh's grass shoulders: what it was before the road's.
 const ASPHALT_SHOULDER: vec3<f32> = vec3<f32>(0.5, 0.35, 0.24);
+// The face's up component under which a paved mesh's warm texture is a wall, not a shoulder (`shade_stage`).
+const SHOULDER_WALL: vec2<f32> = vec2<f32>(0.3, 0.5);
 const ASPHALT_LINE: vec2<f32> = vec2<f32>(1.1, 1.3);
 const ASPHALT_KEEP: f32 = 0.0;
 
