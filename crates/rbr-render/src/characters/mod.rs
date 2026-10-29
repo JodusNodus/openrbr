@@ -97,6 +97,8 @@ pub struct State<'a> {
     pub load: &'a str,
     /// The clip playing, by `AddAnimationToCharacter` order.
     pub clip: Option<usize>,
+    /// When that clip started, seconds.
+    pub started: Option<f64>,
     /// The run script's state.
     pub state: f64,
 }
@@ -420,7 +422,9 @@ impl Characters {
             if self.actors[i].at_car.is_some() {
                 self.place_at_car(i);
             }
-            if self.visible(i) {
+            // The flip spectators are only in the impl's +0xcc slots (`E03CarFlipInit`), not in `E02AnimUpdate`'s list:
+            // their run script never runs, and the start's clip plays once and holds.
+            if self.visible(i) && !matches!(self.actors[i].spawn.role, Role::Flip(_)) {
                 self.update(i);
             }
         }
@@ -599,6 +603,7 @@ impl Characters {
                 position: a.spawn.position,
                 load: &a.spawn.load,
                 clip: a.clip.map(|c| c.0),
+                started: a.clip.map(|c| c.1),
                 state: a.state,
             })
             .collect()

@@ -198,7 +198,8 @@ Gameplay effects only; the characters' drawing is in [renderer.md](renderer.md).
 - `CCar::Assist8DF0` (0x4e8df0) emits `CSigOutsideAssistance` and arms the countdown +0x15e4 at 0.5 s (72 steps of
   physics time). At 0 `CCar::Vf98x` (0x4e6dd0) teleports the car to the driveline ground + 0.4 m (upright and 0.4 m
   higher with the flip flag +0x9f0), clears the velocities and emits `CSigRespawn`. The flip spectators (five
-  `load_car_flipN.lua`, from 1.0 to 4.5 s of HUD time) are cosmetic.
+  `load_car_flipN.lua`, from 1.0 to 4.5 s of HUD time) are cosmetic: the start plays clip 0 (3.0 s) once and it
+  holds; they are only in the impl's +0xcc slots, not `E02AnimUpdate`'s list, so `run_car_flip.lua` never runs.
 - Three callers put the car back: the player's HELPCALL (via `CCar::MotionProbe` 0x4e7730: faster than 1.5 m/s gives
   `CSigCarProblem` instead), the brake-wall stuck test (`Update9AF0`, 5 s gap and +0x9ec >= 1; with the assistance
   gate shut it retires with code 4), and a script character's box (material 200, `E34_RetireA`: `CSigRetireCar(3)`
