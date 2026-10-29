@@ -1,27 +1,28 @@
 # NGP 7.4.778
 
-NGP (Next Generation Physics, WorkerBee) is a plugin that patches the 1.02 SSE exe in memory: the 1.02 physics plus
-retargeted calls, repointed constants, code edits and per-car values in its `.data`. ReRBR targets 7.4.778
-(`PhysicsRevision_NGP 778`; RSF's 7.5.779 has the same `physics.lsp` but for the revision). The author cannot share
-source: behaviour comes from the binary (`ghidra/ngp`, `out/decomp-ngp/NGP.dll.c`) and recordings. History and
-detail: rbr-recomp `notes/ngp*.md`.
+NGP (Next Generation Physics, WorkerBee) patches the 1.02 SSE exe in memory: 1.02 physics plus retargeted calls,
+repointed constants, code edits and per-car values in its `.data`. ReRBR targets 7.4.778 (`PhysicsRevision_NGP`
+778; RSF's 7.5.779 has the same `physics.lsp` but for the revision). The author cannot share source: behaviour comes
+from the binary (`ghidra/ngp`, `out/decomp-ngp/NGP.dll.c`) and recordings. History and detail: rbr-recomp
+`notes/ngp*.md`.
 
 No NGP.dll code runs in ReRBR. The x87 precision (24 or 53 bits) is the thread's, like the CPU's control word
-(`rbr_physics::fpu`, below); the ports of functions NGP patches have NGP's behaviour only, NGP's functions are ports in `crates/rbr-physics/src/ngp/`, and NGP's `.data` is mapped
-at the reference base `0x791a0000` (addresses here are file addresses, base `0x10000000`). The boot reads
-immutable data from the player's NGP 7.4.778 DLL (`rbr_formats::ngp`, SHA-256 checked; `RBR_NGP_DLL` overrides the
-install's `Plugins/NGP.dll`; the launcher's saved `ngp_dll` choice follows that path while empty and blocks Start
-when missing or unsupported): both stage material cases, seven tyre presets, 254 key records and 41 stock-key
-renames, engine/probe defaults, tyre temperatures, atmosphere coefficients and the sound road list. The constant
-setter arguments in `.text` are decoded with iced-x86; no plugin instructions run. Whole-table hashes cover all
-5,480 stage words, 721 tyre words and the complete key schema (`rbr-formats/tests/ngp.rs`); drive2 attempt 5
-remains physics PASS 84084/84084 with the DLL inputs. The DLL's `.rdata` is
-mapped for the bindings; atmosphere ports take typed coefficients read from that mapping or a snapshot.
-The standalone maps no exe `.text` and applies no executable patches. Named callees (`rbr-hybrid/src/ngp/calls.rs`)
-select the NGP bindings; typed boot settings (`ngp::layout::runtime::Runtime`, carried by `Mem` and its allocator
-views) supply collision copies, the damage gate and head-gasket coefficients. Snapshot adapters still decode the
-original's operands for validation; drive2 attempt 5 remains physics PASS 84084/84084 without code bytes.
-Cars: NGP's `physics.rbz` (`--ngp-physics`) and RSF packs (`--rsf-car`, `rbr_formats::rsf`).
+(`rbr_physics::fpu`); ports of functions NGP patches have NGP's behaviour only, NGP's functions are ports in
+`crates/rbr-physics/src/ngp/`, and NGP's `.data` is mapped at reference base `0x791a0000` (addresses here are file
+addresses, base `0x10000000`). The boot reads immutable data from the player's NGP 7.4.778 DLL
+(`rbr_formats::ngp`, SHA-256 checked; `RBR_NGP_DLL` overrides the install's `Plugins/NGP.dll`; the launcher's saved
+`ngp_dll` choice follows that path while empty and blocks Start when missing or unsupported): both stage material
+cases, seven tyre presets, 254 key records and 41 stock-key renames, engine/probe defaults, tyre temperatures,
+atmosphere coefficients, the sound road list. Constant setter arguments in `.text` are decoded with iced-x86; no
+plugin instructions run. Whole-table hashes cover all 5,480 stage words, 721 tyre words and the complete key schema
+(`rbr-formats/tests/ngp.rs`); drive2 attempt 5 remains physics PASS 84084/84084 with the DLL inputs. The DLL's
+`.rdata` is mapped for the bindings; atmosphere ports take typed coefficients read from that mapping or a snapshot.
+The standalone maps no exe `.text` and applies no executable patches. Named callees
+(`rbr-hybrid/src/ngp/calls.rs`) select the NGP bindings; typed boot settings
+(`ngp::layout::runtime::Runtime`, carried by `Mem` and its allocator views) supply collision copies, the damage gate
+and head-gasket coefficients. Snapshot adapters still decode the original's operands for validation; drive2 attempt 5
+remains physics PASS 84084/84084 without code bytes. Cars: NGP's `physics.rbz` (`--ngp-physics`) and RSF packs
+(`--rsf-car`, `rbr_formats::rsf`).
 
 ReRBR steps NGP physics only (user decision): `rbr-standalone --boot` needs `--ngp-physics` and refuses a 1.02
 snapshot; the launcher and the viewer's `--live` go through it. The exactness proof is `harness/rsf_compare.py
@@ -36,8 +37,8 @@ $RBR_RECORDINGS/rsf/drive2 --attempt 5 --sections physics` (84084/84084). The 1.
 - `original/ngp/cars-rsf/`: the 42 RSF NGP cars, one slot folder each (`common.lsp`, surface and `r_*` files,
   `setups/`); RSF installs one into a slot of `physics.rbz`, the model stays the slot's.
 - `original/ngp/analysis/patches-runtime.tsv`: NGP's edits, diffed from a running game (`scripts/ngp-dump.py`,
-  rbr-recomp's `scripts/ngp-memdiff.py`). Physics: 65 calls/jmps into NGP (45 targets), 56 repointed floats, 43 other
-  edits.
+  rbr-recomp's `scripts/ngp-memdiff.py`). Physics: 65 calls/jmps into NGP (45 targets), 56 repointed floats, 43
+  other edits.
 
 ## Adding an NGP version
 
@@ -47,8 +48,8 @@ refused (`validate`). RSF's 7.5.779 and later releases are checked, then added, 
 1. `ngp-compat CANDIDATE.dll [--reference 7.4.778's NGP.dll] [--rbz candidate physics.rbz]`
    (`rbr_formats::ngp::compat`, `ngp::locate`). A rebuilt DLL moves its tables and code, so the ranges the decoders
    read (`ngp::reads()`: data tables, the initializer code, the entry functions) are found in the candidate by
-   content, with the addresses in the bytes (pointers, call and jump displacements) not compared, and the decoders run
-   there. It compares every table and each code range we decode, and prints the hash, `FileVersion` and the
+   content, with the addresses in the bytes (pointers, call and jump displacements) not compared, and the decoders
+   run there. It compares every table and each code range we decode, and prints the hash, `FileVersion` and the
    `PhysicsRevision_NGP` of the `physics.rbz`. Verdicts:
    - *unreadable*: a range is found but the decoders fail on it: new decoders are needed first;
    - *reads changed*: a range is gone or differs, or a table differs: update the decoders and the ports that use it;
@@ -61,8 +62,8 @@ refused (`validate`). RSF's 7.5.779 and later releases are checked, then added, 
    for the revision line; about 8 % of its `.text` is new or changed. It is known equal only on drive2 attempt 5
    (snow, Ford Focus RS WRC 06, RSF car 55) against 778's tables; more drives (other cars, surfaces, damage) are
    needed to add it.
-3. Add the hash and version to `SUPPORTED` with the evidence (the compare's verdict, the drives); the launcher
-   then accepts the DLL.
+3. Add the hash and version to `SUPPORTED` with the evidence (the compare's verdict, the drives); the launcher then
+   accepts the DLL.
 
 The check is triage. "Reads unchanged" does not prove the physics is the same, and a clean replay covers only the
 paths its drives reach.
@@ -72,13 +73,14 @@ paths its drives reach.
 - Repointed constants are fixed (NGP `.rdata`, `0x1014fbxx`) or state (`.data`, `0x10171xxx`-`0x101767xx`: per-car
   init values, per-step atmosphere). Rust adapters read those data words directly.
 - `.rdata`: `CBase::Parse` replaced in 8 `NTweak` vtables (key parsers); no physics vtable slot changes
-  (`StepForward`'s `0x73f994` is untouched, the harness hook coexists).
-- NGP reaches the original through `0x101109d0` (exe VA -> pristine code). Its trampolines and emit wrappers run the
-  original they stand for (`ngp::original_for`); hosts select named callees (`ngp::Call`) and relocate the NGP
+  (`StepForward`'s `0x73f994` untouched, the harness hook coexists).
+- NGP reaches the original through `0x101109d0` (exe VA -> pristine code). Its trampolines and emit wrappers run
+  the original they stand for (`ngp::original_for`); hosts select named callees (`ngp::Call`) and relocate the NGP
   addresses to the snapshot's base.
 - `g_7c755c` (collision system): all 21 operands reading it point at a heap variable holding NGP's own copy (list
   built at `0x1008c6d7`). The boot constructs three copies (`ngp::layout::stage::collision_copies`) and supplies
-  their addresses directly in its runtime settings; `stage::layout::CollisionQuery` decodes operands only for snapshots.
+  their addresses directly in its runtime settings; `stage::layout::CollisionQuery` decodes operands only for
+  snapshots.
 
 ## Shape in the code
 
@@ -86,19 +88,20 @@ One behaviour (NGP's), not two: ports of functions NGP patches or rewrites hold 
 (per-car `.data`, atmosphere, collision copy, idle table, speed ring) is a required argument. Ports of functions NGP
 runs unchanged keep their 1.02 vectors (run at 24 bits: `Precision::Pc24.scope()`); NGP ones are
 `crates/rbr-physics/tests/ngp_*.rs`. NGP ports are SSE (each op rounds to its type); exe ports keep the x87 model.
-In the hybrid, a binding whose port is NGP-only declines on a 1.02 snapshot (`ngp::only()`; evidence: vcu-cov.snap-2000
-and vcu-arctic-snow.snap-4000 run identical to the original with those declined). The hybrid hooks NGP functions at the snapshot's NGP base (`rust_step.py`
-finds it from the `CCar::CDef` key dict, `Options.ngp_base`; `rbr-hybrid/src/ngp.rs`).
+In the hybrid, a binding whose port is NGP-only declines on a 1.02 snapshot (`ngp::only()`; vcu-cov.snap-2000 and
+vcu-arctic-snow.snap-4000 run identical to the original with those declined). The hybrid hooks NGP functions at the
+snapshot's NGP base (`rust_step.py` finds it from the `CCar::CDef` key dict, `Options.ngp_base`;
+`rbr-hybrid/src/ngp.rs`).
 
 ## Stepping
 
 - NGP's stage init sets `MaxTimeStep` (`CDef+0x1608c`) to 1/720 s (`0x3ab60b61`); `StepForward` runs ~720 times a
-  second. The load budget immediate at `0x482bc0` is 150 -> 1500: 38 settle frames of 40 (to step 1520).
+  second. Load budget immediate at `0x482bc0` is 150 -> 1500: 38 settle frames of 40 (to step 1520).
 - The stage init writes one of two tables of 2740 words (`ngp::Tables::stage`): the first when `CDef+0x1607c`
-  (`PhysicsRevision_NGP`) is 778, the second otherwise. RSF's 7.5.779 with its 779 drives as the first does, so
-  ours takes it for 778 and 779 (`ngp::layout::stage`, `REVISIONS`). With RSF's own `physics.rbz` (779) and 778's
-  rule the car settles apart from step 40 and has about half the traction at a standing start; with both,
-  rsf-input1 (an RSF drive, Fiesta Rally3 on Falstone, 2026-10-25) and drive2/2 hold STA1 for every step.
+  (`PhysicsRevision_NGP`) is 778, the second otherwise. RSF's 7.5.779 with its 779 drives as the first does, so ours
+  takes it for 778 and 779 (`ngp::layout::stage`, `REVISIONS`). With RSF's own `physics.rbz` (779) and 778's rule
+  the car settles apart from step 40 with about half the standing-start traction; with both, rsf-input1
+  (Fiesta Rally3 on Falstone, 2026-10-25) and drive2/2 hold STA1 every step.
 - Collision: window `20 * dt` (`0x527447`) and mask `counter & 0x13` (`0x527508`: substeps 0, 4, 8, 12 of 32).
   Ported, not exercised (`SUB_STEPPING` off on every snapshot).
 
@@ -106,70 +109,71 @@ finds it from the `CCar::CDef` key dict, `Options.ngp_base`; `rbr-hybrid/src/ngp
 
 Race steps run on NGP's thread at Windows' default control word `0x27f` (53 bits); vanilla runs at `0x7f` (24 bits,
 D3D9). The load's settle runs on the game thread at 24 bits (`ngp-cw11`). `rbr_physics::fpu` holds the precision as
-thread-local state (`fpu::set_precision`, scoped `Precision::scope` / `with_precision`; PC=53 until set); the pure host sets it from the app
-state, the emulator from the snapshot (`RBR_REPLAY_FCW` overrides; a 1.02 snapshot runs at PC=24). At 53 bits an x87 chain rounds once at its store and st0 returns stay doubles, so such
-ports take a 53-bit path (`fpu::round_x87`). Files still rounding to 24 bits unconditionally are fixed as runs reach
-them.
+thread-local state (`fpu::set_precision`, scoped `Precision::scope` / `with_precision`; PC=53 until set); the pure
+host sets it from the app state, the emulator from the snapshot (`RBR_REPLAY_FCW` overrides; a 1.02 snapshot runs
+at PC=24). At 53 bits an x87 chain rounds once at its store and st0 returns stay doubles, so such ports take a
+53-bit path (`fpu::round_x87`). Files still rounding to 24 bits unconditionally are fixed as runs reach them.
 
 ## Atmosphere
 
-`0x1004b5a0` (`ngp::atmosphere`), every engine step, from h = car z (`+0x148`), f32 with `pow` in double:
-T = 293.15 - 0.0065 h (`10171adc`), p = 101300 (1 - 0.0065 h / 288.15)^5.255 (`10171ad8`), rho = p / (287 T)
+`0x1004b5a0` (`ngp::atmosphere`), every engine step, from h = car z (`+0x148`), f32 with `pow` in double: T =
+293.15 - 0.0065 h (`10171adc`), p = 101300 (1 - 0.0065 h / 288.15)^5.255 (`10171ad8`), rho = p / (287 T)
 (`10171ae0`), `101767c8..d0` = 1/p, 1.15 p, 0.9871668 p. Weather does not enter. p feeds `DamperSolve` (wrapper
 `0x10060230`) and the engine's air constants; T rebiases `DamperStep1` (`0x1004d2f0`). Drag factor `1017147c` = 0.5
 rho / 1.20407. Checked on Tanner (z 684.1458: p 93349.91, T 288.7030).
 
 ## Controls under NGP
 
-- NGP's singleton (`0x10177c88`) handles `CSigCarControlFiltered` (`0x1008e8a0`): filtered channels unquantized, flags
-  mapped, a gear select only when it differs from the drive's gear (`+0x570`, inferred), then the car's control input
-  `CCar::UpdateSeed` `0x4e91f0` directly and its own walk of the other listeners. Inline when byte `+0xd` is 0, else
-  on an asio strand (untested). NGP's `NotifyFilt` emits only in replay mode, so replays stay quantized. Rust:
-  `CarControl::ngp`; live payload is f32 device input (`rbr_recording::input`).
+- NGP's singleton (`0x10177c88`) handles `CSigCarControlFiltered` (`0x1008e8a0`): filtered channels unquantized,
+  flags mapped, a gear select only when it differs from the drive's gear (`+0x570`, inferred), then the car's
+  control input `CCar::UpdateSeed` `0x4e91f0` directly and its own walk of the other listeners. Inline when byte
+  `+0xd` is 0, else on an asio strand (untested). NGP's `NotifyFilt` emits only in replay mode, so replays stay
+  quantized. Rust: `CarControl::ngp`; live payload is f32 device input (`rbr_recording::input`).
 - IGNITION is level-triggered (`0x4cc3e5` -> `0x10006e50`, value > 0.99 `0x101459d0`), payload word 7 ->
-  `CDrive+0x50`. The starter (`ngp::starter`) cranks while it is held 0.5-2.5 s. NGP times that by
+  `CDrive+0x50`. The starter (`ngp::starter`) cranks while held 0.5-2.5 s. NGP times that by
   `QueryPerformanceCounter` (`0x10111ce0`); the port uses simulation time, so it differs whenever the game runs off
   real time. Reference drives must not press ignition (the test install starts idling, ~105 rad/s).
 - Start hold: while car `+0x1670` > 0 the input is a fixed control (handbrake 1), ~1360 steps after step 1520.
-- Clutch help (`LaunchClutch` `0x5375b0`): NGP's per-car engine speeds (`10171ae4`/`10172338`, 89.0/99.5 rad/s for the
-  Celica; stock 200/275) make it an anti-stall at idle. VCU constants: `vcu::layout::Tuning` via `ngp::vcu_tuning`
-  (rev cut margin `10171ab4`, 25 rpm for 300).
+- Clutch help (`LaunchClutch` `0x5375b0`): NGP's per-car engine speeds (`10171ae4`/`10172338`, 89.0/99.5 rad/s for
+  the Celica; stock 200/275) make it an anti-stall at idle. VCU constants: `vcu::layout::Tuning` via
+  `ngp::vcu_tuning` (rev cut margin `10171ab4`, 25 rpm for 300).
 - Direct gear actions (R, N, 1-6): flag 4 with word 6 = 0 R, 1 N, gear + 1 (`CDrive::M6840`; at or above the gear
   count gives N). NGP's `CSigCarControlInput` emit (`0x4cc42e` -> `0x100ed540`) adds `0x1003c450` when the car's VCU
   scratch +0x50 (auto gears, `0x1005dd30`) is 0: without a gear up/down flag the first action above 0.999 selects
   its gear every poll; with one bound, none held and N unbound, N; a gear down in first (`+0x250`, sensor word 1 =
-  drive +0x54c, 2) is dropped when N is bound. The handler's payload is zeroed (`0x1002c760`), so word 6 is 0 without
-  a selection. Rust: `control::ngp_direct_gears`, `live::poll`; the viewer sends held/bound masks (`INP2`).
+  drive +0x54c, 2) is dropped when N is bound. The handler's payload is zeroed (`0x1002c760`), so word 6 is 0
+  without a selection. Rust: `control::ngp_direct_gears`, `live::poll`; the viewer sends held/bound masks (`INP2`).
 - Input: NGP does not patch the filter (0x48c500); under RSF the grid is the built-in one or the profile's (see
   `notes/gameplay.md`, Input filter). With `threaded` the poll runs on NGP's input thread at `inputRate` (1000 Hz,
-  `0x1003c650`); ours polls on its input thread at the bindings' `input rate` (1000 Hz). `ffbDeadZone` is FFB only.
+  `0x1003c650`); ours on its input thread at the bindings' `input rate` (1000 Hz). `ffbDeadZone` is FFB only.
 - Unconfirmed without an NGP live recording: the direct gear action value (the binding's +0x30 raw value vs the
-  viewer's pad value), the gear in use as the last sensor data's rather than the current step's, the threaded poll's
-  timing, and the profile grid's effect on the payload.
+  viewer's pad value), the gear in use as the last sensor data's rather than the current step's, the threaded
+  poll's timing, and the profile grid's effect on the payload.
 
 ## Load path
 
 All in `rbr-standalone --boot --ngp-physics`:
 
-1. Files: `*_NGP` keys go through the stock parser (keys below); `ntweak::plan`/`apply` are NGP's. NGP's
-   load edits: `CEngine::CDef` builds `+0x2820` as a `CRealPair` (`0x50f247`, adds `+0x2830` `TorqueCut_NGP`) and
-   NOPs two stores (`scripts/gen-engine-def.py`, `NGP_WORDS`); `BrakeWearLimit_NGP` (`+0x58c`) uses NGP's
-   `CUnsigned` reader `0x1003c7f0` (the value, then up to 30 unnamed floats into `+0x59c`); `CTyre::CDef` NOPs
-   `0x530dd3`, `0x530ea2`, `0x530ecc` (`+0xdc`, `+0xfc`, `+0x10c` stay 0); `CBrakesPage::vf48` returns at once.
-   Test: `ngp_definitions_match_the_game` (`crates/rbr-physics/tests/load_defs.rs`, `RBR_NGP_PHYSICS`, `RBR_NGP_LOAD`).
-2. Per-car init `ngp::layout::car_init`: `0x1003f5b0` (from listener `0x100f06b0` as the race starts) and callees, plus the
-   tyre-definition copy `0x100f1690`. It range-checks setups, converts `Tq_xx_RPM_NGP` to rad/s, maps
-   `EngineType_NGP` 11 to 1, scales wheel and tyre values by the car factor `r` and fills `.data` (below). Constants
-   need the DLL's exact bits (`9.1e-7`, `0.06615`). Check: `harness/ngp_init_diff.py IMAGE ngp-data/load40`.
+1. Files: `*_NGP` keys go through the stock parser (keys below); `ntweak::plan`/`apply` are NGP's. NGP's load
+   edits: `CEngine::CDef` builds `+0x2820` as a `CRealPair` (`0x50f247`, adds `+0x2830` `TorqueCut_NGP`) and NOPs two
+   stores (`scripts/gen-engine-def.py`, `NGP_WORDS`); `BrakeWearLimit_NGP` (`+0x58c`) uses NGP's `CUnsigned` reader
+   `0x1003c7f0` (the value, then up to 30 unnamed floats into `+0x59c`); `CTyre::CDef` NOPs `0x530dd3`, `0x530ea2`,
+   `0x530ecc` (`+0xdc`, `+0xfc`, `+0x10c` stay 0); `CBrakesPage::vf48` returns at once. Test:
+   `ngp_definitions_match_the_game` (`crates/rbr-physics/tests/load_defs.rs`, `RBR_NGP_PHYSICS`, `RBR_NGP_LOAD`).
+2. Per-car init `ngp::layout::car_init`: `0x1003f5b0` (from listener `0x100f06b0` as the race starts) and callees,
+   plus the tyre-definition copy `0x100f1690`. It range-checks setups, converts `Tq_xx_RPM_NGP` to rad/s, maps
+   `EngineType_NGP` 11 to 1, scales wheel and tyre values by the car factor `r` and fills `.data` (below).
+   Constants need the DLL's exact bits (`9.1e-7`, `0.06615`). Check: `harness/ngp_init_diff.py IMAGE
+   ngp-data/load40`.
 3. Heap objects: idle table `0x101767e8` (from the `Tq` points; without it the engine's idle terms are skipped) and
    speed ring `0x101767b0` (`std::deque<float>`, 107 zeros).
 4. Exe edits and stage init `0x1004e360` (`ngp::layout::stage::stage_init`).
 
-The damage push `0x4f13a6` becomes 11000 x `r` (`ngp::damage_tuning`). Not ported: the car CRC check (anti-tamper, not
-a load result): `car_init` CRCs the loaded car values (`0x100e88e0` mode 1, `0x10041810`) against
-`CarId` (car def `+0x44d0`) and on a mismatch sets the drive def's gear count `+0x654` to 3; the frame listener
-`0x100f1780` then calls `abort()` (`0x100ef4b0`) in gear `>= +0x654` above `40 + rand() % 20` km/h, and one call in 300
-re-CRCs (`0x100eece0`, mode 2) and aborts on a change. Also not ported: listener unlinks.
+The damage push `0x4f13a6` becomes 11000 x `r` (`ngp::damage_tuning`). Not ported: the car CRC check (anti-tamper,
+not a load result): `car_init` CRCs the loaded car values (`0x100e88e0` mode 1, `0x10041810`) against `CarId` (car
+def `+0x44d0`) and on a mismatch sets the drive def's gear count `+0x654` to 3; the frame listener `0x100f1780`
+then calls `abort()` (`0x100ef4b0`) in gear `>= +0x654` above `40 + rand() % 20` km/h, and one call in 300 re-CRCs
+(`0x100eece0`, mode 2) and aborts on a change. Also not ported: listener unlinks.
 
 | Per-car `.data` words | From (`base` = 0.5712 / `InverseMass`) |
 | --- | --- |
@@ -194,8 +198,8 @@ All 421 NGP files parse with `lsp::parse` unchanged: 153 new `*_NGP` keys, 15 ne
 [data/ngp-lsp-keys.md](../data/ngp-lsp-keys.md).
 
 - Renames (`0x10060db0`): 41 stock records get NGP names (`Gear0OptionsMin` -> `CenterDiffMapLockPctMin_NGP`).
-- Extended tables: for 8 classes NGP copies the stock table into `.data`, renames and appends records (stock format
-  `{name, 0, member / 4, 0}`) and points the class dict (`+0xc` table, `+8` count) at the copy.
+- Extended tables: for 8 classes NGP copies the stock table into `.data`, renames and appends records (stock
+  format `{name, 0, member / 4, 0}`) and points the class dict (`+0xc` table, `+8` count) at the copy.
 - Shared members: `DriveTrain_NGP` = `DriveType`, `EngineType_NGP` = `Turbo`, `Tq_xx_NGP` = `VExx`.
 - `SubTics` (-> `reserved_NGP`) and `vecDriveAxleJointPos_VF` (-> `vecPosOffset_NGP`) are renamed but NGP's files
   still use the old names, so the parser skips them.
@@ -204,21 +208,21 @@ All 421 NGP files parse with `lsp::parse` unchanged: 153 new `*_NGP` keys, 15 ne
 
 ## Replacements
 
-Of the 65 retargeted physics calls, 18 are emit wrappers (1.02's fan-out; listeners move to NGP's thread when
-`+0xd` is set) that run as their 1.02 emits. The rest:
+Of the 65 retargeted physics calls, 18 are emit wrappers (1.02's fan-out; listeners move to NGP's thread when `+0xd`
+is set) that run as their 1.02 emits. The rest:
 
 | NGP target | Replaces | Rust |
 | --- | --- | --- |
 | `1004b8e0` (jmp `0x4e6657`) | `Sim8E20` | `ngp::engine` (calls `ngp::atmosphere`) |
 | `100456c0` | `CDrive::M6C90` | `ngp::starter` |
-| `10046880` | `E39_Hook4160` | `ngp::brake` (the brake torque and disc heat; the hook block's words are the `Brake*_NGP` keys: `+0xec` ratio, `+0xcc` piston area, `+0x6c` effective radius, `+0x9c` plate area, `+0xbc` internal convection, `+0x8c` heat absorption, `+0x7c` specific heat, `+0x3c` mass, `+0x4c` convection factor, `+0x5c` layer mass share, `+0xac` vent area) |
+| `10046880` | `E39_Hook4160` | `ngp::brake` (brake torque and disc heat; hook block words are the `Brake*_NGP` keys: `+0xec` ratio, `+0xcc` piston area, `+0x6c` effective radius, `+0x9c` plate area, `+0xbc` internal convection, `+0x8c` heat absorption, `+0x7c` specific heat, `+0x3c` mass, `+0x4c` convection factor, `+0x5c` layer mass share, `+0xac` vent area) |
 | `10047300` | `CDrive::M93A0` | `drive_worker::clutch_torque` (`ngp::sign`) |
 | `10048d50` | `CDrive::M9BC0` (wrapper) | `ngp::diff`, `ngp::downforce`, `ngp::axle` |
 | `100458c0`, `10045b80`, `10045fa0` | `M5FE0`, `M6260`, `M7D60` | `ngp::drive` |
-| `10015fc0`, `10016d40`, `10016960` | `SampleBig`, `BlendB`, `LerpAt` | `ngp::drive_line` (the path), `ngp::layout::drive_line` (its memory) |
-| `10016d40`, `10016960` at `Split17C` (`0x4e555f`, `0x4e5571`) | `BlendB`, `LerpAt` (the respawn's sample: doubles, three lanes, zero past `n - 1`, no trap) | `ngp::layout::drive_line::{blend_b_f32, lerp_at_f32}` |
-| `10060230` | `DamperSolve` | `spring_damper::solve` with the air pressure as the limit |
-| `1004d2f0`, `1004d3c0`, `1004d380`, `1004d410`, `1004d550` | `DamperStep1/2`, the tyre's convection and carcass flux | `ngp::heat` |
+| `10015fc0`, `10016d40`, `10016960` | `SampleBig`, `BlendB`, `LerpAt` | `ngp::drive_line` (path), `ngp::layout::drive_line` (memory) |
+| `10016d40`, `10016960` at `Split17C` (`0x4e555f`, `0x4e5571`) | `BlendB`, `LerpAt` (respawn sample: doubles, three lanes, zero past `n - 1`, no trap) | `ngp::layout::drive_line::{blend_b_f32, lerp_at_f32}` |
+| `10060230` | `DamperSolve` | `spring_damper::solve` with air pressure as the limit |
+| `1004d2f0`, `1004d3c0`, `1004d380`, `1004d410`, `1004d550` | `DamperStep1/2`, tyre convection, carcass flux | `ngp::heat` |
 | `1005b4a0` | `ComputeOutputs` | `ngp::outputs` |
 | `1005be40`, `1005bc50` | `Accumulate`, `HeatStep` | `ngp::inclination` |
 | `1005b660`, `10059f70` | `CScratch::Step`, `CSpringDamper::Step` | `ngp::step_wrapper`, `ngp::spring` |
@@ -226,12 +230,12 @@ Of the 65 retargeted physics calls, 18 are emit wrappers (1.02's fan-out; listen
 | `1004df40` | `E44Entry8::Pick` | `ngp::material`, `ngp::layout::material` |
 | `10042120` | `CCar::FfbNorm` | `ngp::ffb::curve` |
 
-Exe ports with NGP's constants: `StepForward`; `CScratch::StepInner` (0.99/0.96/0.87/0.7 ->
-0.95/0.875/0.775/0.65); `CScratch::Step` (0.1 -> 0.025, `+0x1e8` -> `+0x1f8`); `ComputeOutputs` (3 -> 1);
-`HeatStep` (60 -> 40); `RelaxStep`; `M3DD30` (load thresholds -> `10172f58/5c/60`); `M3D520` (`ProbeTuning`);
-`CWheel::Unk96e0` (`WheelTuning`); `CSolid::E43Vf6C` (1e-5 -> 4e-7); `DragAndSpinDamp` (0.5 -> `1017147c`);
-`E36DamageOps::Slot1` (`DamageTuning`); the engine stage (`EngineTuning`); `CSpringDamper::Step`. Direct calls
-(`scripts/ngp-engine-vectors.py`, `tests/ngp_engine.rs`): `Sim8890` (with the car's walk), `SimE970`, `SimECF0` and
+Exe ports with NGP's constants: `StepForward`; `CScratch::StepInner` (0.99/0.96/0.87/0.7 -> 0.95/0.875/0.775/0.65);
+`CScratch::Step` (0.1 -> 0.025, `+0x1e8` -> `+0x1f8`); `ComputeOutputs` (3 -> 1); `HeatStep` (60 -> 40);
+`RelaxStep`; `M3DD30` (load thresholds -> `10172f58/5c/60`); `M3D520` (`ProbeTuning`); `CWheel::Unk96e0`
+(`WheelTuning`); `CSolid::E43Vf6C` (1e-5 -> 4e-7); `DragAndSpinDamp` (0.5 -> `1017147c`); `E36DamageOps::Slot1`
+(`DamageTuning`); the engine stage (`EngineTuning`); `CSpringDamper::Step`. Direct calls
+(`scripts/ngp-engine-vectors.py`, `tests/ngp_engine.rs`): `Sim8890` (with the car's walk), `SimE970`, `SimECF0`,
 `LaunchClutch` on `ngp-fwd41b.snap-10880`, 250 each.
 
 The tyre-noise emit (`CScratch::EmitNoise` `0x5358a6`) is NGP's wrapper `100ee970`; on the strand it posts every
@@ -244,8 +248,9 @@ fifth call. The binding has the host run it (`tyre.rs`), as for the other emit w
   emulator runs NGP's wrapper; the pure host runs it as the 1.02 emit `0x4ef290`, counts the fire (sound) and stands
   in for its two listeners (particles `0x5dd4c0`, car sound `0x4ae3a0`, via `0x5e3f10`/`0x4afa70`).
   `ngp::layout::car_init` sets `0x101760d4` (the signal hub's cache, getter `0x1002cc00`) to `0x893600`.
-- Idle table: the lookup (`0x1004a700`) reads past its knots without trapping, so `ngp::engine::idle_table_lookup` takes
-  any count. Every car has 10-15 knots (42 RSF cars, `physics.rbz` 13-15); 0 and 1 come only from patched snapshots.
+- Idle table: the lookup (`0x1004a700`) reads past its knots without trapping, so `ngp::engine::idle_table_lookup`
+  takes any count. Every car has 10-15 knots (42 RSF cars, `physics.rbz` 13-15); 0 and 1 come only from patched
+  snapshots.
 
 ### Unreachable guards
 
@@ -254,8 +259,8 @@ The bindings in `rbr-hybrid/src/ngp.rs` keep these as declines:
 - another idle-table class: the table's only writer (engine init `0x1004ae53`) always builds vtable `10148930`.
 - speed-ring growth: the ring is written by its static init (`0x100019b2`, map 32, 107 entries), the zeroing
   `0x1004b3b1` and the step's pop-then-push (`0x1004bb2e`); growth needs a map of 27 or fewer.
-- settings or game object not made (`0x10013cd0`, `0x10011cb0`): order-of-construction guards. Both are made on
-  every NGP snapshot, load step 0 too. NGP itself does not null-check them (`0x100472be`, `0x10059fa5`,
+- settings or game object not made (`0x10013cd0`, `0x10011cb0`): order-of-construction guards (made on
+  every NGP snapshot, load step 0 too). NGP itself does not null-check them (`0x100472be`, `0x10059fa5`,
   `0x10059fb8` would fault).
 - axle blocks/packs out of range, a wheel's pack past the axles: packs `[1,1,2,2]` and pairs `[[1,2],[0,1],[2,3]]`
   are `CDrive::CDef`'s constructor defaults. No stock or NGP key sets them, and every snapshot has them.
@@ -266,10 +271,9 @@ The bindings in `rbr-hybrid/src/ngp.rs` keep these as declines:
 1.02 sends one constant force from the steered wheels' torque:
 
 1. Per step: `CCar::StepEngine` `0x4e9930` clears car `+0xadc`; `E51Wheel::M3DD30` (`0x53e780`) adds each steered
-   wheel's torque about axis `+0x9a0` times the lever factors `+0x9c0`, `+0x9c4` (`inv_arm`, `inv_rack`: `1/arm` and
-   `1/rack` of the steering rod, from `0x53b900`; names inferred).
-   `CCar::UpdateFfbTorque` `0x4e7ff0` filters it into `+0xaec` with `f = 0.5 + 0.2 clamp((speed - 7) / 6, 0, 1)` and
-   `SteeringRackRatio`; 0 during the start hold.
+   wheel's torque about axis `+0x9a0` times lever factors `+0x9c0`, `+0x9c4` (`inv_arm`, `inv_rack`: `1/arm`,
+   `1/rack` of the steering rod, from `0x53b900`; names inferred). `CCar::UpdateFfbTorque` `0x4e7ff0` filters it
+   into `+0xaec` with `f = 0.5 + 0.2 clamp((speed - 7) / 6, 0, 1)` and `SteeringRackRatio`; 0 during the start hold.
 2. `CCar::FfbNorm` `0x4e76c0`: 0 if body `+0x1ec` is set, else `clamp(+0xaec / MaxFFTorque, -1, 1)` (def `+0x44a0`).
 3. Per frame: `EmitForce` `0x491930` -> `E28_GetFFBVal` `0x4c5f90` (x `Strength`, negated when `Direction` is 0) ->
    `m = trunc(-10000 x)` when the gate holds (FFB on, racing, `IsDone(0)`) -> `SetFFBValue` `0x4c6b40` (clamp
@@ -283,19 +287,19 @@ NGP keeps the torque and gate and changes the rest:
   `ForceFeedbackSensitivity<Surface>_Car<slot>`, else `ForceFeedbackSensitivity<Surface>` (surface from
   `SetupSpec`), if > 0 and not 100, scales `S` by value/100; floor 1. Higher `S` is weaker.
 - Output: EmitForce stores `x`; an FFB thread (`ffbRate`, default 1000 Hz, 0 off) resends `m = floor(-10000 x)` via
-  NGP's `SetFFBValue` `0x10064620` (adds `DIEP_DURATION`; `SendFFB2` is idle while the thread runs) with a dead
-  zone (`m = 0` when `|steering| < ffbDeadZone` and `|m| < ffbDeadZoneThreshold * 10000`). It sends `m` only while
-  the racing gate holds, else 0: 778 `0x1003c3eb` calls the exe's `0x5403e0` case 0xb (`0x5407b2`), which holds when
+  NGP's `SetFFBValue` `0x10064620` (adds `DIEP_DURATION`; `SendFFB2` idle while the thread runs) with a dead zone
+  (`m = 0` when `|steering| < ffbDeadZone` and `|m| < ffbDeadZoneThreshold * 10000`). It sends `m` only while the
+  racing gate holds, else 0: 778 `0x1003c3eb` calls the exe's `0x5403e0` case 0xb (`0x5407b2`), which holds when
   `[[0x8951d0] + 4]` is set (not traced), or in app state 1 with FFB on (`0x1660ed4`) and `0x5fe390(0)` on
   `[0x167ea70]` (slot 0 not running, `+0x24 != 2`, or past its end `+0x4`; not shown to be the start timer). Ours
-  (`rbr_gameplay::ffb::racing_gate`, the STP1 force) gates on app state 1 alone, where the drives open it (cachy wheel
-  trace, autopilot: 0 through the load and the countdown and after the finish).
+  (`rbr_gameplay::ffb::racing_gate`, the STP1 force) gates on app state 1 alone, where the drives open it (cachy
+  wheel trace, autopilot: 0 through load, countdown, after finish).
 - NGP does not reset its stored `x` between attempts: the gate opens about 9 ms (8 sets) before an attempt's first
   driving StepForward and sends the previous attempt's last stored force (one of its last two steps' magnitudes: the
   last step's EmitForce ran in drive2/4, not in drive2/5), then the first step's own; 0 before (drive2 attempts 2-6).
-  Ours sends the step's own: it is one 1.4 ms record, which the wheel thread did not reliably send on cachy, and
-  carrying it took a flag and a record field. `rsf_compare` counts those sets as their own class, "carried (not
-  copied, by decision)", against the recorded car's last two magnitudes of the previous attempt (`ffb.last`).
+  Ours sends the step's own (one 1.4 ms record, which the wheel thread did not reliably send on cachy; carrying it
+  took a flag and a record field). `rsf_compare` counts those sets as their own class, "carried (not copied, by
+  decision)", against the recorded car's last two magnitudes of the previous attempt (`ffb.last`).
 - After a hitch the game catches up with StepForwards under 1 ms apart and the force stored before the burst stays
   until the burst's last step (drive2/4: 0.4 s, ~300 steps); ours sends each step's own.
 - EFF1's QPC is taken after the call returns: a call that blocked (e2e2 step 9466, 16 ms) sends the `x` of the step
@@ -304,9 +308,9 @@ NGP keeps the torque and gate and changes the rest:
 
 Rust: `car_body::steering_ffb::force(mem, car)` (these 1.02 functions are steering FFB, not downforce),
 `rbr_gameplay::ffb::{magnitude, dead_zone}`, `HUD2` record (force at 16, bit 0 of flags at 20 = NGP),
-`rbr_render::ffb::Wheel` (below). Launcher `[ffb]`: enabled, strength, inverse, dead_zone, dead_zone_threshold, rate,
-device, rotation, rotation_per_car, sensitivity_gravel/_tarmac/_snow and `sensitivity_car<RSF id> = G,T,S` (from the
-import; `rbr-standalone --ffb-sensitivity G,T,S`, applied by `ngp::ffb::sensitivity` as NGP's init does at
+`rbr_render::ffb::Wheel` (below). Launcher `[ffb]`: enabled, strength, inverse, dead_zone, dead_zone_threshold,
+rate, device, rotation, rotation_per_car, sensitivity_gravel/_tarmac/_snow and `sensitivity_car<RSF id> = G,T,S`
+(from the import; `rbr-standalone --ffb-sensitivity G,T,S`, applied by `ngp::ffb::sensitivity` as NGP's init does at
 `0x1003f5b0`: `(percent / 100f) * S` in f32; the per-slot `_Car<slot>` keys are not offered). `rbr-standalone
 --trace-out`'s `.ext` holds per step Game's state, the wheel's magnitude before the gate (`--ffb-settings`) and the
 recorded car's (NGP's curve of FRM1's `+0xaec`), which `harness/rsf_compare.py` compares; it ports none of it.
@@ -314,11 +318,11 @@ recorded car's (NGP's curve of FRM1's `+0xaec`), which `harness/rsf_compare.py` 
 From the call to the wheel (RSF on cachy: Proton cachyos-11.0 SLR, G923 PS on new-lg4ff `hid-logitech-new`, sysfs
 `autocenter` 0, `gain` 65535, `spring_level`/`damper_level` 30):
 
-- NGP 7.5.779 (RSS1 EFF1 of drive1/2): the exe's `CreateFFB` makes the effect (`DIEFF_CARTESIAN | DIEFF_OBJECTIDS`,
-  axes `0x1000002`, `0x1000102`, gain 10000, infinite); NGP's thread calls only `SetParameters(0x20000141)` with
-  `DIEFF_CARTESIAN | DIEFF_OBJECTOFFSETS`, two axes, direction {1, 0}, about every 1.15 ms (Sleep(1) under Wine,
-  ~810/s), the same value again 78 % of the time; no smoothing or interpolation (the value changes once per frame).
-  No SetProperty (`DIPROP_AUTOCENTER`, `DIPROP_FFGAIN` stay DirectInput's defaults), no SendForceFeedbackCommand.
+- NGP 7.5.779 (RSS1 EFF1 of drive1/2): the exe's `CreateFFB` makes the effect (`DIEFF_CARTESIAN |
+  DIEFF_OBJECTIDS`, axes `0x1000002`, `0x1000102`, gain 10000, infinite); NGP's thread calls only
+  `SetParameters(0x20000141)` with `DIEFF_CARTESIAN | DIEFF_OBJECTOFFSETS`, two axes, direction {1, 0}, about every
+  1.15 ms (Sleep(1) under Wine, ~810/s), the same value again 78 % of the time; no smoothing or interpolation.
+  No SetProperty (`DIPROP_AUTOCENTER`, `DIPROP_FFGAIN` stay defaults), no SendForceFeedbackCommand.
 - Wine dinput (`dlls/dinput/joystick_hid.c`): `SetParameters` -> `Start(1)` -> `Download`: the set-constant-force
   report when the magnitude changed, the effect-update report always (`DIEP_DURATION` marks it modified), then the
   start report. Magnitude by `scale_to_logical_value` onto winebus's PID range (`dlls/winebus.sys/hid.c`: logical
@@ -328,34 +332,32 @@ From the call to the wheel (RSF on cachy: Proton cachyos-11.0 SLR, G923 PS on ne
 - winebus: the G923 goes through the SDL bus (`bus_sdl.c`): `SDL_HapticOpen` writes `FF_GAIN` 0xffff and
   `FF_AUTOCENTER` 0; each report -> `SDL_HapticUpdateEffect` (EVIOCSFF, `level * gain_percent / 100`, length 0 for
   infinite), start -> `SDL_HapticRunEffect(1)` (EV_FF play 1).
-- At the evdev device (traced, `harness/ffb_trace.sh rsf` and `probe`, 8523 calls of drive2 attempt 1): per call one
-  EVIOCSFF and one play, two EVIOCSFF when the magnitude changed; every level equals the formula above.
+- At the evdev device (traced, `harness/ffb_trace.sh rsf` and `probe`, 8523 calls of drive2 attempt 1): per call
+  one EVIOCSFF and one play, two EVIOCSFF when the magnitude changed; every level equals the formula above.
 
-`rbr_render::ffb::Wheel`: SDL3 haptics, one infinite constant effect on `SDL_HAPTIC_STEERING_AXIS` (0x4000), SDL's open
-writes the same gain and autocentre; a thread at `rate` Hz updates and restarts the effect with the latest level each
-tick (dead zone applied there), level by Proton's formula. Same 10 s of drive2 attempt 1 (`ffb_play` vs `probe`):
-every level ours gives is RSF's, in RSF's order (5779 of RSF's 5815; ours samples every ~1.08 ms).
-Not replicated: the duplicate EVIOCSFF on a change, the second `FF_GAIN` at acquire. The device chains being equal, a
-different feel comes from the magnitude (sensitivity, strength, physics) or the live latency (not measured). Unattended
-runs send FFB with `FFB=1` (binds the profile) and pace in real time with `FAST=1` (playback's default is 8 steps per
-requested step). End to end (2026-10-21, `ffb_trace.sh rsf` with `AUTO="66 5 2 3"`, det-audi66's playback, `FFB=1
-FAST=1`; ours `ffb_play` of our per-step magnitudes at the recorded step times): every one of RSF's 34981 driving sets
-reached the wheel as Proton's level of our magnitude for the step it carries, and the 23068 steps both sent reached it
-at the same level; step end to wheel p50/p90/p99 0.59/1.06/1.22 ms RSF (Wine's QPC is `CLOCK_MONOTONIC_RAW`, offset ±0.1
-ms), 0.58/1.04/1.22 ms ours (from the file, not the live loop; `ffb_trace.py ours` and `steps`).
-`rotation` (ours, `rbr_render::wheel_rotation`): the lock-to-lock degrees, written to the wheel driver's sysfs `range`
-by the launcher on change and the viewer at a live start, the setting or, per car, the car's lock up to it. RSF sets it
-per car from `cars_data.json` `steering_wheel` through vendor tools in its launcher (`RSFControlConfig.exe`), outside
-the game. Checked on a G923 under Linux.
-Car lock: `MaxSteeringLock` is the steering wheel's turns from centre to full lock and `SteeringRackRatio` the rack's
-travel per turn, m (`car_body::controls`: rack = steer x lock x ratio; Fiesta R5 0.75 x 0.056 = 42 mm, its `.lsp`'s
-"(lock)" mount); lock to lock = `MaxSteeringLock x 720` degrees (`wheel_rotation::car_degrees`, from the launcher's
-setup as `--car-lock`), RSF's `steering_wheel` for every NGP car matched in `cars-rsf` (Yaris Rally2 479.52 -> RSF 479).
+`rbr_render::ffb::Wheel`: SDL3 haptics, one infinite constant effect on `SDL_HAPTIC_STEERING_AXIS` (0x4000), SDL's
+open writes the same gain and autocentre; a thread at `rate` Hz updates and restarts the effect with the latest
+level each tick (dead zone applied there), level by Proton's formula. Same 10 s of drive2 attempt 1 (`ffb_play` vs
+`probe`): every level ours gives is RSF's, in RSF's order (5779 of RSF's 5815; ours samples every ~1.08 ms). Not
+replicated: duplicate EVIOCSFF on a change, second `FF_GAIN` at acquire. Chains being equal, feel differences
+come from magnitude or live latency (unmeasured).
+Unattended runs send FFB with `FFB=1` (binds the profile) and pace in real time with `FAST=1` (playback's default is
+8 steps per requested step). End to end (2026-10-21, `ffb_trace.sh rsf` with `AUTO="66 5 2 3"`, det-audi66's
+playback, `FFB=1 FAST=1`; ours `ffb_play` of our per-step magnitudes at the recorded step times): all 34981 RSF
+driving sets reached the wheel as Proton's level of our carried magnitude, and the 23068 steps both sent matched
+at the same level; step end to wheel p50/p90/p99 0.59/1.06/1.22 ms RSF (Wine QPC is `CLOCK_MONOTONIC_RAW`, ±0.1
+ms), 0.58/1.04/1.22 ms ours (from the file, not the live loop). `rotation` (ours, `rbr_render::wheel_rotation`): the lock-to-lock degrees, written to the wheel sysfs `range` by the launcher on change and the viewer at a live start: the setting or, per car, the car's
+lock up to it. RSF sets it per car from `cars_data.json` `steering_wheel` through vendor tools in its launcher
+(`RSFControlConfig.exe`), outside the game. Checked on a G923 under Linux. Car lock: `MaxSteeringLock` is the
+steering wheel's turns from centre to full lock and `SteeringRackRatio` the rack's travel per turn, m
+(`car_body::controls`: rack = steer x lock x ratio; Fiesta R5 0.75 x 0.056 = 42 mm, its `.lsp`'s "(lock)" mount);
+lock to lock = `MaxSteeringLock x 720` degrees (`wheel_rotation::car_degrees`, from the launcher's setup as
+`--car-lock`), RSF's `steering_wheel` for every NGP car matched in `cars-rsf` (Yaris Rally2 479.52 -> RSF 479).
 
 ### RSF settings
 
-What an RSF drive's force feedback, wheel and aids take (`rbr_formats::rsf::settings`, CLI `rsf-settings`; `harness/rsf_compare.py`; the launcher
-imports none of them):
+What an RSF drive's force feedback, wheel and aids take (`rbr_formats::rsf::settings`, CLI `rsf-settings`;
+`harness/rsf_compare.py`; the launcher imports none of them):
 
 | Setting | Where | Evidence |
 | --- | --- | --- |
@@ -377,37 +379,38 @@ Input only (rec/input-poll): the profile's input filter and controller options, 
 
 ## H-shifter
 
-`crates/rbr-render/src/shifter.rs` (opt-in) is ours, after real gearboxes and
-iRacing's two-step model (the gear comes out unloaded, then goes in at matched speed; EdRacing's gear shift guide).
-Grind pitch `0.65 + 1.2 tanh((|rpm error| - 200) / 1500)`.
+`crates/rbr-render/src/shifter.rs` (opt-in) is ours, after real gearboxes and iRacing's two-step model (gear out
+unloaded, then in at matched speed; EdRacing's gear shift guide). Grind pitch `0.65 + 1.2 tanh((|rpm error| - 200) /
+1500)`.
 
 1. Lever = first held direct gear (1-6, then R), as bound (no dogleg remap: user decision). No gear with
    auto-neutral: N once the gear comes out. Engaged gear: the HUD's, or the one sent for 0.25 s until it shows.
 2. Out of gear: clutch in, or throttle <= 0.2.
-3. Input shaft (ours): engine with the clutch out, the engaged gear's speed with it in, else spins down 400 rpm/s or a
-   synchro pulls it to the lever's gear at 1000 rpm per 0.15 s (`t = J dw sin a / (u F R)`, ~0.2 s per 600 rpm).
+3. Input shaft (ours): engine with the clutch out, the engaged gear's speed with it in, else spins down 400 rpm/s
+   or a synchro pulls it to the lever's gear at 1000 rpm per 0.15 s (`t = J dw sin a / (u F R)`, ~0.2 s per 600
+   rpm).
 4. Into gear from N: synchro within 300 rpm (silent block below 1000 rpm off with the clutch out, grind above); dog
    at once with the clutch, else within 600 rpm, else grind; reverse when shaft + car speed < 100 rpm, else grind.
    A gear the car lacks stays out.
 
 Target = |gear ratio (`CDef +0x694 + 0x50 g`) x drive speed (state `+0x384` x `CDef +0xa54`)| from the GBX1 record
-(`rbr_recording::gearbox`). Tolerances and rates are tuned, not measured. Each car's gearbox is the Drive page's choice,
-kept by car name (`[gearbox]`; user decision: no RBRControls `CarInfo.ini` lookup, gvrc's car list and packs carry no
-gearbox type): sequential until picked (no shifter, aids kept), or H-pattern synchro or dog.
-The grind is RBRControls' `Shifter_Error.wav` in the RSF folder
-(or `.wav.sample`; silent without one). An H-pattern car drives without Clutch Help and auto gears. Not modelled: engine braking
-holding a gear in, clutch drag, wear.
+(`rbr_recording::gearbox`). Tolerances and rates are tuned, not measured. Each car's gearbox is the Drive page's
+choice, kept by car name (`[gearbox]`; user decision: no RBRControls `CarInfo.ini` lookup, gvrc's car list and packs
+carry no gearbox type): sequential until picked (no shifter, aids kept), or H-pattern synchro or dog. The grind is
+RBRControls' `Shifter_Error.wav` in the RSF folder (or `.wav.sample`; silent without one). An H-pattern car drives
+without Clutch Help and auto gears. Not modelled: engine braking holding a gear in, clutch drag, wear.
 
 ## Test install and recordings
 
 A separate NGP 7.4.778 install on the test machine (a Windows or Wine machine with the original game and NGP;
-harness plugin installed), `scripts/ngp-run.sh NAME [SECS]`
-(`LIVE=1`, `SNAPSHOT=`, `REPLAY=`). Slots (`scripts/ngp-install-car.py`): 2 BMW M3 E30 (RWD), 4 Fiesta Rally4
-(FWD), 5 Fiesta Rally3 (AWD), 6 Celica ST185 (AWD, centre diff type 5). Profile `pfMULLIGATAWNY` (`ClutchHelp 1`).
-Runs are kept in `~/rbr-ngp-runs` on that machine.
+harness plugin installed), `scripts/ngp-run.sh NAME [SECS]` (`LIVE=1`, `SNAPSHOT=`, `REPLAY=`). Slots
+(`scripts/ngp-install-car.py`): 2 BMW M3 E30 (RWD), 4 Fiesta Rally4 (FWD), 5 Fiesta Rally3 (AWD), 6 Celica ST185
+(AWD, centre diff type 5). Profile `pfMULLIGATAWNY` (`ClutchHelp 1`). Runs are kept in `~/rbr-ngp-runs` on that
+machine.
 
-- Harness NGP mode (`HookCarControl`): with NGP loaded the recorder and playback hook `0x4e91f0` for the player's car,
-  taking only calls from NGP.dll. Recordings stop past 2 GiB (~133k steps); `harness/matrix.py` pairs take 130k.
+- Harness NGP mode (`HookCarControl`): with NGP loaded the recorder and playback hook `0x4e91f0` for the player's
+  car, taking only calls from NGP.dll. Recordings stop past 2 GiB (~133k steps); `harness/matrix.py` pairs take
+  130k.
 - Oracle: `harness/replay.py` runs a whole NGP step bit-exact from a snapshot (UCRT emulated;
   `PostQueuedCompletionStatus`, CRT locks stubbed); long runs use a noise mask. NGP drives are deterministic in body
   state.
@@ -417,10 +420,10 @@ Runs are kept in `~/rbr-ngp-runs` on that machine.
 ### Replays
 
 A `.rpl` does not run physics on playback. Map `0x1c`, car slot `0x20`, entries `0x44`, steps `0x48`; from `0x4c`
-12-byte entries (u16 steps, u8 checksum, 9-byte quantized control: b4-b7 throttle, brake, handbrake, clutch / 255, b3
-steering * 2/255, b0 flags, b8 gear, b1 bit 0 word 7); an `HGMD` block, the setup as `.lsp` text, body path chunks
-(one 32-byte pose per 5 steps under NGP). `scripts/ngp-rpl-playback.py` is exact in 1.02, approximate under NGP
-(quantized input); reference drives need live recordings.
+12-byte entries (u16 steps, u8 checksum, 9-byte quantized control: b4-b7 throttle, brake, handbrake, clutch / 255,
+b3 steering * 2/255, b0 flags, b8 gear, b1 bit 0 word 7); an `HGMD` block, the setup as `.lsp` text, body path
+chunks (one 32-byte pose per 5 steps under NGP). `scripts/ngp-rpl-playback.py` is exact in 1.02, approximate under
+NGP (quantized input); reference drives need live recordings.
 
 ## Sound
 
@@ -437,8 +440,9 @@ NGP patches ~120 1.02 sound sites; `rbr-sound` ports the audible ones (per-car w
 - Checked against the asm only: the step wrapper's surface scale.
 - Supplemental all-binding steps match for `ngp-rpl11.snap-6438` and `ngp-fwd41b.snap-10880`, but the harness
   reports unverified modelled x87 results; equality alone does not verify those results.
-- `ClutchHelp 0`: both callers skip `LaunchClutch` when the scratch's launch mode (`+0x4c`, ClutchHelp with the launch
-  flag off) is 0 (`0x537f5f`, `0x5380a4`). A real NGP reference drive per surface class is still needed.
-- The engine's death on the inline emit path (`+0xd` clear): run A stops at a listener's file I/O, so it is unchecked.
+- `ClutchHelp 0`: both callers skip `LaunchClutch` when the scratch's launch mode (`+0x4c`, ClutchHelp with the
+  launch flag off) is 0 (`0x537f5f`, `0x5380a4`). A real NGP reference drive per surface class is still needed.
+- The engine's death on the inline emit path (`+0xd` clear): run A stops at a listener's file I/O, so it is
+  unchecked.
 - FFB at runtime: NGP 7.5.779 under Wine is checked by the mapping from the recorded torque (RSF drive2, ini
   percentages); 1.02, 7.4.778 and Windows are not. The H-shifter on a real shifter.
