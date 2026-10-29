@@ -2,8 +2,8 @@
 
 Goal (user, 2026-10-17): RBR with NGP 7 physics and its NGP cars, on the original and the modded stages.
 
-- **Stage and car base:** a standalone Rust program that plays every 1.02 stage and car, NGP physics with the
-  gameplay loop behaving exactly like the original (standalone steps NGP only, 2026-10-21).
+- **Stage and car base:** a standalone Rust program that plays every 1.02 stage and car with NGP physics, the
+  gameplay loop behaving exactly like the original.
 - **NGP 7.4.778:** NGP's physics on top ([ngp.md](ngp.md); `rbr-standalone --ngp-physics`), compared with the
   original running NGP (`harness/matrix.py`).
 - **NGP cars:** the community car packs as RallySimFans installs them (`Cars/<name>/`, `rsfdata/cars/*_ngp6`), read
@@ -85,5 +85,4 @@ The headline metric: how far `rbr-standalone` runs pure and equal to the recordi
 1. Each stop is ported a group at a time (a caller and its unported callees, 4-8 functions) and bound whole.
 2. A group is checked by one long run. A divergence is located with `--only` and bisect and fixed in Rust. Fuzzed
    records only for branches no drive reaches.
-3. New drives are checked in Rust with the same runs; their divergences are fixed in Rust only.
-4. Rust-only branches merge on `scripts/rust-check.sh` plus the group check.
+3. Rust-only branches merge on `scripts/rust-check.sh` plus the group check.
