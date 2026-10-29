@@ -724,6 +724,8 @@ fn setup(inputs: &Inputs, ngp: &Path, game: &Path, reporter: &mut Reporter) -> R
 
     reporter.step("Reading NGP")?;
     let Package { files: ngp, dirs: ngp_dirs, physics: ngp_physics } = read_ngp(ngp)?;
+    // An unsupported NGP version fails before the disc is read.
+    supported_dll(&ngp)?;
 
     reporter.step("Reading the retail disc")?;
     let disc = disc_cabinets(&inputs.disc)?;
