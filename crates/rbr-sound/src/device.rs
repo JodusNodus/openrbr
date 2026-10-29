@@ -37,16 +37,6 @@ impl Output {
         let channels = usize::from(config.channels.max(1));
         let mixer = Arc::new(Mutex::new(make(config.sample_rate.0)));
         let shared = mixer.clone();
-        let mut stereo = Vec::new();
-        let mut fill = move |frames: usize| -> Vec<[f32; 2]> {
-            stereo.resize(frames, [0.0; 2]);
-            if let Ok(mut mixer) = shared.lock() {
-                mixer.render(&mut stereo);
-            } else {
-                stereo.fill([0.0; 2]);
-            }
-            stereo.clone()
-        };
         let spread = |frame: &mut [f32], [l, r]: [f32; 2]| match frame {
             [only] => *only = (l + r) * 0.5,
             [left, right, rest @ ..] => {
@@ -60,34 +50,54 @@ impl Output {
         let (paused, pauses) = mpsc::channel();
         let (started, start) = mpsc::channel();
         let open = move || {
+            // Each stream owns a stereo buffer reused between callbacks: the mix renders into it and spreads
+            // to the channels, with no allocation or copy per callback.
             match format {
-                cpal::SampleFormat::F32 => device.build_output_stream(
-                    &config,
-                    move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                        let frames = fill(data.len() / channels);
-                        for (frame, s) in data.chunks_mut(channels).zip(frames) {
-                            spread(frame, s);
-                        }
-                    },
-                    error,
-                    None,
-                ),
-                cpal::SampleFormat::I16 => device.build_output_stream(
-                    &config,
-                    move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
-                        let frames = fill(data.len() / channels);
-                        let mut floats = [0.0f32; 8];
-                        for (frame, s) in data.chunks_mut(channels).zip(frames) {
-                            let floats = &mut floats[..frame.len().min(8)];
-                            spread(floats, s);
-                            for (out, f) in frame.iter_mut().zip(floats.iter()) {
-                                *out = (f * 32767.0) as i16;
+                cpal::SampleFormat::F32 => {
+                    let shared = shared.clone();
+                    let mut stereo = Vec::new();
+                    device.build_output_stream(
+                        &config,
+                        move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                            stereo.resize(data.len() / channels, [0.0; 2]);
+                            if let Ok(mut mixer) = shared.lock() {
+                                mixer.render(&mut stereo);
+                            } else {
+                                stereo.fill([0.0; 2]);
                             }
-                        }
-                    },
-                    error,
-                    None,
-                ),
+                            for (frame, s) in data.chunks_mut(channels).zip(stereo.iter()) {
+                                spread(frame, *s);
+                            }
+                        },
+                        error,
+                        None,
+                    )
+                }
+                cpal::SampleFormat::I16 => {
+                    let shared = shared.clone();
+                    let mut stereo = Vec::new();
+                    device.build_output_stream(
+                        &config,
+                        move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
+                            stereo.resize(data.len() / channels, [0.0; 2]);
+                            if let Ok(mut mixer) = shared.lock() {
+                                mixer.render(&mut stereo);
+                            } else {
+                                stereo.fill([0.0; 2]);
+                            }
+                            let mut floats = [0.0f32; 8];
+                            for (frame, s) in data.chunks_mut(channels).zip(stereo.iter()) {
+                                let floats = &mut floats[..frame.len().min(8)];
+                                spread(floats, *s);
+                                for (out, f) in frame.iter_mut().zip(floats.iter()) {
+                                    *out = (f * 32767.0) as i16;
+                                }
+                            }
+                        },
+                        error,
+                        None,
+                    )
+                }
                 other => return Err(format!("audio output format {other} is not supported")),
             }
             .map_err(|e| e.to_string())
