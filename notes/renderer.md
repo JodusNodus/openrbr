@@ -711,12 +711,10 @@ their own colour; a flat grey verge (gravel) keeps the tint.
 Rock to grey: rock gives up `GROUND_ROCK_GREY` 0.85 of its lit colour for grey (its texture's cast and the light's tint are
 mostly not its own), steepness `GROUND_STEEP` 0.75 to 0.97 (softer); `ground_scan` takes and returns the lit colour.
 
-Road shoulder (2026-10-29, without the scanned earth of `render/ground-scan` round 3): the paved mesh's non-grey band between
-the asphalt and the verge (`road_shoulder_mask`, frayed by noise at `SHOULDER_FRAY` 0.45 m) takes dirt and gravel: its
-brightness in a dry earth's hue (`SHOULDER_DIRT` 1.23, 0.97, 0.66, Brown Mud Dry's mean over its brightness) by
-`SHOULDER_SAT` 0.4, `SHOULDER_DIM` 0.9, the gravel scan's grain, over `SHOULDER_KEEP` 0.2 of its own colour. The verge's
-pale texels (straw, white at a grazing view) past `GROUND_PALE` 1.1 of the texture's local mean (`GROUND_MEAN` 5 levels
-blurrier) are eased to the power `GROUND_PALE_FLAT` 0.3, within `GROUND_CALM` 12 to 30 m of the eye.
+Calmer verge (2026-10-29): the verge's pale texels (straw, white at a grazing view) past `GROUND_PALE` 1.1 of the texture's
+local mean (`GROUND_MEAN` 5 levels blurrier) are eased to the power `GROUND_PALE_FLAT` 0.3, within `GROUND_CALM` 12 to 30 m
+of the eye. A dirt-and-gravel strip on the paved mesh's non-grey band was dropped: on some stages that band is the whole
+grass verge and bank (580, Peugeot chase: both turned to dirt).
 Far hillside (2026-10-29): from `GROUND_CLUMP_AT` 8 to 18 m out (`ground_far`) the ground texture is read
 `GROUND_FAR_BLUR` 1.5 levels blurrier, its pale texels eased as the verge's, the scan's chroma and grain exponents eased by
 `GROUND_FAR_CALM` 0.6 each, and `ground_clumps` adds grass clumps (value noise at 1.5, 0.7 and 0.32 m: moss green or
