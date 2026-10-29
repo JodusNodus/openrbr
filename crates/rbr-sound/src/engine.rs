@@ -88,14 +88,14 @@ pub fn bank_pair(rpms: &[u32], rpm: u32) -> (usize, usize) {
 
 /// `CEngine::M7b0` (0x4bc7b0): the banks a chunk mixes with their gains. The bank above takes
 /// `(rpm - lo) / (hi - lo)`, the one below the rest; one bank alone takes 1.
-pub fn crossfade(rpms: &[u32], rpm: u32) -> Vec<(usize, f32)> {
+pub fn crossfade(rpms: &[u32], rpm: u32) -> ([(usize, f32); 2], usize) {
     let (lo, hi) = bank_pair(rpms, rpm);
     if lo == hi {
-        return vec![(lo, 1.0)];
+        return ([(lo, 1.0), (0, 0.0)], 1);
     }
     let (r_lo, r_hi) = (rpms[lo] as f32, rpms[hi] as f32);
     let up = 1.0 - (r_hi - rpm as f32) / (r_hi - r_lo);
-    vec![(hi, up), (lo, 1.0 - up)]
+    ([(hi, up), (lo, 1.0 - up)], 2)
 }
 
 /// The output samples of one firing period at `rpm` (`M9c0` 0x4bc9c0: `rate / (rpm * 0.033333335)`, truncated).
@@ -226,6 +226,8 @@ pub struct Engine {
     left: Vec<f32>,
     /// The output from the start of the next chunk on that the grains so far have reached.
     overlap: Vec<f32>,
+    /// The working space of the chunk being built (its allocation is handed back after each chunk).
+    buf: Vec<f32>,
 }
 
 impl Engine {
@@ -246,6 +248,7 @@ impl Engine {
             rng: Rng::new(seed),
             left: Vec::new(),
             overlap: Vec::new(),
+            buf: Vec::new(),
         }
     }
 
@@ -259,7 +262,8 @@ impl Engine {
 
     /// Samples in the engine's own scale (the recordings' 16-bit range) into `out`, overwriting it. Each firing
     /// period mixes the crossfaded banks' grains; a misfiring cylinder's chunk takes half the load and a quarter
-    /// gain (`M9c0`, `M7b0`). Samples of a chunk that does not fit are kept for the next call.
+    /// gain (`M9c0`, `M7b0`). Samples of a chunk that does not fit are kept for the next call. The working buffer
+    /// and the overlap keep their capacity between chunks, so a render allocates only when they grow.
     pub fn render(&mut self, out: &mut [f32]) {
         let mut done = self.left.len().min(out.len());
         out[..done].copy_from_slice(&self.left[..done]);
@@ -270,19 +274,23 @@ impl Engine {
                 self.overlap.clear();
                 return;
             }
-            let chunk = self.chunk();
+            let mut chunk = self.take_chunk();
             let n = chunk.len().min(out.len() - done);
             out[done..done + n].copy_from_slice(&chunk[..n]);
             self.left.extend_from_slice(&chunk[n..]);
+            chunk.clear();
+            self.buf = chunk;
             done += n;
         }
     }
 
     /// One firing period: the overlap of the last grains, and the start of this period's grains, which fire at its
-    /// end.
-    fn chunk(&mut self) -> Vec<f32> {
+    /// end. The returned `Vec` reuses `buf`'s allocation; the caller puts it back after copying.
+    fn take_chunk(&mut self) -> Vec<f32> {
         let period = chunk_len(self.rate, self.rpm).max(1);
-        let mut out = std::mem::take(&mut self.overlap);
+        let mut out = std::mem::take(&mut self.buf);
+        out.clear();
+        out.extend_from_slice(&self.overlap);
         out.resize(out.len().max(period * 2), 0.0);
         let (mut load, mut gain) = (self.load, 1.0);
         if !self.cylinders[self.cylinder] {
@@ -291,7 +299,8 @@ impl Engine {
         }
         self.cylinder = (self.cylinder + 1) % 4;
         let mix = (load.min(100) as f32 * 0.01 * 256.0).trunc() / 256.0;
-        for (b, weight) in crossfade(&self.rpms, self.rpm) {
+        let (mixes, n) = crossfade(&self.rpms, self.rpm);
+        for &(b, weight) in &mixes[..n] {
             let bank = &self.bank.banks[b];
             let (Some(empty), Some(full)) = (bank.parts.first(), bank.parts.get(1).or(bank.parts.first())) else {
                 continue;
@@ -303,7 +312,9 @@ impl Engine {
                 add_grain(&mut out[period - half..], half, part, row, self.rate, gain);
             }
         }
-        self.overlap = out.split_off(period);
+        self.overlap.clear();
+        self.overlap.extend_from_slice(&out[period..]);
+        out.truncate(period);
         out
     }
 }
@@ -353,9 +364,12 @@ mod tests {
         assert_eq!(bank_pair(&rpms, 3500), (1, 2));
         assert_eq!(bank_pair(&rpms, 7000), (5, 5));
         assert_eq!(bank_pair(&rpms, 8000), (5, 5));
-        assert_eq!(crossfade(&rpms, 1000), [(0, 1.0)]);
-        assert_eq!(crossfade(&rpms, 3250), [(2, 0.25), (1, 0.75)]);
-        assert_eq!(crossfade(&rpms, 4000), [(3, 0.0), (2, 1.0)]);
+        let (mixes, n) = crossfade(&rpms, 1000);
+        assert_eq!(&mixes[..n], &[(0usize, 1.0f32)]);
+        let (mixes, n) = crossfade(&rpms, 3250);
+        assert_eq!(&mixes[..n], &[(2usize, 0.25f32), (1, 0.75)]);
+        let (mixes, n) = crossfade(&rpms, 4000);
+        assert_eq!(&mixes[..n], &[(3usize, 0.0f32), (2, 1.0)]);
     }
 
     #[test]
@@ -432,6 +446,32 @@ mod tests {
         let mut s = [1000.0; 4];
         mix_scale(&mut s, 1.0, 2.0);
         assert_eq!(s, [1250.0, 1500.0, 1750.0, 2000.0]);
+    }
+
+    /// FNV-1a over the output's bits: the allocation fixes must not change a single bit.
+    fn bits_hash(samples: &[f32]) -> u64 {
+        let mut hash = 0xcbf2_9ce4_8422_2325u64;
+        for s in samples {
+            for b in s.to_bits().to_le_bytes() {
+                hash ^= u64::from(b);
+                hash = hash.wrapping_mul(0x100_0000_01b3);
+            }
+        }
+        hash
+    }
+
+    #[test]
+    fn render_bits_are_stable() {
+        let mut engine = Engine::new(ramp_bank(), 44100, 1);
+        engine.rpm = 3000;
+        engine.load = 50;
+        let mut out = vec![0.0; 2000];
+        engine.render(&mut out);
+        engine.rpm = 3200;
+        engine.load = 80;
+        engine.render(&mut out[1000..]);
+        // Captured before the reuse-buffers change; a bit-exact render keeps it.
+        assert_eq!(bits_hash(&out), 0x9c78_7927_4c00_f628);
     }
 
     #[test]

@@ -111,6 +111,15 @@ const KNEE: f32 = 0.8;
 /// same pitch many times a second sounds mechanical).
 const VARIATION: [f32; 2] = [0.04, 0.15];
 
+/// An FMOD bank's loops, recordings and mixing tree, built before taking the mixer lock (building the tree
+/// runs every bus's effects and allocates the reverb buffers) so the audio callback never waits on it. Swapped
+/// in under the lock with [`Mixer::swap_fmod`]; the old one drops after the lock is released.
+pub(crate) struct PreparedFmod {
+    loops: Vec<(LoopVoice, usize)>,
+    waves: Vec<Arc<Wave>>,
+    tree: Tree,
+}
+
 /// The last stage after the [`limiter`] (ours): linear up to [`KNEE`], then a tanh curve that never passes 1.
 pub(crate) fn soft_clip(x: f32) -> f32 {
     let a = x.abs();
@@ -783,13 +792,8 @@ impl Mixer {
     /// Gives an FMOD bank's slots their loops and buses, the mixer its recordings and the bank's mixing tree
     /// ([`Command::FmodLoop`], [`Command::FmodBus`], [`Command::FmodEffect`], [`Command::FmodShot`]).
     pub fn set_fmod(&mut self, loops: Vec<(Arc<Wave>, Option<usize>)>, waves: Vec<Arc<Wave>>, buses: &[Bus]) {
-        self.fmod_tree = Tree::new(buses, self.rate);
-        let master = self.fmod_tree.master;
-        self.fmod_loops = loops
-            .into_iter()
-            .map(|(wave, bus)| (LoopVoice { wave, pitch: 1.0, ..LoopVoice::default() }, bus.unwrap_or(master)))
-            .collect();
-        self.fmod_waves = waves;
+        let old = self.swap_fmod(Self::prepare_fmod(loops, waves, buses, self.rate));
+        drop(old);
     }
 
     /// Gives a co-driver mod's voice its samples ([`Speech::Sample`]).
@@ -801,6 +805,40 @@ impl Mixer {
     pub fn set_grind(&mut self, wave: Wave) {
         let wave = Arc::new(seamless(&wave));
         self.loops.insert(Loop::Grind, LoopVoice { wave, pitch: 1.0, ..LoopVoice::default() });
+    }
+
+    pub(crate) fn prepare_fmod(
+        loops: Vec<(Arc<Wave>, Option<usize>)>,
+        waves: Vec<Arc<Wave>>,
+        buses: &[Bus],
+        rate: u32,
+    ) -> PreparedFmod {
+        let tree = Tree::new(buses, rate);
+        let master = tree.master;
+        let loops = loops
+            .into_iter()
+            .map(|(wave, bus)| (LoopVoice { wave, pitch: 1.0, ..LoopVoice::default() }, bus.unwrap_or(master)))
+            .collect();
+        PreparedFmod { loops, waves, tree }
+    }
+
+    /// Swaps in `prepared`, returning the old FMOD state to drop after releasing the lock.
+    pub(crate) fn swap_fmod(&mut self, prepared: PreparedFmod) -> PreparedFmod {
+        PreparedFmod {
+            loops: std::mem::replace(&mut self.fmod_loops, prepared.loops),
+            waves: std::mem::replace(&mut self.fmod_waves, prepared.waves),
+            tree: std::mem::replace(&mut self.fmod_tree, prepared.tree),
+        }
+    }
+
+    /// Swaps in a co-driver mod's prepared samples, returning the old voice to drop after releasing the lock.
+    pub(crate) fn swap_voice(&mut self, prepared: Vec<Arc<Wave>>) -> Vec<Arc<Wave>> {
+        std::mem::replace(&mut self.banks.voice, prepared)
+    }
+
+    /// Swaps in the grind loop's prepared sample, returning what it replaces to drop after releasing the lock.
+    pub(crate) fn swap_grind(&mut self, prepared: Arc<Wave>) -> Option<LoopVoice> {
+        self.loops.insert(Loop::Grind, LoopVoice { wave: prepared, pitch: 1.0, ..LoopVoice::default() })
     }
 
     /// A loop's gain and pitch; the car's loops take their distance gain and side.
