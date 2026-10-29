@@ -148,6 +148,9 @@ const START_GEAR: i32 = 1;
 
 /// One sample mixed down to mono, at the 16-bit scale of the retail waves.
 pub fn decode(bank: &Bank, sample: &Sample) -> Result<Wave, String> {
+    if sample.rate == 0 {
+        return Err(format!("{}: sample rate 0", sample.name));
+    }
     let data = bank.sample_data(sample);
     let channels = usize::from(sample.channels.max(1));
     let mono = |frame: &mut dyn Iterator<Item = f32>| frame.sum::<f32>() / channels as f32;
@@ -1088,5 +1091,20 @@ mod tests {
             let db = 20.0 * (crate::mixer::fmod_loudness(&car, outside, trim) / target).log10();
             assert!(db.abs() < 1.0, "outside {outside}: trim {trim}, {db} dB off the target");
         }
+    }
+
+    #[test]
+    fn a_zero_sample_rate_bank_sample_is_rejected() {
+        let bank = Bank { bytes: Vec::new(), samples: Vec::new(), params: Vec::new(), events: Vec::new(), buses: Vec::new() };
+        let sample = rbr_formats::fmod::Sample {
+            name: "x".to_owned(),
+            rate: 0,
+            channels: 1,
+            frames: 0,
+            vorbis_crc: None,
+            codec: fmod::PCM16,
+            data: 0..0,
+        };
+        assert!(decode(&bank, &sample).is_err());
     }
 }

@@ -31,6 +31,9 @@ impl Wave {
         if spec.bits_per_sample != 16 || spec.sample_format != hound::SampleFormat::Int {
             return Err(format!("{} bits, {:?}", spec.bits_per_sample, spec.sample_format));
         }
+        if spec.sample_rate == 0 {
+            return Err("sample rate 0".to_owned());
+        }
         let raw: Vec<i16> = reader.samples::<i16>().collect::<Result<_, _>>().map_err(|e| e.to_string())?;
         let channels = usize::from(spec.channels.max(1));
         let samples = raw
@@ -46,6 +49,9 @@ impl Wave {
         let start = bytes.windows(4).position(|w| w == b"OggS").ok_or("no OggS page")?;
         let mut reader =
             lewton::inside_ogg::OggStreamReader::new(Cursor::new(&bytes[start..])).map_err(|e| e.to_string())?;
+        if reader.ident_hdr.audio_sample_rate == 0 {
+            return Err("sample rate 0".to_owned());
+        }
         let channels = usize::from(reader.ident_hdr.audio_channels.max(1));
         let mut samples = Vec::new();
         while let Some(packet) = reader.read_dec_packet_itl().map_err(|e| e.to_string())? {
@@ -433,5 +439,33 @@ impl CarBank {
             effect_gains,
             distances: Distances::read(&ingame),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn wav_bytes(rate: u32) -> Vec<u8> {
+        let mut out = Cursor::new(Vec::new());
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: rate,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut writer = hound::WavWriter::new(&mut out, spec).unwrap();
+        writer.write_sample(1000i16).unwrap();
+        writer.finalize().unwrap();
+        out.into_inner()
+    }
+
+    #[test]
+    fn a_zero_sample_rate_is_rejected() {
+        assert!(Wave::decode(&wav_bytes(44100)).is_ok());
+        let mut zeroed = wav_bytes(44100);
+        zeroed[24..28].copy_from_slice(&0u32.to_le_bytes());
+        // hound itself rejects a zero rate ("inconsistent fmt chunk"); either error rejects the sound.
+        assert!(Wave::decode(&zeroed).is_err());
     }
 }
