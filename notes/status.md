@@ -91,7 +91,7 @@ in force are at the top and the bottom, one line each; history is in git, the lo
 | Cockpit mirrors | done (ours) | RSF Fiesta Rally2: none found; images not anti-aliased |
 | In-car and chase cameras | done | mode 3 ground probe; chase capture |
 | Start orbit, helicam, seat shake | done | - |
-| Replay cameras, replays, replay filters | out | - |
+| Replay cameras, replays, replay filters | partial (ours) | replays done (re-simulated from the logged frames); replay cameras and filters out |
 | Ghost car (1.02; RSF ghosts not supported) | done | best-ghost store; original run: a ghost with a penalty |
 
 ## Input

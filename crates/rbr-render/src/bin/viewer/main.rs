@@ -164,6 +164,7 @@ mod draw;
 mod latency;
 mod loading;
 mod perf;
+mod replay;
 mod scene;
 mod screenshot;
 mod window;
@@ -187,7 +188,32 @@ fn main() -> ExitCode {
 }
 
 fn run() -> Result<(), String> {
-    let mut args = args::parse_args(std::env::args().skip(1))?;
+    let given: Vec<String> = std::env::args().skip(1).collect();
+    // Watching a replay: its header's viewer arguments, the current command line's extras over them, then
+    // `--live` with the header's stepping command serving the replay.
+    let given = match given.iter().position(|a| a == "--replay") {
+        Some(at) => {
+            let path = given.get(at + 1).ok_or("--replay needs a file")?.clone();
+            let bytes = std::fs::read(&path).map_err(|e| format!("{path}: {e}"))?;
+            let replay = rbr_recording::replay::Replay::read(&bytes).map_err(|e| format!("{path}: {e}"))?;
+            replay::expand(&replay.args, &given, &path)
+        }
+        None => given,
+    };
+    let mut args = args::parse_args(given.into_iter())?;
+    // Recording a replay: the header first (the stepping process appends its frames), then its command serves
+    // them. A replay watched is not recorded again.
+    if args.replay.is_some() && args.save_replay.is_some() {
+        eprintln!("viewer: --save-replay takes no --replay (a replay is not recorded again)");
+    }
+    if let (Some(path), Some(command)) =
+        (args.replay.is_none().then(|| args.save_replay.clone()).flatten(), args.live.as_mut())
+    {
+        match replay::record(&path, &std::env::args().skip(1).collect::<Vec<_>>()) {
+            Ok(()) => command.extend(["--replay-out".to_owned(), path.display().to_string()]),
+            Err(e) => eprintln!("viewer: {}: {e}; driving without a replay", path.display()),
+        }
+    }
     let mut data = Data::from_env().ok_or("RBR_DATA is not set")?;
     let mut fmod_bank = None;
     if let Some(key) = &args.rsf_car {

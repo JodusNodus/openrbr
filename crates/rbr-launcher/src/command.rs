@@ -272,6 +272,41 @@ pub fn viewer_args(
     args
 }
 
+/// The viewer's `--save-replay` for a live start: the drive's replay in `replays/` of the player's folder `home`,
+/// named by the start's seconds and the stage. The stepping process appends its frames to it
+/// (`rbr-standalone --replay-out`), and `viewer --replay` watches it again.
+// No date crate in the workspace: the name carries seconds since the epoch, which sort it with the others.
+pub fn replay_args(home: &Path, stage: &str) -> Vec<String> {
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    // A community stage is its folder's path: the replay takes the file name.
+    let name = Path::new(stage).file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| stage.into());
+    let stage: String = name.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect();
+    let path = home.join("replays").join(format!("{stamp}-{stage}.rrp"));
+    vec!["--save-replay".to_owned(), path.display().to_string()]
+}
+
+/// The newest `.rrp` replays kept in `replays/` of the player's folder.
+const KEPT_REPLAYS: usize = 20;
+
+/// Deletes the player's oldest `.rrp` replays past the newest [`KEPT_REPLAYS`] (by name: the start's seconds sort
+/// them). Nothing is made: the viewer makes the folder with the next replay.
+pub fn prune_replays(home: &Path) {
+    let mut replays = match std::fs::read_dir(home.join("replays")) {
+        Ok(entries) => entries
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|e| e == "rrp"))
+            .collect::<Vec<_>>(),
+        Err(_) => return,
+    };
+    replays.sort();
+    for old in replays.iter().take(replays.len().saturating_sub(KEPT_REPLAYS)) {
+        if let Err(e) = std::fs::remove_file(old) {
+            eprintln!("launcher: {}: {e}", old.display());
+        }
+    }
+}
+
 /// The viewer's arguments for the advanced H-shifter: the car's gearbox (`--car-gearbox`) and the grind from
 /// RBRControls' folder in the RSF install `rsf_root`, `Shifter_Error.wav` (or the `.wav.sample` RBRControls ships it
 /// as; `--grind-sound`).
@@ -552,8 +587,11 @@ impl Form {
         // The car's lock, the wheel's rotation when it is per car.
         let lock = self.setup.steering_lock().map(rbr_render::wheel_rotation::car_degrees);
         let car_lock = lock.into_iter().flat_map(|d| ["--car-lock".to_owned(), d.to_string()]);
+        // Every live start records a replay next to the player's files (watched again with `viewer --replay`).
+        let replay = replay_args(&self.here(), &stage.name);
         let viewer_extra = viewer_extra
             .into_iter()
+            .chain(replay)
             .chain(scale)
             .chain(anti_aliasing)
             .chain(reflections)
@@ -603,6 +641,7 @@ impl Form {
     }
     /// Runs the viewer with `args`; whether it started.
     fn spawn(&mut self, args: Vec<String>) -> bool {
+        prune_replays(&self.here());
         eprintln!("launcher: {} {}", self.paths.viewer.display(), args.join(" "));
         let mut command = Command::new(&self.paths.viewer);
         command.args(&args).envs(self.child_env());
@@ -997,6 +1036,40 @@ mod tests {
         std::fs::remove_dir_all(&here).unwrap();
     }
 
+    /// Every live start records a replay next to the player's files, named by the start's seconds and the stage;
+    /// pruning keeps the newest twenty.
+    #[test]
+    fn replays_record_beside_the_players_files_and_prune_keeps_twenty() {
+        let args = replay_args(Path::new("/home/p"), "track-54_E");
+        let path = args[1].strip_prefix("/home/p/replays/").expect("in the player's replays");
+        let (stamp, stage) = path.strip_suffix(".rrp").expect("a replay").split_once('-').expect("time-stage");
+        assert_eq!((args[0].as_str(), stage), ("--save-replay", "track_54_E"));
+        assert!(stamp.parse::<u64>().is_ok(), "{path}");
+        let args = replay_args(Path::new("/home/p"), "Rally C\u{f4}te d'Azur");
+        assert!(args[1].ends_with("Rally_C_te_d_Azur.rrp"), "{}", args[1]);
+        let root = std::env::temp_dir().join(format!("rbr-launcher-replays-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let dir = root.join("replays");
+        std::fs::create_dir_all(&dir).unwrap();
+        // Not a replay: stays.
+        std::fs::write(dir.join("notes.txt"), "").unwrap();
+        for n in 0..(KEPT_REPLAYS + 2) {
+            std::fs::write(dir.join(format!("{n:010}-track-10_O.rrp")), "").unwrap();
+        }
+        prune_replays(&root);
+        let mut kept: Vec<String> =
+            std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
+        kept.sort();
+        assert_eq!(kept.len(), KEPT_REPLAYS + 1);
+        assert!(!kept.contains(&"0000000000-track-10_O.rrp".to_owned()));
+        assert!(!kept.contains(&"0000000001-track-10_O.rrp".to_owned()));
+        assert!(kept.contains(&"notes.txt".to_owned()));
+        // Missing folder: nothing to do.
+        std::fs::remove_dir_all(&dir).unwrap();
+        prune_replays(&root);
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
     /// A specific row's start carries its sky, fog, wetness and season row, and the wetness override changes the
     /// viewer's weather word. Needs `RBR_DATA`, `RBR_PATCH`, `RBR_NGP_PHYSICS` and `RBR_RSF`.
     #[test]
@@ -1193,6 +1266,15 @@ mod tests {
             case = case.replace(&here.display().to_string(), "<here>");
             for (path, tag) in [(&data, "<data>"), (&patch, "<patch>"), (&ngp, "<ngp>"), (&rsf, "<rsf>")] {
                 case = case.replace(path.as_str(), tag);
+            }
+            // The replay's name carries the start's seconds: keep the stage, drop the time.
+            if let Some(at) = case.find("--save-replay\n") {
+                let start = at + "--save-replay\n".len();
+                let end = start + case[start..].find('\n').unwrap_or(case[start..].len());
+                let stamp =
+                    "replays/".len() + case[start..end].find("replays/").expect("a replay in the player's replays");
+                let dash = case[start + stamp..end].find('-').expect("seconds, then the stage");
+                case.replace_range(start + stamp..start + stamp + dash, "<time>");
             }
             cases.push((name, case));
             let _ = std::fs::remove_dir_all(&here);

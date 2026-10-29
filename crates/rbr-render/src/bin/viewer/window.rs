@@ -331,6 +331,9 @@ pub struct App {
     shifter: Option<Shifter>,
     /// The input thread (live mode).
     feed: Option<Feed>,
+    /// Watching a replay (`--replay`): the stepping process serves its frames, and the window takes no device
+    /// input, opens no menus and saves no ghost.
+    replay: bool,
     running: Running,
     /// Keys currently held.
     held: HashSet<KeyCode>,
@@ -366,9 +369,10 @@ impl App {
     fn new(scene: Scene, args: &Args, sound: Option<rbr_render::sound::Player>, running: Running) -> App {
         let view = scene.cameras.start_view(args.view);
         let ffb = args.ffb.clone();
-        let shifter = shifter(args, scene.live.is_some());
+        let replay = args.replay.is_some();
+        let shifter = shifter(args, scene.live.is_some() && !replay);
         // Gamepads navigate the menu in live mode only.
-        let gilrs = scene.live.as_ref().and_then(|_| match Gilrs::new() {
+        let gilrs = scene.live.as_ref().filter(|_| !replay).and_then(|_| match Gilrs::new() {
             Ok(gilrs) => Some(gilrs),
             Err(e) => {
                 eprintln!("viewer: no gamepads: {e}");
@@ -376,28 +380,29 @@ impl App {
             }
         });
         // The wheel's rotation, in live mode when set (again here: a wheel plugged in again has its own).
-        if let Some(degrees) = ffb.rotation.filter(|_| scene.live.is_some()) {
+        if let Some(degrees) = ffb.rotation.filter(|_| scene.live.is_some() && !replay) {
             match rbr_render::wheel_rotation::set(degrees) {
                 Ok(wheels) => wheels.iter().for_each(|w| eprintln!("viewer: {} turns {} degrees", w.name, w.degrees)),
                 Err(e) => eprintln!("viewer: wheel rotation not set: {e}"),
             }
         }
         // The wheel's force, in live mode with force feedback on.
-        let wheel = scene.live.as_ref().filter(|_| ffb.settings.enabled).and_then(|_| match ffb::Wheel::open(ffb) {
-            Ok(wheel) => {
-                eprintln!("viewer: force feedback on {}", wheel.name);
-                Some(Arc::new(wheel))
-            }
-            Err(e) => {
-                eprintln!("viewer: no force feedback: {e}");
-                None
-            }
-        });
+        let wheel =
+            scene.live.as_ref().filter(|_| !replay && ffb.settings.enabled).and_then(|_| match ffb::Wheel::open(ffb) {
+                Ok(wheel) => {
+                    eprintln!("viewer: force feedback on {}", wheel.name);
+                    Some(Arc::new(wheel))
+                }
+                Err(e) => {
+                    eprintln!("viewer: no force feedback: {e}");
+                    None
+                }
+            });
         let mut latency = scene.live.as_ref().and_then(|_| Latency::from_env());
         if let Some(latency) = &mut latency {
             latency.watch_screen(&running.window);
         }
-        let feed = scene.live.as_ref().map(|_| {
+        let feed = scene.live.as_ref().filter(|_| !replay).map(|_| {
             let script = latency.as_ref().and_then(Latency::script);
             Feed::start(args.bindings.clone(), script, latency.is_some())
         });
@@ -416,6 +421,7 @@ impl App {
             pads: [0.0; Action::ALL.len()],
             shifter,
             feed,
+            replay,
             running,
             held: HashSet::new(),
             looking: false,
@@ -529,7 +535,9 @@ impl App {
                 self.press(action);
             }
         }
-        self.sync_results();
+        if !self.replay {
+            self.sync_results();
+        }
         let running = &mut self.running;
         let speed = WALK_SPEED * if self.held.contains(&KeyCode::ShiftLeft) { FAST_FACTOR } else { 1.0 };
         let movement = movement(&self.held);
@@ -587,9 +595,11 @@ impl App {
             span.next("live state and sound");
             running.renderer.set_interactive_poses(&process.interactive_poses);
             take_damage(playback, process);
-            if let Some(ghost) = &mut self.scene.ghost {
-                let penalties = process.hud.race.map_or(0.0, |race| race.penalties);
-                ghost.observe(process.splits.as_ref(), penalties, playback.sample().step);
+            if !self.replay {
+                if let Some(ghost) = &mut self.scene.ghost {
+                    let penalties = process.hud.race.map_or(0.0, |race| race.penalties);
+                    ghost.observe(process.splits.as_ref(), penalties, playback.sample().step);
+                }
             }
             if process.splits.as_ref().is_some_and(|s| s.over) {
                 self.ended.get_or_insert(now);
@@ -743,8 +753,11 @@ impl App {
         }
     }
 
-    /// Writes the live drive's ghost (`--save-ghost`).
+    /// Writes the live drive's ghost (`--save-ghost`); a replay saves none.
     fn finish_ghost(&self) {
+        if self.replay {
+            return;
+        }
         if let (Some(ghost), Some(playback)) = (&self.scene.ghost, &self.scene.playback) {
             ghost.finish(playback);
         }
@@ -784,6 +797,9 @@ impl ApplicationHandler for App {
                 }
                 ElementState::Pressed
                     if matches!(code, KeyCode::Enter | KeyCode::NumpadEnter) && self.accept_message() => {}
+                ElementState::Pressed if self.replay => {
+                    self.replay_key(code, event_loop);
+                }
                 ElementState::Pressed if self.scene.live.is_some() && code == KeyCode::Escape => {
                     self.press(Action::Pause);
                 }

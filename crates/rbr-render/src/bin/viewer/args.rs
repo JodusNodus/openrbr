@@ -132,6 +132,10 @@ pub struct Args {
     pub ghost: Option<PathBuf>,
     pub save_ghost: Option<PathBuf>,
     pub best_ghost: Option<PathBuf>,
+    /// `--save-replay FILE` (with `--live`): the live drive's replay written to FILE.
+    pub save_replay: Option<PathBuf>,
+    /// `--replay FILE`: the replay watched (`replay::expand`), its frames in place of the live drive.
+    pub replay: Option<PathBuf>,
     pub ghost_weather: rbr_formats::ghost::Weather,
     /// The RSF install, for an RSF car's working dials.
     pub rsf_install: Option<PathBuf>,
@@ -198,6 +202,7 @@ pub const USAGE: &str = "usage: RBR_DATA=<install> [RBR_PATCH=<patch>] viewer [S
   drive:      --drive RECORDING  --at STEP  --at-periods N  --at-drive RECORDING  --live COMMAND... (the rest of the line)
               --bindings INI  --ghost FILE  --save-ghost FILE  --best-ghost FILE  --ghost-weather WORDS
               --car-gearbox synchro|dog|sequential  --grind-sound WAV  --car-lock DEG
+              --save-replay FILE (with --live)  --replay FILE [ARGS...] (watches a replay, extras override)
   view:       --view NAME  --cameras INI  --fov DEG  --camera EX,EY,EZ,FX,FY,FZ  --flyby AHEAD,SIDE,HEIGHT  --size WxH  --fullscreen  --look-back
               --title TEXT  --pause-menu MOVES
   look:       --weather dry|damp|wet  --wear new|normal|worn  --sky SECTION  --fog off|light|heavy  --wipers off|intermittent|continuous|auto
@@ -249,6 +254,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
     let mut max_fps = None;
     let mut particles = true;
     let (mut ghost, mut save_ghost, mut best_ghost, mut ghost_weather) = (None, None, None, Default::default());
+    let (mut save_replay, mut replay) = (None, None);
     let (mut sound, mut volume, mut codriver) = (true, 1.0, true);
     let mut volumes = rbr_sound::mixer::Volumes::default();
     let (mut codriver_mod, mut codriver_voice, mut pacenotes) = (None, None, None);
@@ -314,6 +320,8 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
                 let value = args.next().ok_or("--wipers needs off, intermittent, continuous or auto")?;
                 wipers = glass::model::Switch::parse(&value).ok_or(format!("--wipers: {value}?"))?;
             }
+            "--save-replay" => save_replay = Some(PathBuf::from(args.next().ok_or("--save-replay needs a file")?)),
+            "--replay" => replay = Some(PathBuf::from(args.next().ok_or("--replay needs a file")?)),
             "--ghost" => ghost = Some(PathBuf::from(args.next().ok_or("--ghost needs a ghost file")?)),
             "--save-ghost" => save_ghost = Some(PathBuf::from(args.next().ok_or("--save-ghost needs a file")?)),
             "--best-ghost" => best_ghost = Some(PathBuf::from(args.next().ok_or("--best-ghost needs a file")?)),
@@ -654,6 +662,8 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
         ghost,
         save_ghost,
         best_ghost,
+        save_replay,
+        replay,
         ghost_weather,
         rsf_install: std::env::var_os("RBR_RSF").map(PathBuf::from),
         rsf_car_id: None,
