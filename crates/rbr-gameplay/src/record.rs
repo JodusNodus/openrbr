@@ -29,7 +29,7 @@
 
 use rbr_formats::saves::profile::{Profile, ProfileFile, ProfileRecord};
 use rbr_formats::saves::results::{ResultRecord, Results, RECORDS};
-use rbr_formats::saves::SaveDir;
+use rbr_formats::saves::{write_atomic, SaveDir};
 use rbr_formats::times::StageTimes;
 
 /// What `M5653c0` gives for a stage the table does not have: the splits and the finish time.
@@ -332,7 +332,7 @@ impl Book {
                 // The first save of a fresh folder (the launcher's `NGP/SavedGames`) makes it, as `SaveDir`'s do.
                 let path = saves.path.join(COMMUNITY_FILE);
                 std::fs::create_dir_all(&saves.path)
-                    .and_then(|()| std::fs::write(&path, self.community.to_text()))
+                    .and_then(|()| write_atomic(&path, self.community.to_text().as_bytes()))
                     .map_err(|e| format!("{}: {e}", path.display()))?;
             }
             return Ok(());

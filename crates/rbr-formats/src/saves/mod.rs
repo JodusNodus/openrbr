@@ -43,6 +43,16 @@ impl Kind {
 /// The directory every kind here lives in, relative to the game's directory.
 pub const DIR: &str = "SavedGames";
 
+/// Writes `bytes` to `path` atomically: `<file name>.tmp` in the same directory, then renamed over the target, so
+/// a failed write leaves the old file.
+pub fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    let mut tmp = path.as_os_str().to_owned();
+    tmp.push(".tmp");
+    fs::write(&tmp, bytes)?;
+    fs::rename(&tmp, path)?;
+    Ok(())
+}
+
 /// A game directory's `SavedGames`, with the game's file names. This is the launcher's way in: the selected profile's
 /// settings are [`profile::ProfileFile::menu`] and [`profile::ProfileFile::controls`].
 #[derive(Clone, Debug)]
@@ -95,13 +105,10 @@ impl SaveDir {
         self.store(&Kind::Results.file_name("result"), &results.write()?)
     }
 
-    /// Writes through a temporary file and a rename, so a failed write leaves the old file (ours; the game writes
-    /// in place).
+    /// Writes through [`write_atomic`], so a failed write leaves the old file (ours; the game writes in place).
     fn store(&self, name: &str, bytes: &[u8]) -> Result<(), Error> {
         fs::create_dir_all(&self.path)?;
-        let tmp = self.path.join(format!("{name}.tmp"));
-        fs::write(&tmp, bytes)?;
-        fs::rename(&tmp, self.path.join(name))?;
+        write_atomic(&self.path.join(name), bytes)?;
         Ok(())
     }
 }
@@ -339,6 +346,7 @@ mod tests {
         let results = results::Results { records: vec![] };
         dir.save_results(&results).unwrap();
         assert_eq!(dir.load_results().unwrap(), results);
+        assert!(!dir.path.join("pfresult.rst.tmp").exists(), "no temporary file is left");
         fs::write(dir.path.join("pfann.rbr"), b"").unwrap();
         fs::write(dir.path.join("other.rbr"), b"").unwrap();
         assert_eq!(dir.profiles().unwrap(), vec!["ann".to_owned()]);

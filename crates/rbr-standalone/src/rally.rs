@@ -50,7 +50,8 @@ pub fn read_damage(path: &Path) -> Result<CarriedDamage, String> {
 /// `cause`, `false_start`).
 pub fn write(out: &StageOut, damage_path: Option<&Path>, result_path: Option<&Path>) -> Result<(), String> {
     if let Some(path) = damage_path {
-        std::fs::write(path, out.damage.to_bytes()).map_err(|e| format!("{}: {e}", path.display()))?;
+        rbr_formats::saves::write_atomic(path, &out.damage.to_bytes())
+            .map_err(|e| format!("{}: {e}", path.display()))?;
     }
     if let Some(path) = result_path {
         let race = out.end.end_race;
@@ -63,7 +64,7 @@ pub fn write(out: &StageOut, damage_path: Option<&Path>, result_path: Option<&Pa
             out.end.cause,
             u8::from(out.false_start)
         );
-        std::fs::write(path, text).map_err(|e| format!("{}: {e}", path.display()))?;
+        rbr_formats::saves::write_atomic(path, text.as_bytes()).map_err(|e| format!("{}: {e}", path.display()))?;
     }
     Ok(())
 }
