@@ -383,6 +383,12 @@ impl DecodedRecord {
 }
 
 fn parse_animation_entries(bytes: &[u8], offset: usize) -> Result<Vec<DlsAnimationEntry>, Error> {
+    // Absolute cap on the words kept: 64 Mi words (256 MB). No real file keeps that much however much its
+    // records share, while the hundreds-of-GB blow-up still fails.
+    entries_within(bytes, offset, ((bytes.len() / 4).saturating_mul(8)).max(1 << 26))
+}
+
+fn entries_within(bytes: &[u8], offset: usize, budget: usize) -> Result<Vec<DlsAnimationEntry>, Error> {
     let mut cursor = Cursor::at(bytes, offset)?;
     let count = cursor.u32()? as usize;
     let pair_bytes = checked_product(count, 8, cursor.offset, bytes.len())?;
@@ -395,9 +401,8 @@ fn parse_animation_entries(bytes: &[u8], offset: usize) -> Result<Vec<DlsAnimati
 
     // Every pair entry re-decoded its record and copied up to six arrays as large as the file, so a small file
     // with many pairs pointing at one record asked for hundreds of GB. Each distinct record is decoded once and
-    // reused, and the words kept across all entries are capped at eight file's worth plus slack: valid files keep
-    // about one file's worth.
-    let mut budget = (bytes.len() / 4).saturating_mul(8).saturating_add(1024);
+    // reused, and the words kept across all entries are capped by `budget`.
+    let mut budget = budget;
     let mut spend = |words: usize, offset: usize| -> Result<(), Error> {
         budget = budget.checked_sub(words).ok_or(Error::Allocation { offset, count: words })?;
         Ok(())
@@ -746,9 +751,13 @@ mod tests {
         let file = parse(&bytes).unwrap();
         assert_eq!(file.animation_entries.len(), 2);
         assert_eq!(file.animation_entries[0].fields, file.animation_entries[1].fields);
-        // A thousand pairs sharing one record would copy far more than the file holds: an error, not
-        // hundreds of megabytes of entries.
-        assert!(parse(&shared_record_file(1000)).is_err());
+        // A thousand pairs sharing one record still parses under the absolute cap, but fails with a small
+        // budget: the cap guards the hundreds-of-gigabytes case, not sharing as such. The inner function is
+        // called directly to keep this cheap.
+        let bytes = shared_record_file(1000);
+        assert_eq!(parse(&bytes).unwrap().animation_entries.len(), 1000);
+        let table0 = u32::from_le_bytes(bytes[16..20].try_into().unwrap()) as usize;
+        assert!(entries_within(&bytes, table0, 1024).is_err());
     }
 
     #[test]

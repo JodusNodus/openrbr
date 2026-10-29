@@ -531,7 +531,7 @@ fn fsb5(fsb: &[u8]) -> Result<Vec<Sample>, Error> {
             at += 4 + size;
         }
         if rate == 0 {
-            return Err(short());
+            return Err(Error("FSB5: a sample rate of 0".to_owned()));
         }
         offsets.push(offset);
         samples.push(Sample { name: String::new(), rate, channels, frames, vorbis_crc, codec, data: 0..0 });
