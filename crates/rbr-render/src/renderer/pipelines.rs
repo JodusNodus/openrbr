@@ -89,7 +89,15 @@ pub(super) enum DrawPass {
     /// the tied fragments a pixel kept changed from run to run on Metal. Both pipelines give the same depth through
     /// `vs_main`'s `@invariant` position.
     AfterPrepass,
+    /// The car's lit draws in the main view with the sun's mask (`SUN_MASK`): drawn once in order as `Main`, over the depth
+    /// their prepass laid a little behind them ([`PREPASS_BIAS`]), so that coincident faces keep the order they have
+    /// without it (the first drawn wins), which `AfterPrepass`'s Equal test would turn around.
+    CarMain,
 }
+
+/// How far behind its draw the car's prepass lays its depth, in units of the depth format's least step (reverse-Z, so
+/// negative): the contact shading's depth, not seen otherwise.
+const PREPASS_BIAS: i32 = -256;
 
 impl PipelineKey {
     /// A draw's, with `mirror` when it holds a mirror's glass and `sky` for the sky's.
@@ -157,10 +165,16 @@ impl PipelineKey {
 }
 
 /// An opaque alpha-tested stage draw that writes depth: the main view lays its depth first ([`DrawPass`]); with the
-/// sun's mask (`sun_mask`) every opaque one, whose depth the mask is worked out from. The lit draws (the car's) are
-/// left out, since their alpha is not the texture's alone.
+/// sun's mask (`sun_mask`) every opaque one, whose depth the mask is worked out from. The lit draws are left out, since
+/// their alpha is not the texture's alone, but for the car's reflecting ones.
 pub(super) fn prepassed(state: &DrawState, lighting: bool) -> bool {
-    (cutout(state) || (lighting && !state.blend)) && state.depth_test && state.depth_write && state.shade.is_none()
+    let opaque = state.depth_test && state.depth_write;
+    match &state.shade {
+        // The car's opaque draws too (not the characters', whose shade reflects nothing), in the outside views only
+        // (`GpuDraw::prepassed`): the contact shading then sees the car, its arches and the ground under it.
+        Some(shade) => lighting && opaque && !state.blend && shade.fresnel_max > 0.0,
+        None => (cutout(state) || (lighting && !state.blend)) && opaque,
+    }
 }
 
 /// An opaque alpha-tested draw (`cutout` in `shader.wgsl`): the object lanes' foliage, fences and spectators.
@@ -184,6 +198,8 @@ pub(super) struct Context<'a> {
     pub(super) gravel: bool,
     /// [`Enhance::asphalt`] (`ASPHALT` in `shader.wgsl`).
     pub(super) asphalt: bool,
+    /// [`Enhance::ground`] (`GROUND` in `shader.wgsl`).
+    pub(super) ground: bool,
     /// [`Enhance::snow`] (`SNOW` in `shader.wgsl`).
     pub(super) snow: bool,
     /// [`Enhance::lighting`] (`LIGHTING` in `sky_lut.wgsl`, `shader.wgsl`): the sky's tables, the reflection probes,
@@ -246,6 +262,13 @@ impl Context<'_> {
                 key.alpha_test,
                 alpha_writes(self.taa, key.lit != 0 && key.blend),
             ),
+            DrawPass::CarMain => (
+                self.shading(),
+                key.depth_write,
+                wgpu::CompareFunction::Greater,
+                key.alpha_test,
+                alpha_writes(self.taa, key.lit != 0 && key.blend),
+            ),
             DrawPass::DepthPrepass => {
                 let normals = if self.lighting { wgpu::ColorWrites::COLOR } else { wgpu::ColorWrites::empty() };
                 ("fs_prepass", true, wgpu::CompareFunction::Greater, key.alpha_test, normals)
@@ -281,7 +304,10 @@ impl Context<'_> {
                 depth_write_enabled: Some(depth_write),
                 depth_compare: Some(depth_compare),
                 stencil: Default::default(),
-                bias: Default::default(),
+                bias: wgpu::DepthBiasState {
+                    constant: if key.pass == DrawPass::DepthPrepass && key.lit != 0 { PREPASS_BIAS } else { 0 },
+                    ..Default::default()
+                },
             }),
             multisample: Default::default(),
             fragment: Some(wgpu::FragmentState {
@@ -295,6 +321,7 @@ impl Context<'_> {
                         ("GRAVEL", f64::from(u8::from(self.gravel))),
                         ("ASPHALT", f64::from(u8::from(self.asphalt))),
                         ("SNOW", f64::from(u8::from(self.snow))),
+                        ("GROUND", f64::from(u8::from(self.ground))),
                         ("LIGHTING", f64::from(u8::from(self.lighting))),
                         ("MIRRORS", f64::from(u8::from(key.mirror))),
                         ("LAMPS", f64::from(u8::from(key.lamps))),
@@ -309,7 +336,11 @@ impl Context<'_> {
                         ("DRAW_DETAIL", f64::from(u8::from(features.detail))),
                         (
                             "SUN_MASK",
-                            f64::from(u8::from(self.lighting && key.pass == DrawPass::AfterPrepass && !key.sky)),
+                            f64::from(u8::from(
+                                self.lighting
+                                    && matches!(key.pass, DrawPass::AfterPrepass | DrawPass::CarMain)
+                                    && !key.sky,
+                            )),
                         ),
                         ("CUBE_SHIFT", f64::from(self.cube_shift)),
                     ],

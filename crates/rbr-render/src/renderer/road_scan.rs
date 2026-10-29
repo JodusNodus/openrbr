@@ -2,16 +2,20 @@
 //! red its brightness, green and blue its OpenGL normal's x and y, alpha its height. Layer 0 the gravel of
 //! [`Enhance::gravel`](super::Enhance::gravel), Poly Haven's "Gravel Ground 01" by Rob Tuytel, 3 m across; layer 1 the
 //! asphalt of [`Enhance::asphalt`](super::Enhance::asphalt), Poly Haven's "Asphalt Track" by Dimitrios Savva, 2 m across;
-//! layer 2 the snow of [`Enhance::snow`](super::Enhance::snow), Poly Haven's "Snow 02" by Rob Tuytel, 2 m across (all CC0,
-//! `notes/references/README.md`).
+//! layer 2 the snow of [`Enhance::snow`](super::Enhance::snow), Poly Haven's "Snow 02" by Rob Tuytel, 2 m across. Layers
+//! 3 and 4 are the off-road ground of [`Enhance::ground`](super::Enhance::ground), Poly Haven's "Grass Ground" by
+//! Charlotte Baglioni, 2.5 m across, which keeps its colour (`--colour` of `pack-scan.py`): layer 3 red, green and blue
+//! its colour and alpha its height, layer 4 red and green its normal's x and y (all CC0, `notes/references/README.md`).
 
 use std::io::Cursor;
 
 /// The packed scans by layer, 1024 texels a side.
-const SCANS: [&[u8]; 3] = [
+const SCANS: [&[u8]; 5] = [
     include_bytes!("../../data/gravel.png"),
     include_bytes!("../../data/asphalt.png"),
     include_bytes!("../../data/snow.png"),
+    include_bytes!("../../data/ground.png"),
+    include_bytes!("../../data/ground_normal.png"),
 ];
 /// Their side.
 const SIDE: u32 = 1024;

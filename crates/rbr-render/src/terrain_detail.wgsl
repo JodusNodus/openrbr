@@ -74,8 +74,9 @@ fn terrain_detail(v: VertexOut, steep: f32) -> f32 {
 // colour that `terrain_detail` fills in.
 const TERRAIN_EVEN: f32 = 1.0;
 
-fn terrain_even(t: texture_2d<f32>, uv: vec2<f32>, level: f32, steep: f32) -> vec4<f32> {
-    return textureSampleLevel(t, texture_sampler, uv, level + TERRAIN_EVEN * steep);
+// `blur` levels blurrier than the footprint says.
+fn terrain_even(t: texture_2d<f32>, uv: vec2<f32>, level: f32, blur: f32) -> vec4<f32> {
+    return textureSampleLevel(t, texture_sampler, uv, level + blur);
 }
 
 // `t`'s isotropic mip level at `uv` (by the longer footprint), outside the branches that read it (derivatives).

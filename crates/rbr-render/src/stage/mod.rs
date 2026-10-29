@@ -551,6 +551,18 @@ impl Stage {
     }
 }
 
+impl Stage {
+    /// Marks the off-road ground for the ground scan (`Enhance::ground`, [`crate::puddles::mark_ground`]), after the
+    /// roads are marked.
+    pub fn mark_ground(&mut self, maps: &Path) {
+        let ground = |weather| crate::particles::load_ground(maps, &self.name, Selection { weather, ..self.selection });
+        let collision = ground(self.selection.weather).filter(|g| g.has_surfaces()).or_else(|| ground(Weather::Dry));
+        if let Some(collision) = collision {
+            crate::puddles::mark_ground(&mut self.meshes, &collision);
+        }
+    }
+}
+
 fn driveline(maps: &Path, name: &str) -> Vec<Vec3> {
     let Some(trk) = std::fs::read(stage_files::file_in(maps, name, "trk")).ok().and_then(|b| trk::parse(&b).ok())
     else {

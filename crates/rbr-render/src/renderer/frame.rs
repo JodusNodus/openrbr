@@ -473,13 +473,16 @@ impl Renderer {
         let laid = |mesh: &GpuMesh, distance: f32| {
             view == View::Main && if masked { mesh.anchor == Anchor::World } else { distance <= PREPASS_REACH }
         };
+        let inside = self.in_car(view);
         let mut bound = Bound::new(&self.buffers);
         pass.set_bind_group(2, self.sun_mask.group(), &[]);
         let mut prepass: Vec<_> = shown
             .iter()
             .filter(|&&(mesh, distance)| laid(mesh, distance))
             .flat_map(|&(mesh, distance)| {
-                let draws = mesh.draws.iter().filter(move |draw| draw.lod.shows(distance));
+                // The car's lit draws only outside it: the cockpit's frame is as it was.
+                let draws =
+                    mesh.draws.iter().filter(move |draw| draw.lod.shows(distance) && !(inside && draw.views.is_some()));
                 draws.filter_map(move |draw| Some((mesh, draw, &draw.prepassed.as_ref()?[0])))
             })
             .collect();
@@ -510,7 +513,6 @@ impl Renderer {
             draw.bind.shade.is_some() && !draw.pipeline.blend && draw.pipeline.depth_write
         };
         let lamps_light = self.lamps_light() && view != View::Probe;
-        let inside = self.in_car(view);
         let mut draw_meshes = |pass: &mut wgpu::RenderPass<'_>, meshes: &[(&GpuMesh, f32)], lit_first: bool| {
             for &(mesh, distance) in meshes {
                 stats.meshes_drawn += usize::from(!lit_first);
@@ -521,6 +523,7 @@ impl Renderer {
                     }
                     let after_prepass = draw.prepassed.is_some() && laid(mesh, distance);
                     let pipeline = match (&draw.views, &draw.lamps, &draw.prepassed) {
+                        (Some(_), _, Some([_, after])) if after_prepass && !inside => after,
                         (Some(views), _, _) => &views[usize::from(inside)],
                         (_, Some([_, after]), _) if lamps_light && after_prepass => after,
                         (_, Some([main, _]), _) if lamps_light => main,

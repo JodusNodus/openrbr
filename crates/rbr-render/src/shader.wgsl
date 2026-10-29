@@ -219,6 +219,8 @@ override LAMPS: bool = false;
 override GRAVEL: bool = false;
 override ASPHALT: bool = false;
 override SNOW: bool = false;
+// The off-road ground takes the ground scan and eases the stage's baked tint (`renderer::Enhance::ground`; `ground_scan`).
+override GROUND: bool = false;
 // The main view's draws after the depth prepass read the sun's shadow from its mask (`sun_mask.wgsl`), at the pixel
 // `fs_main` or `fs_clouded` shades (`renderer::sun_mask`).
 override SUN_MASK: bool = false;
@@ -261,7 +263,7 @@ struct Probes {
 @group(0) @binding(19) var cloud_shadow_map: texture_2d<f32>;
 @group(0) @binding(20) var cloud_shadow_sampler: sampler;
 // The road scans (`renderer::road_scan`), 0 gravel, 1 asphalt and 2 snow: red the brightness, green and blue the normal's x
-// and y, alpha the height.
+// and y, alpha the height; 3 the ground's colour and height, 4 its normal's x and y (`ground_scan`).
 @group(0) @binding(21) var road_scans: texture_2d_array<f32>;
 @group(0) @binding(22) var road_scan_sampler: sampler;
 @group(1) @binding(0) var texture0: texture_2d<f32>;
@@ -483,19 +485,57 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     if (!stage_frame() && !camera_anchored()) {
         surface = surface * backdrop_detail(v.world);
     }
+    // With the asphalt scan the paved road's texture colour over its local mean (`ASPHALT_MEAN`), see `albedo_remap` below.
+    var paved_mean = vec3<f32>(1.0);
+    var paved_flat = 0.0;
+    var paved_grey = 1.0;
+    var paved_line = 0.0;
     // The near ground gets the fine structure its thinly spread texture lacks (`terrain_detail`).
     if (detail_draw() && stage_frame() && mode.cutout == 0u && mode.detail.z != 0.0) {
         // On the banks the texture's streaks are blurred out first (`terrain_even`); the flat keeps its filtering.
         let steep = terrain_steep(v.world);
         let levels = vec2<f32>(terrain_level(texture0, v.uv0), terrain_level(texture1, v.uv1));
-        if (steep > 0.0) {
-            var even = terrain_even(texture0, v.uv0, levels.x, steep).rgb;
+        // With the ground scan the off-road ground's texture is read `GROUND_BLUR` levels blurrier on the flat too.
+        // Only where the texture is magnified past `GROUND_MAGNIFIED` (its smear): a crisp one keeps its own detail.
+        let texels = vec2<f32>(textureDimensions(texture0));
+        let native = min(length(dpdx(v.uv0) * texels), length(dpdy(v.uv0) * texels));
+        let magnified = 1.0 - smoothstep(GROUND_MAGNIFIED.x, GROUND_MAGNIFIED.y, native);
+        // The paved mesh's shoulders carry grass textures: only a grey texture (the road's) takes the asphalt's treatment.
+        var paved_share = select(0.0, smoothstep(0.75, 0.95, v.wet.x), ASPHALT);
+        if (paved_share > 0.0) {
+            paved_mean = terrain_even(texture0, v.uv0, levels.x, ASPHALT_MEAN).rgb;
             if (second_draw()) {
-                even = mix(even, terrain_even(texture1, v.uv1, levels.y, steep).rgb, second.a * v.color.a);
+                paved_mean = mix(paved_mean, terrain_even(texture1, v.uv1, levels.y, ASPHALT_MEAN).rgb, second.a * v.color.a);
+            }
+            var probe = terrain_even(texture0, v.uv0, levels.x, ASPHALT_BLUR).rgb;
+            if (second_draw()) {
+                probe = mix(probe, terrain_even(texture1, v.uv1, levels.y, ASPHALT_BLUR).rgb, second.a * v.color.a);
+            }
+            let top = max(probe.r, max(probe.g, probe.b));
+            paved_grey = 1.0 - smoothstep(ASPHALT_GREY.x, ASPHALT_GREY.y, (top - min(probe.r, min(probe.g, probe.b))) / max(top, 1e-3));
+            paved_share = paved_share * paved_grey;
+        }
+        paved_flat = paved_share;
+        let blur = steep * TERRAIN_EVEN
+            + select(0.0, GROUND_BLUR * ground_share(v) * magnified, GROUND)
+            + ASPHALT_BLUR * paved_share * magnified;
+        if (blur > 0.0) {
+            var even = terrain_even(texture0, v.uv0, levels.x, blur).rgb;
+            if (second_draw()) {
+                even = mix(even, terrain_even(texture1, v.uv1, levels.y, blur).rgb, second.a * v.color.a);
+            }
+            // The painted lines stay crisp: where the blurred road is brighter than its mean, it is paint, with its own texels.
+            if (paved_share > 0.0) {
+                let luma = vec3<f32>(0.2126, 0.7152, 0.0722);
+                paved_line = smoothstep(ASPHALT_LINE.x, ASPHALT_LINE.y, dot(even, luma) / max(dot(paved_mean, luma), 1e-3));
+                even = mix(even, surface, paved_line);
             }
             surface = even;
         }
-        surface = surface * terrain_detail(v, steep);
+        // With the ground scan the stage's own high pass is a share of what it was, on the ground the scan covers, and
+        // on the paved road with the asphalt scan.
+        let keep = (1.0 - select(0.0, ground_share(v) * (1.0 - GROUND_KEEP), GROUND)) * (1.0 - paved_share * (1.0 - ASPHALT_KEEP));
+        surface = surface * mix(1.0, terrain_detail(v, steep), keep);
     }
     let night = frame.night.x != 0.0;
     // With the computed occlusion the stage's light is ours (`own_light`), its sun shadowed by what hides the sun.
@@ -503,7 +543,16 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     // The texture's linear albedo, which under our physical light is brought to the measured ranges (`albedo_remap`).
     var albedo = pow(surface, vec3<f32>(2.2));
     if (own) {
-        albedo = albedo_remap(albedo);
+        let remapped = albedo_remap(albedo);
+        albedo = remapped;
+        // `albedo_remap`'s cut steepens through the road's brightness (up to 2.6 times its contrast, the flecks of the
+        // texture's fine variation): the paved road takes the cut of its local mean, with its own variation over it, and
+        // its painted lines (brighter than the mean) the plain cut.
+        if (paved_flat > 0.0) {
+            let mean = pow(paved_mean, vec3<f32>(2.2));
+            let evened = albedo_remap(mean) * albedo / max(mean, vec3<f32>(1e-4));
+            albedo = mix(remapped, mix(evened, remapped, paved_line), paved_flat);
+        }
     }
     var sun_seen = 1.0;
     var colour: vec3<f32>;
@@ -566,6 +615,16 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         colour = colour * ground_detail(v.world);
         // The loose roads (gravel and dirt, half the film's share, `stage::Vertex::wet`) take the gravel scan, the paved
         // ones (tarmac, all of it) the asphalt's, the snow (`puddles::SNOW_MARK`) the snow's.
+        if (GROUND) {
+            let share = ground_share(v);
+            let face_dx = dpdx(v.world);
+            let face_dy = dpdy(v.world);
+            if (share > 0.0) {
+                let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal), dot(v.normal, v.normal) > 1e-8);
+                let seen = select(1.0, sun_seen, own);
+                colour = colour * mix(vec3<f32>(1.0), ground_scan(v.world, n, face_dx, face_dy, seen, surface), share);
+            }
+        }
         if (GRAVEL || ASPHALT || SNOW) {
             let seen = select(1.0, sun_seen, own);
             let loose_uv = v.world.xz / SCAN_TILE[0];
@@ -573,21 +632,21 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             let loose_dy = dpdy(loose_uv);
             let loose = smoothstep(0.05, 0.3, v.wet.x) * (1.0 - smoothstep(0.6, 0.9, v.wet.x));
             if (GRAVEL && loose > 0.0) {
-                colour = colour * mix(1.0, road_scan(0, loose_uv, loose_dx, loose_dy, seen), loose);
+                colour = colour * mix(1.0, road_scan(0, loose_uv, loose_dx, loose_dy, seen, 1.0), loose);
             }
             let paved_uv = v.world.xz / SCAN_TILE[1];
             let paved_dx = dpdx(paved_uv);
             let paved_dy = dpdy(paved_uv);
             let paved = smoothstep(0.75, 0.95, v.wet.x);
             if (ASPHALT && paved > 0.0) {
-                colour = colour * mix(1.0, road_scan(1, paved_uv, paved_dx, paved_dy, seen), paved);
+                colour = colour * mix(1.0, road_scan(1, paved_uv, paved_dx, paved_dy, seen, paved_grey), paved);
             }
             let snow_uv = v.world.xz / SCAN_TILE[2];
             let snow_dx = dpdx(snow_uv);
             let snow_dy = dpdy(snow_uv);
             let snowy = 1.0 - smoothstep(-0.9, -0.3, v.wet.x);
             if (SNOW && snowy > 0.0) {
-                colour = colour * mix(1.0, road_scan(2, snow_uv, snow_dx, snow_dy, seen), snowy);
+                colour = colour * mix(1.0, road_scan(2, snow_uv, snow_dx, snow_dy, seen, 1.0), snowy);
             }
         }
         // The ground around the roads is soaked too, a little less (`GROUND_SOAK` of the road's, by the wetness).
@@ -733,10 +792,20 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     // and the reflection reduced where it covers (ours: but for the share the dirt keeps, `dirt::Look`; with the
     // surfaces' dirt none on the cabin's interior set).
     var clean = 1.0;
+    // A wheel's rubber and metal by the texel's luminance (`WHEEL_LUMA`); 0 for the rest of the car.
+    var metal = 0.0;
+    var dirt_share = 1.0;
+    if (mode.grime.z != 0.0 && day_lit() && car_look()) {
+        metal = smoothstep(WHEEL_LUMA.x, WHEEL_LUMA.y, dot(surface, vec3<f32>(0.2126, 0.7152, 0.0722)));
+        colour = colour * mix(RUBBER_ALBEDO, 1.0, metal);
+        // The dust sits low on the tyre: the rubber higher up keeps `RUBBER_DIRT_HIGH` of its dirt.
+        let low = 1.0 - smoothstep(TYRE_BAND.x, TYRE_BAND.y, world_height(v.world));
+        dirt_share = mix(mix(RUBBER_DIRT_HIGH, 1.0, low), 1.0, metal);
+    }
     if (mode.fresnel.w != 0.0 && !(cabin_face && frame.wetness.w != 0.0)) {
         let mud = textureSampleBias(specular_texture, texture_sampler, v.uv0, mode.mip_bias);
         let mask = select(mud.a, sqrt(mud.a), frame.wetness.w != 0.0);
-        let covered = clamp(mask * frame.wetness.y, 0.0, 1.0);
+        let covered = clamp(mask * frame.wetness.y, 0.0, 1.0) * dirt_share;
         colour = mix(colour, frame.car_dirt.rgb, covered);
         clean = 1.0 - covered * (1.0 - frame.car_dirt.w);
     }
@@ -745,7 +814,10 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         // of a value noise over its texels (so of about one size on every car) over a film, on what its dirt map gave.
         let texels = v.uv0 * vec2<f32>(textureDimensions(texture0)) / SPATTER_TEXELS;
         let spots = 0.6 * value_noise(vec3<f32>(texels, 2.3)) + 0.4 * value_noise(vec3<f32>(texels * 4.0, 5.1));
-        let covered = frame.wetness.y * (SPATTER_FILM + SPATTER_SPOTS * smoothstep(0.45, 0.8, spots));
+        var covered = frame.wetness.y * (SPATTER_FILM + SPATTER_SPOTS * smoothstep(0.45, 0.8, spots));
+        if (day_lit() && car_look()) {
+            covered = covered * mix(RUBBER_SPATTER, 1.0, metal) * dirt_share;
+        }
         colour = mix(colour, frame.car_dirt.rgb, covered);
         clean = clean * (1.0 - covered * (1.0 - frame.car_dirt.w));
     }
@@ -770,7 +842,19 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         film = WET_FILM;
         colour = wet_base(colour, v.world, wp.up) * (1.0 - WET_DROP * wp.drops);
     }
+    // A lamp's lens (ours): a reflecting lit draw with no dirt map, not a wheel's (the lit lamps' parts glow, `lit_class` 3).
+    let lens = lit_class() == 1u && mode.fresnel.w == 0.0 && mode.grime.z == 0.0 && mode.fresnel.y * mode.fresnel.z > 0.0
+        && day_lit() && car_look() && !cabin_face;
     var shaded: vec3<f32>;
+    var visible = 1.0;
+    if (day_lit() && !cabin_face && car_look()) {
+        visible = body_occlusion(n, v.world);
+        if (SUN_MASK) {
+            let contact = textureLoad(sun_contact, pixel / 2, 0).r;
+            visible = visible * contact * contact;
+        }
+        body_visible = visible;
+    }
     if (cabin_face && day_on()) {
         shaded = cabin_day_lit(colour, v, n, shadowed, under_cloud, outside);
     } else {
@@ -817,9 +901,30 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         if (physical) {
             let sky_dim = mix(1.0, WET_SKY, film);
             let roughness = COAT_ROUGHNESS * (1.0 - film * (1.0 - WET_ROUGHNESS));
-            let coat = select(0.0, environment_reflectance(max(nv, 1e-3), roughness), f > 0.0) * alpha * clean;
-            let mirrored = paint_mirrored(reflect(-view, nr), roughness);
-            colour = pow(pow(shaded, vec3<f32>(2.2)) * (1.0 - coat) + pow(mirrored, vec3<f32>(2.2)) * coat * sky_dim, vec3<f32>(1.0 / 2.2));
+            var coat = select(0.0, environment_reflectance(max(nv, 1e-3), roughness), f > 0.0) * alpha * clean;
+            if (lit_class() == 1u && car_look()) {
+                coat = min(coat * COAT_STRENGTH, 1.0);
+            }
+            var mirrored = paint_mirrored(reflect(-view, nr), roughness);
+            if (lens) {
+                // A lamp's lens over its reflector bowl: a sharp, Fresnel-weighted mirror over the texture, whose
+                // bright texels (the bowl) are chrome, a rough mirror of the surroundings.
+                let lum = dot(surface, vec3<f32>(0.2126, 0.7152, 0.0722));
+                let bowl = smoothstep(LENS_LUMA.x, LENS_LUMA.y, lum);
+                let glass = environment_reflectance(max(nv, 1e-3), LENS_ROUGHNESS) * LENS_COAT;
+                let chrome = RIM_METAL * bowl;
+                let shine = paint_mirrored(reflect(-view, nr), LENS_BOWL_ROUGHNESS);
+                let sharp = paint_mirrored(reflect(-view, nr), LENS_ROUGHNESS);
+                mirrored = mix(sharp, vec3<f32>(dot(shine, vec3<f32>(0.333))), chrome / max(chrome + glass, 1e-4));
+                coat = min(max(coat, glass) + chrome * (1.0 - glass), 1.0);
+            }
+            if (metal > 0.0) {
+                let rim = RIM_METAL * metal * clean;
+                let shine = paint_mirrored(reflect(-view, nr), RIM_ROUGHNESS);
+                mirrored = mix(mirrored, vec3<f32>(dot(shine, vec3<f32>(0.333))), rim / max(rim + coat, 1e-4));
+                coat = max(coat, rim);
+            }
+            colour = pow(pow(shaded, vec3<f32>(2.2)) * (1.0 - coat) + pow(mirrored, vec3<f32>(2.2)) * coat * sky_dim * visible, vec3<f32>(1.0 / 2.2));
         }
     }
     if (CABIN && inside && v.specular.y >= CABIN_MIRROR_GLASS) {
@@ -934,7 +1039,10 @@ const BOUNCE: f32 = 1.0;
 fn own_light(v: VertexOut, sun_seen: f32, under_cloud: f32) -> vec3<f32> {
     let c = v.color.rgb;
     let most = max(c.r, max(c.g, c.b));
-    let hue = mix(vec3<f32>(1.0), c / max(most, 1e-3), smoothstep(0.02, 0.08, most));
+    var hue = mix(vec3<f32>(1.0), c / max(most, 1e-3), smoothstep(0.02, 0.08, most));
+    if (GROUND) {
+        hue = mix(hue, mix(vec3<f32>(1.0), hue, GROUND_HUE), select(0.0, 1.0, detail_draw()));
+    }
     let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal), dot(v.normal, v.normal) > 1e-8);
     let ground_sky = open_sky_light(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(0.0, 1.0, 0.0));
     let sky_unit = frame.day_sky.rgb;
@@ -1137,6 +1245,25 @@ const GRIME_SHEEN: f32 = 0.4;
 const SPATTER_TEXELS: f32 = 8.0;
 const SPATTER_FILM: f32 = 0.3;
 const SPATTER_SPOTS: f32 = 0.35;
+// A wheel's texels by their luminance (ours, with the day's light): below the first the tyre's rubber, whose albedo is
+// `RUBBER_ALBEDO` of the texture's and whose spatter `RUBBER_SPATTER` of the rim's; above the second the rim's metal,
+// which mirrors the surroundings by `RIM_METAL` (a bright metal's reflectance, rough by `RIM_ROUGHNESS`) in the
+// cube's grey, between them the blend.
+const WHEEL_LUMA: vec2<f32> = vec2<f32>(0.3, 0.55);
+const RUBBER_ALBEDO: f32 = 0.6;
+const RUBBER_SPATTER: f32 = 0.5;
+const RIM_METAL: f32 = 0.55;
+// The tyre's dust band (ours): heights over the ground, metres, where the rubber's dirt falls from all to
+// `RUBBER_DIRT_HIGH` of it.
+const TYRE_BAND: vec2<f32> = vec2<f32>(0.08, 0.3);
+const RUBBER_DIRT_HIGH: f32 = 0.15;
+// A lamp's lens (ours, `lens`): its glass's roughness and how much more than a dielectric's reflection it takes, the
+// luminance of the texels that are the reflector's chrome, and that chrome's roughness.
+const LENS_ROUGHNESS: f32 = 0.02;
+const LENS_COAT: f32 = 3.0;
+const LENS_LUMA: vec2<f32> = vec2<f32>(0.3, 0.6);
+const LENS_BOWL_ROUGHNESS: f32 = 0.15;
+const RIM_ROUGHNESS: f32 = 0.3;
 
 // The clouds' light (ours): the vertex colours of the cloud faces peak at 128 (0.5) and darken toward the
 // undersides; the game's extinction and in-scatter terms that scale and add to them (`CloudsSingleTexture.vso`,
@@ -1149,6 +1276,12 @@ const CLOUD_LIGHT: f32 = 2.0;
 // curved panels a few pixels across, and it replaces the class's `CookTorranceM` (`sun_highlight`).
 const COAT_ROUGHNESS: f32 = 0.07;
 const COAT_HIGHLIGHT: f32 = 0.04;
+// The coat's wider sheen (the share of a second highlight and its Beckmann m, a lacquer's orange-peel waviness), and the
+// paint's base pigment (the saturation and the albedo's scale), at paint only.
+// The paint's reflection scale over a dielectric's: the lacquer over a metallic base mirrors more than bare F0 0.04.
+const COAT_STRENGTH: f32 = 1.5;
+const COAT_SHEEN: vec2<f32> = vec2<f32>(0.6, 0.3);
+const PAINT_PIGMENT: vec2<f32> = vec2<f32>(1.25, 1.0);
 
 // Rain on the car's paint (ours, `frame.wind.z`, the wet weather): a water film, `WET_FILM` of it on the whole body, with
 // the clear coat at `WET_ROUGHNESS` of its roughness, the base `WET_DARK` darker and `WET_SAT` more saturated, and the
@@ -1232,11 +1365,63 @@ fn wet_base(colour: vec3<f32>, world: vec3<f32>, up: f32) -> vec3<f32> {
     return wet;
 }
 
+// The car body's own occlusion of the ambient light and the reflections (ours; the car's vertices are posed on the CPU
+// each frame, so no computed one): the faces that look down or aside near the ground, from the sills to the arches
+// and the underbody, see the road and the body, not the sky. Faces turned up see all of it. In the car's model space:
+// `CAR_AO_SIDE` the share a face turned aside takes off at the ground, `CAR_AO_DOWN` the share one turned down, `CAR_AO_LOW`
+// the heights (metres) it fades out between.
+const CAR_AO_SIDE: f32 = 0.12;
+const CAR_AO_DOWN: f32 = 0.85;
+const CAR_AO_LOW: vec2<f32> = vec2<f32>(0.08, 0.45);
+
+// Whether the car takes its look (the body's occlusion, the coat's strength and sheen, the pigment, the rims): in the
+// views of the car's outside, not in a cockpit's mirrors, which keep the game's car (`frame.night.z`).
+fn car_look() -> bool {
+    return frame.night.z == 0.0;
+}
+
+// `world`'s height over the ground under the car (`frame.occlusion.z`).
+fn world_height(world: vec3<f32>) -> f32 {
+    return world.y - frame.occlusion.z;
+}
+
+fn body_occlusion(n: vec3<f32>, world: vec3<f32>) -> f32 {
+    let turn = mat3x3<f32>(frame.car_body[0].xyz, frame.car_body[1].xyz, frame.car_body[2].xyz);
+    let p = car_local(world);
+    let nl = n * turn;
+    let low = 1.0 - smoothstep(CAR_AO_LOW.x, CAR_AO_LOW.y, p.y);
+    let aside = 1.0 - smoothstep(0.2, 0.8, nl.y);
+    let down = smoothstep(0.1, -0.5, nl.y) * (1.0 - smoothstep(0.5, 1.1, p.y));
+    return (1.0 - CAR_AO_SIDE * low * aside) * (1.0 - CAR_AO_DOWN * down);
+}
+
 // What the car's paint mirrors: the surroundings cube drawn at the car (`renderer::Reflection`), at the coat's
 // roughness by the sky's rule (`sky_reflected`: the level over 7), so the coat mirrors the stage around it; with no
 // cube drawn, `reflected`.
 fn paint_mirrored(dir: vec3<f32>, roughness: f32) -> vec3<f32> {
     let level = roughness * 7.0;
+    if (car_look() && lit_class() == 1u) {
+        return mix(paint_surroundings(dir, level), horizon_mirrored(dir), HORIZON_SHARE);
+    }
+    return paint_surroundings(dir, level);
+}
+
+// The far field a glossy panel mirrors (ours): the stage's blurred upper band above the horizon and its ground below it, split
+// at the reflected direction's horizon over `HORIZON_SOFT` of its height, so that a panel shows the horizon's line bent
+// by its curvature, not the stage's blurred skyline (the hills and trees stand in the probes' cube). `HORIZON_SHARE`
+// of the coat's mirror is this.
+const HORIZON_SHARE: f32 = 0.5;
+// The blur (cube level) of the far field's sky and ground: the stage the probe sees there, a forest's trees or the open sky.
+const HORIZON_BLUR: f32 = 4.0;
+const HORIZON_SOFT: vec2<f32> = vec2<f32>(-0.3, 0.0);
+
+fn horizon_mirrored(dir: vec3<f32>) -> vec3<f32> {
+    let up = normalize(vec3<f32>(dir.x, max(dir.y, 0.03), dir.z));
+    let down = normalize(vec3<f32>(dir.x, -0.7, dir.z));
+    return mix(paint_surroundings(down, 5.0), paint_surroundings(up, HORIZON_BLUR), smoothstep(HORIZON_SOFT.x, HORIZON_SOFT.y, dir.y));
+}
+
+fn paint_surroundings(dir: vec3<f32>, level: f32) -> vec3<f32> {
     if (frame.reflection.w == 0.0) {
         return reflected(dir, level);
     }
@@ -1265,8 +1450,15 @@ fn lit(colour: vec3<f32>, n: vec3<f32>, view: vec3<f32>, sunlit: f32, ambient: v
     if (day_lit()) {
         // Lambert on the texture's albedo plus the sun's Cook-Torrance highlight, in linear light.
         let e = light_sum(n, sunlit, ambient, world, vec2<f32>(1.0));
-        let albedo = min(pow(colour * CAR_ALBEDO, vec3<f32>(2.2)), vec3<f32>(ALBEDO_MOST));
-        return pow(albedo * e + sun_highlight(n, view, to_sun) * frame.day_sun.rgb * ndl, vec3<f32>(1.0 / 2.2));
+        var albedo = min(pow(colour * CAR_ALBEDO, vec3<f32>(2.2)), vec3<f32>(ALBEDO_MOST));
+        var highlight = sun_highlight(n, view, to_sun);
+        if (lit_class() == 1u && coated() && car_look()) {
+            // The clear coat's wider sheen (`COAT_SHEEN`) over the sharp highlight, and the base's pigment deeper.
+            highlight += COAT_SHEEN.x * sun_lobe(n, view, to_sun, COAT_SHEEN.y);
+            let grey = dot(albedo, vec3<f32>(0.2126, 0.7152, 0.0722));
+            albedo = max(mix(vec3<f32>(grey), albedo, PAINT_PIGMENT.x), vec3<f32>(0.0)) * PAINT_PIGMENT.y;
+        }
+        return pow(albedo * e + highlight * frame.day_sun.rgb * ndl, vec3<f32>(1.0 / 2.2));
     }
     let h = normalize(to_sun + view);
     let nh = max(dot(n, h), 1e-3);
@@ -1297,7 +1489,11 @@ fn sun_highlight(n: vec3<f32>, view: vec3<f32>, to_sun: vec3<f32>) -> f32 {
     if (coated()) {
         m = COAT_HIGHLIGHT;
     }
-    let h = normalize(to_sun + view);
+    return sun_lobe(n, view, to_sun, m);
+}
+
+// One of the sun's highlights, of Beckmann roughness `m`.
+fn sun_lobe(n: vec3<f32>, view: vec3<f32>, to_sun: vec3<f32>, m: f32) -> f32 {    let h = normalize(to_sun + view);
     let nh = max(dot(n, h), 1e-3);
     let nv = max(dot(n, view), 1e-3);
     let nl = max(dot(n, to_sun), 1e-3);
@@ -1317,6 +1513,10 @@ fn light(n: vec3<f32>, sunlit: f32, ambient: vec3<f32>, world: vec3<f32>) -> vec
     }
     return light_sum(n, sunlit, ambient, world, mode.light.xy);
 }
+
+// How much of the ambient and bounce light the car's body lets reach the face being shaded (`body_occlusion`), 1 for
+// everything else.
+var<private> body_visible: f32 = 1.0;
 
 // The ambient and sun light at `world` scaled by `k` (the game's Ka and Kd): the game's, or with the day's light
 // (`day_lit`) linear irradiance as the stage's (`own_light`).
@@ -1339,7 +1539,7 @@ fn light_sum(n: vec3<f32>, sunlit: f32, ambient: vec3<f32>, world: vec3<f32>, k:
         let g = ground_bounce(world, n);
         bounce = BOUNCE * (k.y * sun * g.sun + k.x * sky * ground_sky * g.sky);
     }
-    return k.x * sky * hemisphere * ambient + k.y * sun * ndl + bounce;
+    return k.x * sky * hemisphere * ambient * body_visible + k.y * sun * ndl + bounce * body_visible;
 }
 
 // The light of the sky above the horizon alone on a face turned `n`, relative to an up-facing one's, in the colour
@@ -1922,24 +2122,202 @@ fn ground_detail(world: vec3<f32>) -> f32 {
 // Parallax (4 to 24 steps within 25 m) looked the same on gravel in stills and cost 0.35 to 1.3 ms of the scene at
 // 1440p, so it was left out.
 const SCAN_TILE: vec3<f32> = vec3<f32>(3.0, 2.0, 2.0);
-const SCAN_DETAIL: vec3<f32> = vec3<f32>(0.5, 0.5, 0.5);
-const SCAN_RELIEF: vec3<f32> = vec3<f32>(0.35, 0.35, 0.35);
-const SCAN_HOLLOWS: vec3<f32> = vec3<f32>(0.24, 0.24, 0.24);
+const SCAN_DETAIL: vec3<f32> = vec3<f32>(0.5, 1.2, 0.5);
+const SCAN_RELIEF: vec3<f32> = vec3<f32>(0.35, 0.6, 0.35);
+const SCAN_HOLLOWS: vec3<f32> = vec3<f32>(0.24, 0.4, 0.24);
 // The least a scan's factor darkens to: the snow scan's dark marks (footprints, debris) otherwise read as dirt.
 const SCAN_FLOOR: vec3<f32> = vec3<f32>(0.0, 0.0, 0.88);
 
 // Scan `layer`'s factor on the colour at `uv` (its tiles), with the derivatives `dx` and `dy` taken in uniform control
 // flow, `sun_seen` of the sun reaching the ground there.
-fn road_scan(layer: i32, uv: vec2<f32>, dx: vec2<f32>, dy: vec2<f32>, sun_seen: f32) -> f32 {
+fn road_scan(layer: i32, uv: vec2<f32>, dx: vec2<f32>, dy: vec2<f32>, sun_seen: f32, grey: f32) -> f32 {
+    var strength = vec3<f32>(SCAN_DETAIL[layer], SCAN_RELIEF[layer], SCAN_HOLLOWS[layer]);
+    if (layer == 1) {
+        strength = mix(ASPHALT_SHOULDER, strength, grey);
+    }
     let scan = textureSampleGrad(road_scans, road_scan_sampler, uv, layer, dx, dy);
     let mean = textureSampleLevel(road_scans, road_scan_sampler, uv, layer, 20.0);
-    let detail = mix(1.0, scan.r / max(mean.r, 1e-3), SCAN_DETAIL[layer]);
+    let detail = mix(1.0, scan.r / max(mean.r, 1e-3), strength.x);
     let to_sun = -frame.sun.xyz;
     let n = scan_normal(scan.gb);
     let lit = clamp((dot(n, to_sun) - dot(scan_normal(mean.gb), to_sun)) / max(to_sun.y, 0.05), -1.0, 1.0);
-    let relief = 1.0 + lit * sun_seen * SCAN_RELIEF[layer] * smoothstep(0.1, 0.35, to_sun.y);
-    let hollows = 1.0 - SCAN_HOLLOWS[layer] * (mean.a - scan.a);
+    let relief = 1.0 + lit * sun_seen * strength.y * smoothstep(0.1, 0.35, to_sun.y);
+    let hollows = 1.0 - strength.z * (mean.a - scan.a);
     return max(detail * relief * hollows, SCAN_FLOOR[layer]);
+}
+
+// Ground scan (renderer choice, `Enhance::ground`): the off-road ground (`puddles::mark_ground`, `Vertex::edge` -1, `ground_share`)
+// takes a scanned grass-and-earth surface (`renderer::road_scan` layers 3 and 4, 2.5 m across) tiled in world space and
+// projected on the three axis planes by the face's normal (triplanar, as `terrain_detail`, so a bank does not streak
+// it), at `GROUND_TILES` metres (the second tiling turned by `GROUND_TURN`, cosine and sine of 30 degrees, against repeats). The scan's colour over its
+// mean (the last mip) scales the ground's, by `GROUND_DETAIL` per tiling: patches of grass and bare earth, stones and
+// roots, in the stage's own mean colour. A surface that is bright and grey (snow, pale rock) takes only its brightness,
+// no lighter than `GROUND_FLOOR`. The first tiling's normals lit by the sun against its mean normal, by `GROUND_RELIEF`
+// and faded out with a low sun, and its hollows darker by `GROUND_HOLLOWS`, give the grain relief. The stage's baked
+// vertex tint (`own_light`) keeps `GROUND_HUE` of itself on the near ground, roads too: it was baked for the original's sun and
+// ambient and tints the shade blue and the lit slopes over-green under ours. The ground's own texture is read
+// `GROUND_BLUR` levels blurrier (its streaks and smear are in its fine texels; its patches of colour stay), and its
+// high pass (`terrain_detail`) keeps `GROUND_KEEP` of its strength: the scan brings the detail.
+const GROUND_TILES: vec2<f32> = vec2<f32>(1.7, 5.1);
+const GROUND_GRAIN: f32 = 2.2;
+const GROUND_CHROMA: f32 = 0.6;
+const GROUND_SHARP: f32 = 0.6;
+const GROUND_SOFT: f32 = 4.0;
+const GROUND_DETAIL: vec2<f32> = vec2<f32>(1.8, 1.8);
+const GROUND_TURN: vec2<f32> = vec2<f32>(0.866, 0.5);
+const GROUND_RELIEF: f32 = 0.5;
+const GROUND_HOLLOWS: f32 = 0.3;
+const GROUND_FLOOR: f32 = 0.88;
+const GROUND_HUE: f32 = 0.3;
+const GROUND_BLUR: f32 = 0.75;
+const GROUND_MAGNIFIED: vec2<f32> = vec2<f32>(0.4, 1.0);
+const GROUND_KEEP: f32 = 0.7;
+const ASPHALT_BLUR: f32 = 3.0;
+const ASPHALT_MEAN: f32 = 6.0;
+const ASPHALT_GREY: vec2<f32> = vec2<f32>(0.1, 0.18);
+// The scan's strengths (detail, relief, hollows) on the paved mesh's grass shoulders: what it was before the road's.
+const ASPHALT_SHOULDER: vec3<f32> = vec3<f32>(0.5, 0.35, 0.24);
+const ASPHALT_LINE: vec2<f32> = vec2<f32>(1.1, 1.3);
+const ASPHALT_KEEP: f32 = 0.0;
+
+// How much of the pixel is the off-road ground: the vertices' mark against the road's share.
+fn ground_share(v: VertexOut) -> f32 {
+    return clamp(-v.wet.y, 0.0, 1.0) * (1.0 - clamp(v.wet.x * 4.0, 0.0, 1.0));
+}
+
+// The world direction of a scan normal `t` (OpenGL: x along u, y up the image, z out of it) laid on the plane across
+// `axis`, whose uv are the other two axes in order (`ground_scan`), seen from the side `side` (1 or -1) of the plane.
+fn plane_normal(axis: i32, t: vec3<f32>, side: f32) -> vec3<f32> {
+    if (axis == 0) {
+        return vec3<f32>(side * t.z, -t.y, t.x);
+    } else if (axis == 1) {
+        return vec3<f32>(t.x, side * t.z, -t.y);
+    }
+    return vec3<f32>(t.x, -t.y, side * t.z);
+}
+
+// Earth and grass in patches a few metres across, and stones (the scan holds neither at that scale): a mask from noise at
+// `GROUND_PATCH` metres, more earth on a slope (`GROUND_SLOPE`), takes the colour toward `GROUND_EARTH` or `GROUND_GRASS`
+// (their middle taken out, so the mean stays) by `GROUND_MIX`; stones of two sizes (`GROUND_STONES` metres across a cell, their
+// share of the cells, more on the earth) are brighter on their top and darker round their foot, faded out where a pixel
+// spans a quarter of a stone.
+const GROUND_PATCH: vec2<f32> = vec2<f32>(2.2, 6.5);
+const GROUND_SLOPE: f32 = 0.5;
+const GROUND_EARTH: vec3<f32> = vec3<f32>(1.08, 1.03, 0.82);
+const GROUND_GRASS: vec3<f32> = vec3<f32>(0.92, 1.05, 0.84);
+const GROUND_MIX: f32 = 0.9;
+const GROUND_STONES: vec2<f32> = vec2<f32>(0.32, 0.9);
+const GROUND_STONE_SHARE: vec2<f32> = vec2<f32>(0.1, 0.05);
+
+fn ground_patches(world: vec3<f32>, n: vec3<f32>, dx: vec3<f32>, dy: vec3<f32>) -> vec3<f32> {
+    let noise = 0.55 * value_noise(world / GROUND_PATCH.x) + 0.45 * value_noise(world / GROUND_PATCH.y);
+    let earth = smoothstep(0.38, 0.62, noise + GROUND_SLOPE * (1.0 - n.y) * 0.6);
+    let middle = 0.5 * (GROUND_EARTH + GROUND_GRASS);
+    var tint = mix(GROUND_GRASS, GROUND_EARTH, earth) / middle;
+    let footprint = max(length(dx), length(dy));
+    var stones = 1.0;
+    for (var k = 0; k < 2; k++) {
+        let size = GROUND_STONES[k];
+        let shown = 1.0 - smoothstep(0.1 * size, 0.25 * size, footprint);
+        if (shown <= 0.0) {
+            continue;
+        }
+        let p = world / size;
+        let cell = floor(p);
+        let here = hash(cell);
+        if (here < GROUND_STONE_SHARE[k] * (0.4 + 1.2 * earth)) {
+            let centre = 0.3 + 0.4 * vec3<f32>(hash(cell + 1.7), hash(cell + 3.1), hash(cell + 5.3));
+            let radius = mix(0.14, 0.3, hash(cell + 9.1));
+            let at = (fract(p) - centre) / radius;
+            let inside = dot(at, at);
+            if (inside < 1.6) {
+                let cap = clamp(1.0 - inside, 0.0, 1.0);
+                let lit = 0.7 + 0.8 * cap + 0.25 * dot(at, -frame.sun.xyz);
+                let foot = 1.0 - 0.45 * smoothstep(0.8, 1.6, inside) * (1.0 - smoothstep(1.0, 1.6, inside));
+                stones *= mix(1.0, select(foot, lit, inside < 1.0), shown);
+            }
+        }
+    }
+    return mix(vec3<f32>(1.0), tint, GROUND_MIX) * stones;
+}
+
+// The ground scan's factor on the colour at `world` of a face with unit normal `n` and derivatives `dx` and `dy` (taken
+// in uniform control flow), `sun_seen` of the sun reaching it, over the stage's own `surface` colour.
+fn ground_scan(world: vec3<f32>, n: vec3<f32>, dx: vec3<f32>, dy: vec3<f32>, sun_seen: f32, surface: vec3<f32>) -> vec3<f32> {
+    var w = n * n;
+    w = w * w;
+    w = w * w;
+    w = w / (w.x + w.y + w.z);
+    let mean = textureSampleLevel(road_scans, road_scan_sampler, vec2<f32>(0.5), 3, 20.0);
+    let mean_normal = textureSampleLevel(road_scans, road_scan_sampler, vec2<f32>(0.5), 4, 20.0);
+    let luma = vec3<f32>(0.2126, 0.7152, 0.0722);
+    var ratio = vec3<f32>(1.0);
+    var hollows = 0.0;
+    var tilt = vec3<f32>(0.0);
+    for (var k = 0; k < 2; k++) {
+        let scale = GROUND_TILES[k];
+        let p = world / scale;
+        let px = dx * GROUND_SHARP / scale;
+        let py = dy * GROUND_SHARP / scale;
+        var colour = vec3<f32>(0.0);
+        var softer = vec3<f32>(0.0);
+        var height = 0.0;
+        var kept = 0.0;
+        for (var i = 0; i < 3; i++) {
+            if (w[i] < 0.02) {
+                continue;
+            }
+            // The plane across axis i, each offset so the projections do not repeat each other's texels.
+            var q: vec2<f32>;
+            var gx: vec2<f32>;
+            var gy: vec2<f32>;
+            if (i == 0) {
+                q = p.zy; gx = px.zy; gy = py.zy;
+            } else if (i == 1) {
+                q = p.xz; gx = px.xz; gy = py.xz;
+            } else {
+                q = p.xy; gx = px.xy; gy = py.xy;
+            }
+            q += vec2<f32>(0.31, 0.57) * f32(i + 3 * k);
+            if (k == 1) {
+                let r = mat2x2<f32>(GROUND_TURN.x, GROUND_TURN.y, -GROUND_TURN.y, GROUND_TURN.x);
+                q = r * q;
+                gx = r * gx;
+                gy = r * gy;
+            }
+            let scan = textureSampleGrad(road_scans, road_scan_sampler, q, 3, gx, gy);
+            colour += w[i] * scan.rgb;
+            height += w[i] * scan.a;
+            kept += w[i];
+            if (k == 0) {
+                softer += w[i] * textureSampleGrad(road_scans, road_scan_sampler, q, 3, gx * GROUND_SOFT, gy * GROUND_SOFT).rgb;
+                let nor = textureSampleGrad(road_scans, road_scan_sampler, q, 4, gx, gy);
+                let side = select(-1.0, 1.0, n[i] >= 0.0);
+                tilt += w[i] * (plane_normal(i, scan_normal(nor.xy), side) - plane_normal(i, scan_normal(mean_normal.xy), side));
+            }
+        }
+        kept = max(kept, 1e-3);
+        let each = select(colour, softer, k == 0) / kept / max(mean.rgb, vec3<f32>(1e-3));
+        let bright = dot(each, luma);
+        ratio *= pow(vec3<f32>(bright), vec3<f32>(GROUND_DETAIL[k])) * pow(each / max(bright, 1e-3), vec3<f32>(GROUND_CHROMA));
+        if (k == 0) {
+            // The fine grain over its softer self, its contrast raised: the scan's blades are faint at 1024 texels.
+            ratio *= pow(colour / max(softer, vec3<f32>(1e-3)), vec3<f32>(GROUND_GRAIN));
+            hollows = (mean.a - height / kept) * GROUND_HOLLOWS;
+            tilt = tilt / kept;
+        }
+    }
+    ratio *= ground_patches(world, n, dx, dy);
+    // A bright, grey surface takes only the scan's brightness, and not much darker than itself.
+    let top = max(surface.r, max(surface.g, surface.b));
+    let grey = 1.0 - smoothstep(0.1, 0.25, (top - min(surface.r, min(surface.g, surface.b))) / max(top, 1e-3));
+    let bright = smoothstep(0.55, 0.75, dot(surface, luma));
+    let level = dot(ratio, luma);
+    let tint = mix(ratio, vec3<f32>(max(level, GROUND_FLOOR)), grey * bright);
+    let to_sun = -frame.sun.xyz;
+    let lit = clamp(dot(tilt, to_sun) / max(dot(n, to_sun), 0.15), -1.0, 1.0);
+    let relief = 1.0 + lit * sun_seen * GROUND_RELIEF * smoothstep(0.02, 0.15, to_sun.y);
+    return clamp(tint * relief * (1.0 - hollows), vec3<f32>(0.3), vec3<f32>(2.0));
 }
 
 // A scan normal's stage direction from its stored x and y (OpenGL: y up the image, which is the stage's -z).

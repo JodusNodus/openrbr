@@ -27,7 +27,10 @@ pub(super) const SHADOW_PENUMBRA: f32 = 0.04;
 /// game's default) times `GROUND_SCALE`, half as much from the near to the far reach. Filtered 6x6 with `GROUND_BLUR`
 /// metre steps, a soft blob about the car's footprint.
 pub(super) const GROUND_REACH: [f32; 2] = [0.6, 1.4];
-pub(super) const GROUND_SCALE: f32 = 0.4;
+pub(super) const GROUND_SCALE: f32 = 0.7;
+/// The contact shadow's darkening in the in-car view, where the road it falls on is a sliver past the bonnet: the game's
+/// look is kept there.
+pub(super) const GROUND_SCALE_COCKPIT: f32 = 0.4;
 pub(super) const GROUND_BLUR: f32 = 0.08;
 
 /// How much the sun's shadow darkens the stage (`sun_shade` in `shader.wgsl`): about the baked light maps' shadows.

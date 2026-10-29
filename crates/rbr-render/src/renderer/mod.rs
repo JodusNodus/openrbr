@@ -249,7 +249,7 @@ impl Renderer {
         // The volumetric clouds' shadow map ([`cloud_volume::shadow_target`]), read by every draw.
         let (cloud_shadow_view, cloud_shadow_sampler) = cloud_volume::shadow_target(&device);
         let (scan_view, scan_sampler) =
-            road_scan::load(&device, &queue, enhance.gravel || enhance.asphalt || enhance.snow);
+            road_scan::load(&device, &queue, enhance.gravel || enhance.asphalt || enhance.snow || enhance.ground);
         let frames = [(); 3].map(|_| {
             let buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("frame"),
@@ -407,6 +407,7 @@ impl Renderer {
             gravel: enhance.gravel,
             asphalt: enhance.asphalt,
             snow: enhance.snow,
+            ground: enhance.ground,
             lighting: enhance.lighting,
             cube_shift: u32::from(ultra),
             taa,
@@ -436,8 +437,18 @@ impl Renderer {
             };
             // A lit draw is only drawn with its views' pipelines: its `main` is the outside one, not a third to compile.
             let main = viewed.as_ref().map_or_else(|| pipeline_in(DrawPass::Main), |[outside, _]| outside.clone());
-            let prepassed = prepassed(&draw.state, context.lighting)
-                .then(|| [DrawPass::DepthPrepass, DrawPass::AfterPrepass].map(&mut pipeline_in));
+            // The car's lit draws are shaded after the prepass by their outside view's pipeline.
+            let prepassed = prepassed(&draw.state, context.lighting).then(|| {
+                let lit = pipeline.takes_views();
+                [DrawPass::DepthPrepass, DrawPass::AfterPrepass].map(|pass| {
+                    let key = if lit && pass == DrawPass::AfterPrepass {
+                        pipeline.viewed(false).in_pass(DrawPass::CarMain)
+                    } else {
+                        pipeline.in_pass(pass)
+                    };
+                    pipelines.entry(key).or_insert_with(|| context.pipeline(key)).clone()
+                })
+            });
             let lamps = pipeline.takes_lamps().then(|| {
                 [DrawPass::Main, DrawPass::AfterPrepass].map(|pass| {
                     let key = pipeline.with_lamps().in_pass(pass);
