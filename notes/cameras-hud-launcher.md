@@ -185,6 +185,20 @@ carry the layout (`gauges.rs`) and the drawing rules (`dials`).
 - Stages: the rally school and test maps ([HOMEBASE], [RSSTAGE], [RALLYYARD]) are not listed; a saved map naming one
   starts on the first startable stage. The viewer and `rbr-standalone` still start them.
 - A season with no car (saved before the season's car existed) asks for one on Continue.
+- Replays (ours): every live start records one (`--save-replay <files>/replays/<nanoseconds>-<stage>.rrp`,
+  full history kept; `viewer --replay FILE [ARGS...]` watches it again). The file holds the viewer arguments that
+  drove and the stepping process's frame log (`rbr_recording::replay`); watching runs the drive's frames again
+  from its last start, so a replay needs the same install, setup and profile, else it stops with a digest error.
+  While watching there is no device input, pause menu or ghost saving: P or Space pauses, R starts over, the
+  camera key cycles the views, V resets the mouse look, Esc closes.
+- Replays tab, after Car setup (`pages::Page::TABS`, `replay_page.rs`): cached, newest-first headers from
+  `<files>/replays`, searched by title or filename or conditions;
+  malformed and unfinished files stay visible with their error. Rows show the stage time, recorded time in UTC and
+  saved road/cloud/precipitation/fog overrides; details include the stage start time and included penalties. A live
+  window saves its last SPL1 beside the replay as `.rrp.splits`, distinguishing a finish, DNF and an interrupted drive;
+  older replays without it show Time unavailable. Watch uses the saved presentation with the selected
+  camera; Export offers 720p–2160p, 30/60 fps, an MP4 filename, audio and progress from the viewer's log (ffmpeg on
+  PATH). Replay exit never advances the championship. Files are kept until removed by the player.
 - Loading screen (ours, `viewer/loading.rs`): the viewer's window opens first (fullscreen when set) and shows the
   stage's picture (`rbr_render::stage_picture`, the Drive page's preview), `--title` (the launcher's stage and car)
   and a bar while a thread loads the scene, builds the renderer, draws the start view once offscreen and starts the

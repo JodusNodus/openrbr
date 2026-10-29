@@ -20,6 +20,12 @@ pub struct Args {
     /// frames from a log or stdin instead of the clock, each answered and a log's compared (`live::serve_frames`).
     pub frames_out: Option<PathBuf>,
     pub frames: Option<String>,
+    /// `--replay-out FILE` (with `--live`): the clock's frames appended to a replay the viewer started
+    /// (`rbr_recording::replay`); `--replay FILE`: a replay's frames instead of the clock, on the clock or back to back
+    /// (`--replay-pace clock|free`, `live::serve_replay`), writing no files.
+    pub replay_out: Option<PathBuf>,
+    pub replay: Option<PathBuf>,
+    pub replay_pace: live::Pace,
     pub top_speed: Option<f32>,
     pub aim: Option<autopilot::Aim>,
     pub boot: bool,
@@ -107,7 +113,7 @@ pub const USAGE: &str = "usage: rbr-standalone --recording X --stage NAME --snap
        OPTIONS (with --boot): [--damage off|safe|reduced|realistic] [--auto-gears on|off] [--gear-guard on|off] [--neutral-lock on|off] [--clutch-help on|off] [--championship rookie|professional|champion [--championship-damage off|safe|reduced|realistic] [--championship-false-starts N]]
        rbr-standalone --autopilot OUT (--recording X --snapshot Y | --boot [--car N] [WEATHER]) --stage NAME [--steps N] [--top-speed M/S] [--aim X,Y[,COAST]] [--data DIR]
        --stage NAME can be --stage-dir FOLDER or --rsf-stage ID [--rsf-root DIR] (a RallySimFans stage)
-       with --live: [--frames-out FILE | --frames FILE|-] [--pilot autopilot|RECORDING] [--saves DIR] [--profile NAME] [--dispatch direct|pure] [--start-time H:MM]
+       with --live: [--frames-out FILE | --frames FILE|- | --replay-out FILE | --replay FILE [--replay-pace clock|free]] [--pilot autopilot|RECORDING] [--saves DIR] [--profile NAME] [--dispatch direct|pure] [--start-time H:MM]
        a championship stage (with --boot): [--rally-next stage|service|end] [--damage-in FILE] [--damage-out FILE] [--result-out FILE]
        -V, --version prints the version
        -h, --help prints this text";
@@ -118,6 +124,7 @@ pub fn args() -> Result<Args, String> {
     let mut autopilot = None;
     let mut pilot = None;
     let (mut frames_out, mut frames) = (None, None);
+    let (mut replay_out, mut replay, mut replay_pace) = (None, None, live::Pace::Clock);
     let mut top_speed = None;
     let mut aim = None;
     let mut boot = false;
@@ -169,6 +176,15 @@ pub fn args() -> Result<Args, String> {
             "--pilot" => pilot = Some(value),
             "--frames-out" => frames_out = Some(PathBuf::from(value)),
             "--frames" => frames = Some(value),
+            "--replay-out" => replay_out = Some(PathBuf::from(value)),
+            "--replay" => replay = Some(PathBuf::from(value)),
+            "--replay-pace" => {
+                replay_pace = match value.as_str() {
+                    "clock" => live::Pace::Clock,
+                    "free" => live::Pace::Free,
+                    _ => return Err(format!("--replay-pace {value}: clock or free")),
+                }
+            }
             "--dispatch" => {
                 direct = match value.as_str() {
                     "pure" => false,
@@ -342,6 +358,16 @@ pub fn args() -> Result<Args, String> {
     if frames.is_some() && frames_out.is_some() {
         return Err("--frames takes no --frames-out (the frames are given)".into());
     }
+    if (replay_out.is_some() || replay.is_some()) && !live {
+        return Err("--replay-out and --replay need --live".into());
+    }
+    let logs = [frames_out.is_some(), frames.is_some(), replay_out.is_some(), replay.is_some()];
+    if logs.into_iter().filter(|&on| on).count() > 1 {
+        return Err("one of --frames-out, --frames, --replay-out and --replay".into());
+    }
+    if replay.is_some() && pilot.is_some() {
+        return Err("--replay takes no --pilot (the replay drives)".into());
+    }
     if aim.is_some() && autopilot.is_none() {
         return Err("--aim needs --autopilot".into());
     }
@@ -368,6 +394,9 @@ pub fn args() -> Result<Args, String> {
         pilot,
         frames_out,
         frames,
+        replay_out,
+        replay,
+        replay_pace,
         top_speed,
         aim,
         boot,

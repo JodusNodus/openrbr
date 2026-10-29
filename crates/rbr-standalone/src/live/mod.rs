@@ -96,7 +96,7 @@ use crate::{boot, rally};
 mod picture;
 mod realtime;
 
-pub use realtime::{serve_frames, serve_realtime};
+pub use realtime::{serve_frames, serve_realtime, serve_replay, Pace};
 
 use picture::{
     callouts, damper_frame, dash, last_per_wheel, pace_callouts, particle_events, race_hud, split_record, with_fires,

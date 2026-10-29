@@ -43,7 +43,7 @@ VIEWS = {
 }
 # Arguments of the launcher's command a screenshot does not want (the number of values each takes).
 DROP = {'--fullscreen': 0, '--title': 1, '--ghost-weather': 1, '--present': 1, '--fps': 0,
-        '--hud-hide': 1, '--size': 1, '--quit-after': 1}
+        '--hud-hide': 1, '--size': 1, '--quit-after': 1, '--save-replay': 1}
 SIZE = '1920x1080'
 # Shots rendered at once: a shot's load and drive are mostly one thread, its peak memory up to 5 GB (580 at 1080p).
 JOBS = 3

@@ -91,7 +91,8 @@ in force are at the top and the bottom, one line each; history is in git, the lo
 | Cockpit mirrors | done (ours) | RSF Fiesta Rally2: none found; images not anti-aliased |
 | In-car and chase cameras | done | mode 3 ground probe; chase capture |
 | Start orbit, helicam, seat shake | done | - |
-| Replay cameras, replays, replay filters | out | - |
+| ReRBR replays (`.rrp`), history and video export | done (ours) | playback re-simulates logged frames; requires the drive's build, install, setup and profile |
+| Original replays (`.rpl`), replay cameras and filters | out | - |
 | Ghost car (1.02; RSF ghosts not supported) | done | best-ghost store; original run: a ghost with a penalty |
 
 ## Input
@@ -143,7 +144,8 @@ in force are at the top and the bottom, one line each; history is in git, the lo
 - 2026-10-15: the C++ physics is frozen; Rust is translated a group at a time and checked against the original
   directly. A group is bound whole and checked by one run; `--only` and bisect only on a divergence; fuzzed records
   only for unreached branches. Rust matches every word the gate compares.
-- 2026-10-15: the gameplay loop is written directly in Rust and checked against recordings; 1.02 replays deferred.
+- 2026-10-15: the gameplay loop is written directly in Rust and checked against recordings; original `.rpl` playback
+  deferred. ReRBR's own `.rrp` replays are supported.
 - 2026-10-13: no matching or coverage work for UI, menus, rendering code, HedgeHog3D or LocoMotion.
 - The reference is the official 1.02 binaries, not the RSF build. Never modify a player's RSF install; runs of the
   original use a separate vanilla 1.02 install.

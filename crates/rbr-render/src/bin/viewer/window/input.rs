@@ -7,10 +7,11 @@ use rbr_render::bindings::Action;
 use rbr_render::hud::camera_page::CameraPage;
 use rbr_render::hud::pause::{Nav, Outcome, PauseMenu};
 use rbr_render::live::{self, Controls, Live};
-use rbr_render::playback::Drive;
+use rbr_render::playback::{ChaseLook, Drive};
 use rbr_render::shifter::Shifter;
 use std::collections::HashSet;
 use std::time::Instant;
+use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::KeyCode;
 
 impl App {
@@ -35,6 +36,15 @@ impl App {
             return;
         }
         if action == Action::Pause && self.accept_message() {
+            return;
+        }
+        // A replay pauses with no menu: the pause key (or P, Space) pauses and goes on.
+        if action == Action::Pause && self.replay {
+            if self.paused_at.is_some() {
+                self.resume_replay();
+            } else {
+                self.pause_replay();
+            }
             return;
         }
         if action == Action::Pause && self.scene.live.is_some() {
@@ -110,6 +120,61 @@ impl App {
                 }
             }
             Err(e) => eprintln!("viewer: {e}"),
+        }
+    }
+
+    /// A key press while watching a replay: P or Space pauses the replay and goes on, R starts it over, V
+    /// resets the mouse look, the camera key cycles the views as in live, Escape closes.
+    pub fn replay_key(&mut self, code: KeyCode, event_loop: &ActiveEventLoop) {
+        match code {
+            KeyCode::Escape => {
+                self.finish_ghost();
+                event_loop.exit();
+            }
+            KeyCode::KeyP | KeyCode::Space => {
+                if self.paused_at.is_some() {
+                    self.resume_replay();
+                } else {
+                    self.pause_replay();
+                }
+            }
+            KeyCode::KeyR => self.restart_live(),
+            KeyCode::KeyV => self.look = ChaseLook::default(),
+            _ => {
+                if let Some(action) = self.bindings.action_for_key(code) {
+                    self.press(action);
+                }
+            }
+        }
+        self.held.insert(code);
+    }
+
+    /// Pauses the replay: the process's clock stopped (`Live::pause`), the sound stopped where it is, and the
+    /// viewer's clocks (the characters, the renderer's time) held, as with the pause menu but with no menu.
+    pub fn pause_replay(&mut self) {
+        if self.paused_at.is_some() {
+            return;
+        }
+        if let Some(process) = &mut self.scene.live {
+            process.pause();
+        }
+        if let Some(sound) = &self.sound {
+            sound.set_paused(true);
+        }
+        self.paused_at = Some(Instant::now());
+    }
+
+    /// Goes on after pausing the replay, from where the clock stopped, with no catch-up.
+    pub fn resume_replay(&mut self) {
+        let Some(at) = self.paused_at.take() else {
+            return;
+        };
+        self.paused += at.elapsed();
+        if let Some(process) = &mut self.scene.live {
+            process.resume();
+        }
+        if let Some(sound) = &self.sound {
+            sound.set_paused(false);
         }
     }
 
@@ -202,7 +267,8 @@ pub fn movement(held: &HashSet<KeyCode>) -> rbr_render::camera::Movement {
     }
 }
 
-/// The live process started over, with its first frame.
+/// The live process started over, with its first frame (a replay's too: `Live::restart` serves its first frame
+/// again).
 fn restart(process: &mut Live) -> Result<Drive, String> {
     let first = process.restart()?;
     Drive::parse_with(&first, process.clock)

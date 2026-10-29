@@ -49,7 +49,9 @@
 //! replace the install's per file (the car shaders), so the car's shaders are the 1.02 ones. `RBR_DATA` is the extracted 1.0 install (its `Maps` folder holds
 //! the stage files). The window starts at the car start location. Keys: W/S forward and back, A/D
 //! strafe, Space up, C down, Shift fast. Hold the left mouse button and move the mouse to look.
-//! `--screenshot` renders the start view to a PNG and exits without a window. `--camera ex,ey,ez,fx,fy,fz` replaces the
+//! `--screenshot` renders the start view to a PNG and exits without a window. `--video FILE` renders a replay
+//! (`--live` with `--replay`) offline to a video file at `--video-fps` frames a second (default 60), with the
+//! game's sound from the same records the live drive plays. `--camera ex,ey,ez,fx,fy,fz` replaces the
 //! start view with an eye and a forward direction (stage coordinates; for comparing with a capture's view matrix), and
 //! `--size WxH` sets the screenshot size (default 1280x720) and the window's size in pixels (default 1280x720 points).
 //! `--fov DEG` is the horizontal field of view of the free-fly, orbit, cockpit, bonnet and bumper cameras, 30 to 120
@@ -164,8 +166,10 @@ mod draw;
 mod latency;
 mod loading;
 mod perf;
+mod replay;
 mod scene;
 mod screenshot;
+mod video;
 mod window;
 
 use rbr_formats::data::Data;
@@ -187,7 +191,36 @@ fn main() -> ExitCode {
 }
 
 fn run() -> Result<(), String> {
-    let mut args = args::parse_args(std::env::args().skip(1))?;
+    let given: Vec<String> = std::env::args().skip(1).collect();
+    // Watching a replay: its header's viewer arguments, the current command line's extras over them, then
+    // `--live` with the header's stepping command serving the replay.
+    let given = match given.iter().take_while(|a| *a != "--live").position(|a| a == "--replay") {
+        Some(at) => {
+            let path = given.get(at + 1).ok_or("--replay needs a file")?.clone();
+            let file = std::fs::File::open(&path).map_err(|e| format!("{path}: {e}"))?;
+            let saved =
+                rbr_recording::replay::read_args(std::io::BufReader::new(file)).map_err(|e| format!("{path}: {e}"))?;
+            replay::expand(&saved, &given, &path)
+        }
+        None => given,
+    };
+    let mut args = args::parse_args(given.into_iter())?;
+    // Recording a replay: the header first (the stepping process appends its frames), then its command serves
+    // them. A replay watched is not recorded again.
+    if args.replay.is_some() && args.save_replay.is_some() {
+        eprintln!("viewer: --save-replay takes no --replay (a replay is not recorded again)");
+    }
+    if let (Some(path), Some(command)) =
+        (args.replay.is_none().then(|| args.save_replay.clone()).flatten(), args.live.as_mut())
+    {
+        match replay::record(&path, &std::env::args().skip(1).collect::<Vec<_>>()) {
+            Ok(()) => command.extend(["--replay-out".to_owned(), path.display().to_string()]),
+            Err(e) => {
+                eprintln!("viewer: {}: {e}; driving without a replay", path.display());
+                args.save_replay = None;
+            }
+        }
+    }
     let mut data = Data::from_env().ok_or("RBR_DATA is not set")?;
     let mut fmod_bank = None;
     if let Some(key) = &args.rsf_car {
@@ -206,24 +239,30 @@ fn run() -> Result<(), String> {
             eprintln!("viewer: performance log in {}: {e}", dir.display());
         }
     }
-    let result = match &args.screenshot {
-        Some(path) => {
+    let result = match (&args.video, &args.screenshot) {
+        (Some(path), _) => {
+            let mut scene = scene::load(&args, &data, &mut |_| {})?;
+            video::render(&mut scene, &args, &data, fmod_bank.as_deref(), path).map_err(|e| e.to_string())
+        }
+        (None, Some(path)) => {
             let mut scene = scene::load(&args, &data, &mut |_| {})?;
             screenshot::screenshot(&mut scene, &args, &data, path).map_err(|e| e.to_string())
         }
-        None => window::run_window(args, data, fmod_bank),
+        (None, None) => window::run_window(args, data, fmod_bank),
     };
     rbr_render::perf_log::finish();
     result
 }
 
 /// The live drive's sound (`--no-sound` turns it off): the car's FMOD bank when the RSF car has one, and the
-/// `--grind-sound`; the rain or snow the scene's (`Scene::precipitation`).
+/// `--grind-sound`; the rain or snow the scene's (`Scene::precipitation`). With `offline`'s sample rate no device
+/// plays it (`--video`).
 fn start_sound(
     args: &args::Args,
     data: &Data,
     fmod_bank: Option<&Path>,
     precipitation: Option<rbr_render::particles::Precipitation>,
+    offline: Option<u32>,
 ) -> Option<rbr_render::sound::Player> {
     match (&args.live, &args.car) {
         (Some(_), Some(car)) if args.sound => {
@@ -231,7 +270,8 @@ fn start_sound(
             let amount = precipitation.map_or(0.0, |p| p.intensity * 100.0);
             let rain = if precipitation.is_some_and(|p| p.snow) { 0.0 } else { amount };
             let sky = rbr_render::sound::Sky { rain, precipitation: amount, ..Default::default() };
-            let mut player = rbr_render::sound::start(data, car, args.volume, sky, args.codriver, args.volumes);
+            let mut player =
+                rbr_render::sound::start(data, car, args.volume, sky, args.codriver, args.volumes, offline);
             if let (Some(player), Some(m), Some(stage), Some(live)) =
                 (&mut player, &args.codriver_mod, &args.stage, &args.live)
             {

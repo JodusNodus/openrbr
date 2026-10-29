@@ -147,6 +147,17 @@ RSF (drive2 sessions, RSS1): NGP's input thread polls the wheel every 1.1 ms (PO
 about 580 fps; a poll change reaches the car's control in p50 1.0 ms (p95 1.6), its step's end in 1.2 (1.7). Ours stays
 a 60 Hz render frame behind that for the picture; the input and the force are RSF's in real time.
 
+Video (`viewer --replay DRIVE.rrp --video FILE`, `bin/viewer/video.rs`): the replay's frames back to back
+(`--replay-pace free`), one output frame per 1/`--video-fps` s of game time (default 60, default 1920x1080), the same
+per-answer and per-frame updates as the window's live branch; the sound renders offline through the same
+`Player` as live play (`Player::offline`, no audio device) into a WAV that ffmpeg muxes in (`libx264 medium crf 18`, `aac 192k`).
+The window and video use `draw::draw_car` for glass, crew and car; all three paths use `draw::draw_particles`.
+Each caller keeps its clock and update order. Rain cockpit/day flyby PNGs and decoded replay audio match across
+the refactor; video frames after the start orbit match too. Start-orbit frames vary between repeated exports of
+either build; offline crew steering takes the newest asynchronous step.
+Kormoran I + Fiesta Rally3 Evo, 1280x720: 1410 frames from 23.49 s of game time in 22 s wall (63.9 fps render),
+replay 16920 of 16920 frames equal, video+audio durations match, mean audio -14.4 dB.
+
 ## Faithful and ours
 
 | System | Faithful | Ours |
@@ -718,6 +729,11 @@ Calmer verge (2026-10-29): the verge's pale texels (straw, white at a grazing vi
 local mean (`GROUND_MEAN` 5 levels blurrier) are eased to the power `GROUND_PALE_FLAT` 0.3, within `GROUND_CALM` 12 to 30 m
 of the eye. A dirt-and-gravel strip on the paved mesh's non-grey band was dropped: on some stages that band is the whole
 grass verge and bank (580, Peugeot chase: both turned to dirt).
+Shoulders as ground (2026-10-29): the paved mesh's grass and earth (non-grey by the asphalt's test, warm by `ground_rock`'s,
+face up over `SHOULDER_WALL` 0.3 to 0.5) take the ground's treatment instead of the asphalt scan's shoulder strengths, so the
+seam with the terrain beside it (580's straight dark strip) no longer shows; 580's bank, on the paved mesh, turns mossy earth.
+RMSE 580 3.6%, Luceram 2.1%, Gabiria 1.2%, Semetin 0.6%, gravel and snow stages identical; additions off identical; 580 at
+4K scene pass 8.40 to 8.92 ms.
 Far hillside (2026-10-29): from `GROUND_CLUMP_AT` 8 to 18 m out (`ground_far`) the ground texture is read
 `GROUND_FAR_BLUR` 1.5 levels blurrier, its pale texels eased as the verge's, the scan's chroma and grain exponents eased by
 `GROUND_FAR_CALM` 0.6 each, and `ground_clumps` adds grass clumps (value noise at 1.5, 0.7 and 0.32 m: moss green or

@@ -165,7 +165,7 @@ impl Loading {
                     renderer.bake_probes();
                     send(Message::Step(Step::Sound));
                     span.next("start sound");
-                    let sound = crate::start_sound(&args, &data, fmod_bank.as_deref(), scene.precipitation);
+                    let sound = crate::start_sound(&args, &data, fmod_bank.as_deref(), scene.precipitation, None);
                     Box::new(Loaded { scene, renderer, sound })
                 });
                 send(Message::Done(loaded));

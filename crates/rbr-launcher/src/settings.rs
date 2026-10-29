@@ -749,6 +749,7 @@ impl Form {
             gearboxes: settings.gearboxes.clone(),
             // Filled by `list_maps`.
             stage_browser: Default::default(),
+            replays: Default::default(),
             recent_cars: settings.recent_cars.clone(),
             recent_maps: settings.recent_maps.clone(),
             favourite_cars: settings.favourite_cars.clone(),
