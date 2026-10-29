@@ -533,6 +533,10 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         let texels = vec2<f32>(textureDimensions(texture0));
         let native = min(length(dpdx(v.uv0) * texels), length(dpdy(v.uv0) * texels));
         let magnified = 1.0 - smoothstep(GROUND_MAGNIFIED.x, GROUND_MAGNIFIED.y, native);
+        // The paved road's texture is read no finer than `ASPHALT_FINEST` metres a pixel (`asphalt_texel`), as the
+        // hardware's filter would at the draw's mip bias where it is coarser.
+        let paved_reach = max(exp2(mode.mip_bias), ASPHALT_FINEST / max(min(length(dpdx(v.world)), length(dpdy(v.world))), 1e-6));
+        let paved_grads = array<vec2<f32>, 4>(dpdx(v.uv0), dpdy(v.uv0), dpdx(v.uv1), dpdy(v.uv1));
         // The paved mesh's shoulders carry grass textures: only a grey texture (the road's) takes the asphalt's treatment.
         var paved_share = select(0.0, smoothstep(0.75, 0.95, v.wet.x), ASPHALT);
         if (paved_share > 0.0) {
@@ -556,21 +560,26 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         }
         paved_flat = paved_share;
         let blur = steep * TERRAIN_EVEN
-            + select(0.0, (GROUND_BLUR + GROUND_FAR_BLUR * ground_far(v.world)) * ground * magnified, GROUND)
-            + ASPHALT_BLUR * paved_share * magnified;
+            + select(0.0, (GROUND_BLUR + GROUND_FAR_BLUR * ground_far(v.world)) * ground * magnified, GROUND);
+        var even = surface;
         if (blur > 0.0) {
-            var even = terrain_even(texture0, v.uv0, levels.x, blur).rgb;
+            even = terrain_even(texture0, v.uv0, levels.x, blur).rgb;
             if (second_draw()) {
                 even = mix(even, terrain_even(texture1, v.uv1, levels.y, blur).rgb, second.a * v.color.a);
             }
-            // The painted lines stay crisp: where the blurred road is brighter than its mean, it is paint, with its own texels.
-            if (paved_share > 0.0) {
-                let luma = vec3<f32>(0.2126, 0.7152, 0.0722);
-                paved_line = smoothstep(ASPHALT_LINE.x, ASPHALT_LINE.y, dot(even, luma) / max(dot(paved_mean, luma), 1e-3));
-                even = mix(even, surface, paved_line);
-            }
-            surface = even;
         }
+        if (paved_share > 0.0) {
+            var paved = asphalt_texel(texture0, v.uv0, paved_grads[0], paved_grads[1], paved_reach);
+            if (second_draw()) {
+                paved = mix(paved, asphalt_texel(texture1, v.uv1, paved_grads[2], paved_grads[3], paved_reach), second.a * v.color.a);
+            }
+            even = mix(even, paved, paved_share);
+            // The painted lines stay crisp: where the blurred road is brighter than its mean, it is paint, with its own texels.
+            let luma = vec3<f32>(0.2126, 0.7152, 0.0722);
+            paved_line = smoothstep(ASPHALT_LINE.x, ASPHALT_LINE.y, dot(even, luma) / max(dot(paved_mean, luma), 1e-3));
+            even = mix(even, surface, paved_line);
+        }
+        surface = even;
         if (GROUND) {
             var mean = terrain_even(texture0, v.uv0, levels.x, GROUND_MEAN).rgb;
             if (second_draw()) {
@@ -2327,7 +2336,13 @@ const GROUND_HUE: f32 = 0.3;
 const GROUND_BLUR: f32 = 0.75;
 const GROUND_MAGNIFIED: vec2<f32> = vec2<f32>(0.4, 1.0);
 const GROUND_KEEP: f32 = 0.7;
+// The levels past the footprint the paved road's grey test reads its texture at (`paved_grey`).
 const ASPHALT_BLUR: f32 = 3.0;
+// The finest the paved road's own texture is read, metres a pixel: the asphalt scan carries the grain under it, and the
+// texture's flecks magnified read as scratches. Its gradients are widened to it (`paved_reach` in `shade_stage`), so the
+// blur falls off with the distance alone, the same on every quad (blurring by its magnification, quads stretching
+// the texture differently changed the road's look in steps, and a band ahead of the car read blotchier, RSF Fintele).
+const ASPHALT_FINEST: f32 = 0.04;
 // The paved road's local mean is its texture's mip `ASPHALT_MEAN`, whatever the footprint: read that many levels past the
 // footprint, the quads beside each other that stretch the texture differently read different mips and showed as blocks.
 const ASPHALT_MEAN: f32 = 6.0;
@@ -2338,6 +2353,11 @@ const ASPHALT_SHOULDER: vec3<f32> = vec3<f32>(0.5, 0.35, 0.24);
 const SHOULDER_WALL: vec2<f32> = vec2<f32>(0.3, 0.5);
 const ASPHALT_LINE: vec2<f32> = vec2<f32>(1.1, 1.3);
 const ASPHALT_KEEP: f32 = 0.0;
+
+// The paved road's texel at `uv` of `t`, its gradients `dx` and `dy` (taken in uniform control flow) widened by `reach`.
+fn asphalt_texel(t: texture_2d<f32>, uv: vec2<f32>, dx: vec2<f32>, dy: vec2<f32>, reach: f32) -> vec3<f32> {
+    return textureSampleGrad(t, texture_sampler, uv, dx * reach, dy * reach).rgb;
+}
 
 // How much of the pixel is the off-road ground: the vertices' mark against the road's share.
 fn ground_share(v: VertexOut) -> f32 {
