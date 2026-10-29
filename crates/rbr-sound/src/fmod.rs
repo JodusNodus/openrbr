@@ -1095,7 +1095,8 @@ mod tests {
 
     #[test]
     fn a_zero_sample_rate_bank_sample_is_rejected() {
-        let bank = Bank { bytes: Vec::new(), samples: Vec::new(), params: Vec::new(), events: Vec::new(), buses: Vec::new() };
+        let bank =
+            Bank { bytes: Vec::new(), samples: Vec::new(), params: Vec::new(), events: Vec::new(), buses: Vec::new() };
         let sample = rbr_formats::fmod::Sample {
             name: "x".to_owned(),
             rate: 0,
