@@ -56,6 +56,8 @@ pub mod bnk;
 pub mod car_parts;
 pub mod cars;
 pub mod col;
+#[cfg(test)]
+mod damage;
 pub mod dat;
 pub mod data;
 pub mod dds;
