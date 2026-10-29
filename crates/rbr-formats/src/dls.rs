@@ -388,7 +388,7 @@ fn parse_animation_entries(bytes: &[u8], offset: usize) -> Result<Vec<DlsAnimati
     entries_within(bytes, offset, ((bytes.len() / 4).saturating_mul(8)).max(1 << 26))
 }
 
-fn entries_within(bytes: &[u8], offset: usize, budget: usize) -> Result<Vec<DlsAnimationEntry>, Error> {
+fn entries_within(bytes: &[u8], offset: usize, mut budget: usize) -> Result<Vec<DlsAnimationEntry>, Error> {
     let mut cursor = Cursor::at(bytes, offset)?;
     let count = cursor.u32()? as usize;
     let pair_bytes = checked_product(count, 8, cursor.offset, bytes.len())?;
@@ -399,10 +399,8 @@ fn entries_within(bytes: &[u8], offset: usize, budget: usize) -> Result<Vec<DlsA
         pairs.push(cursor.words::<2>()?);
     }
 
-    // Every pair entry re-decoded its record and copied up to six arrays as large as the file, so a small file
-    // with many pairs pointing at one record asked for hundreds of GB. Each distinct record is decoded once and
-    // reused, and the words kept across all entries are capped by `budget`.
-    let mut budget = budget;
+    // Many pairs can point at one record whose arrays span the file, so copying per entry is unbounded: each
+    // distinct record is decoded once and reused, and the words kept across all entries are capped by `budget`.
     let mut spend = |words: usize, offset: usize| -> Result<(), Error> {
         budget = budget.checked_sub(words).ok_or(Error::Allocation { offset, count: words })?;
         Ok(())
