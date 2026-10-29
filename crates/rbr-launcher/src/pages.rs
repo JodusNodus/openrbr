@@ -501,11 +501,34 @@ impl Form {
                 cars.get(pick).is_some_and(|c| c.unavailable().is_none())
             }
         };
+        // What blocks a championship or trial launch: a running viewer, what the Drive page's Start checks
+        // through `readiness` (no program, NGP or car: the status line names the fix), and a car that cannot
+        // start. The Drive page's own selection does not apply: a championship stage resolves on its own row.
+        let launch_blocker = self
+            .child
+            .is_some()
+            .then(|| Issue { text: "the viewer is running".into(), fix: None })
+            .or_else(|| self.readiness())
+            .or_else(|| {
+                self.car().and_then(|car| {
+                    car.unavailable().map(|reason| Issue { text: format!("{}: {reason}", car.name), fix: None })
+                })
+            });
         let request = egui::ScrollArea::vertical()
             .id_salt("championship")
             .show(ui, |ui| {
                 let (data, season) = (&self.data, &self.season);
-                self.rally.ui(ui, data, season, &here, slot, &car_name, Path::new(&archive), &mut car_row)
+                self.rally.ui(
+                    ui,
+                    data,
+                    season,
+                    &here,
+                    slot,
+                    &car_name,
+                    Path::new(&archive),
+                    &mut car_row,
+                    launch_blocker.as_ref(),
+                )
             })
             .inner;
         if browse {

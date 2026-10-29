@@ -427,7 +427,7 @@ impl Form {
     /// Starts a championship stage on its season-table row (the random preset's row) with the stage's tyres, road
     /// wear and the season's options.
     pub fn start_rally_stage(&mut self, start: rally_page::StageStart) {
-        let rally_page::StageStart { stage, args: mut extra, tyre, wear, setup } = start;
+        let rally_page::StageStart { stage, args: mut extra, tyre, wear, setup, prev_tyre } = start;
         // A finished championship stage is offered to the stage record and the personal best too (`M00480810` calls
         // `M00567330` in every mode but 6, 7 and 9); the trials are practice.
         if extra.iter().any(|a| a == "--championship") {
@@ -465,8 +465,9 @@ impl Form {
             Err(e) => self.status = e,
         }
         if self.child.is_none() {
-            // Not started: the page takes it as a stage left at once.
-            self.rally.stage_closed(&self.here());
+            // The stage never started (the status says why): undo what `stage_start` set, so the championship
+            // and the season save stay exactly as they were and the player can retry.
+            self.rally.abort_stage_start(prev_tyre);
         }
     }
 
