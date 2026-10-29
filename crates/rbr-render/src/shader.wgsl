@@ -47,7 +47,7 @@ struct Frame {
     // dirt maps' alpha is raised to its square root (ours, with the surfaces' dirt: weak maps show).
     wetness: vec4<f32>,
     // Renderer additions (`renderer::Enhance`): x 1 for the aerial perspective (`fogged`), y 1 for the flowing water
-    // (`water_flowing`), z 1 for the puddles (`wet_plus`).
+    // (`water_flowing`), z 1 for the puddles (`wet_plus`), w 1 on a snow stage's ground (`ground_far`).
     enhance: vec4<f32>,
     // The sun's shadow cascades (renderer addition, `sun.rs`): stage space to each cascade's clip space; `sun_shadow`
     // x how much the shadow darkens (0: off), y the filter step in cascade uv, z 1 when they hold the overcast sky's
@@ -490,6 +490,8 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     var paved_flat = 0.0;
     var paved_grey = 1.0;
     var paved_line = 0.0;
+    // The factor easing the off-road ground's pale texels (`ground_pale_ease`).
+    var ground_pale = 1.0;
     // The near ground gets the fine structure its thinly spread texture lacks (`terrain_detail`).
     if (detail_draw() && stage_frame() && mode.cutout == 0u && mode.detail.z != 0.0) {
         // On the banks the texture's streaks are blurred out first (`terrain_even`); the flat keeps its filtering.
@@ -517,7 +519,7 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         }
         paved_flat = paved_share;
         let blur = steep * TERRAIN_EVEN
-            + select(0.0, GROUND_BLUR * ground_share(v) * magnified, GROUND)
+            + select(0.0, (GROUND_BLUR + GROUND_FAR_BLUR * ground_far(v.world)) * ground_share(v) * magnified, GROUND)
             + ASPHALT_BLUR * paved_share * magnified;
         if (blur > 0.0) {
             var even = terrain_even(texture0, v.uv0, levels.x, blur).rgb;
@@ -531,6 +533,13 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
                 even = mix(even, surface, paved_line);
             }
             surface = even;
+        }
+        if (GROUND) {
+            var mean = terrain_even(texture0, v.uv0, levels.x, GROUND_MEAN).rgb;
+            if (second_draw()) {
+                mean = mix(mean, terrain_even(texture1, v.uv1, levels.y, GROUND_MEAN).rgb, second.a * v.color.a);
+            }
+            ground_pale = mix(1.0, ground_pale_ease(surface, mean), ground_share(v) * max(ground_near(v.world), ground_far(v.world)));
         }
         // With the ground scan the stage's own high pass is a share of what it was, on the ground the scan covers, and
         // on the paved road with the asphalt scan.
@@ -622,7 +631,7 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             if (share > 0.0) {
                 let n = select(vec3<f32>(0.0, 1.0, 0.0), normalize(v.normal), dot(v.normal, v.normal) > 1e-8);
                 let seen = select(1.0, sun_seen, own);
-                colour = mix(colour, ground_scan(colour, v.world, n, face_dx, face_dy, seen, surface), share);
+                colour = mix(colour, ground_scan(colour * ground_pale, v.world, n, face_dx, face_dy, seen, surface), share);
             }
         }
         if (GRAVEL || ASPHALT || SNOW) {
@@ -2241,6 +2250,38 @@ fn ground_patches(world: vec3<f32>, n: vec3<f32>, dx: vec3<f32>, dy: vec3<f32>) 
     return mix(vec3<f32>(1.0), tint, GROUND_MIX) * stones;
 }
 
+// The off-road ground's texture colour `surface` over its local mean (the texture `GROUND_MEAN` levels blurrier): its pale
+// texels (dried straw, white at a grazing view) past `GROUND_PALE` times the mean's brightness are eased to the power
+// `GROUND_PALE_FLAT` of the excess, and the factor is returned. The calming works on the verge only: it fades out between
+// `GROUND_CALM` metres from the eye, the hill beyond keeps its look.
+const GROUND_MEAN: f32 = 5.0;
+const GROUND_CALM: vec2<f32> = vec2<f32>(12.0, 30.0);
+const GROUND_PALE: f32 = 1.1;
+const GROUND_PALE_FLAT: f32 = 0.3;
+
+fn ground_near(world: vec3<f32>) -> f32 {
+    return 1.0 - smoothstep(GROUND_CALM.x, GROUND_CALM.y, distance(world, frame.eye.xyz));
+}
+
+// The hillside (`GROUND_CLUMP_AT` metres from the eye and beyond) is calmed too: its texture is read `GROUND_FAR_BLUR` levels
+// blurrier, its pale texels eased, the scan's colour ratio's chroma and fine grain eased by the shares `GROUND_FAR_CALM`
+// (pixel-scale pink and green speckle), and `ground_clumps` brings the variation back at the scale of grass clumps.
+const GROUND_CLUMP_AT: vec2<f32> = vec2<f32>(8.0, 18.0);
+const GROUND_FAR_BLUR: f32 = 1.5;
+const GROUND_FAR_CALM: vec2<f32> = vec2<f32>(0.6, 0.6);
+
+fn ground_far(world: vec3<f32>) -> f32 {
+    // Snow stages' ground (`Stage::snow_ground`, `frame.enhance.w`) is left as it was.
+    return (1.0 - frame.enhance.w) * smoothstep(GROUND_CLUMP_AT.x, GROUND_CLUMP_AT.y, distance(world, frame.eye.xyz));
+}
+
+fn ground_pale_ease(surface: vec3<f32>, mean: vec3<f32>) -> f32 {
+    let luma = vec3<f32>(0.2126, 0.7152, 0.0722);
+    let ratio = dot(surface, luma) / max(dot(mean, luma), 1e-3);
+    let eased = GROUND_PALE * pow(max(ratio / GROUND_PALE, 1.0), GROUND_PALE_FLAT);
+    return select(1.0, eased / ratio, ratio > GROUND_PALE);
+}
+
 // Whether the face is rock, stone wall or concrete, 0 to 1: its `surface` colour (the stage's own texture) is grey or cool
 // (its red and green over its blue, against its brightest channel, under `GROUND_ROCK_AT`; soil and grass are warm or
 // green) and the face is steep (its facet's up component, under `GROUND_STEEP`: cuttings, rock walls, parapets). A flat
@@ -2256,6 +2297,48 @@ fn ground_rock(surface: vec3<f32>, facet: f32) -> f32 {
     return cool * (1.0 - smoothstep(GROUND_STEEP.x, GROUND_STEEP.y, facet));
 }
 
+// Grass clumps on the far ground (`ground_far`): value noise at `GROUND_CLUMP_SCALES` metres (each octave fades out where a
+// pixel spans a third of it) decides where the tufts stand (`t`) and, at 2.6 m, which are green and which dry. Tufts take the
+// moss green `GROUND_CLUMP_GREEN` or grey-green `GROUND_CLUMP_DRY` (luma-neutral factors, by `GROUND_CLUMP_TINT`), their
+// gaps are `GROUND_CLUMP_GAP` darker (`GROUND_CLUMP_GAIN` keeps the mean), and the lumps' height is lit by the sun: the
+// slope toward it, by a step of `GROUND_CLUMP_STEP` metres, by `GROUND_CLUMP_RELIEF`. Returns the factor on the colour.
+const GROUND_CLUMP_SCALES: vec3<f32> = vec3<f32>(1.5, 0.7, 0.32);
+const GROUND_CLUMP_GREEN: vec3<f32> = vec3<f32>(0.84, 1.06, 0.76);
+const GROUND_CLUMP_DRY: vec3<f32> = vec3<f32>(1.0, 1.0, 0.94);
+const GROUND_CLUMP_TINT: f32 = 0.6;
+const GROUND_CLUMP_GAP: f32 = 0.3;
+const GROUND_CLUMP_GAIN: f32 = 1.13;
+const GROUND_CLUMP_STEP: f32 = 0.12;
+const GROUND_CLUMP_RELIEF: f32 = 0.3;
+
+fn ground_clump_field(world: vec3<f32>, foot: f32) -> f32 {
+    var sum = 0.0;
+    for (var k = 0; k < 3; k++) {
+        let scale = GROUND_CLUMP_SCALES[k];
+        let weight = (1.0 - smoothstep(0.15, 0.4, foot / scale)) * (0.6 - 0.15 * f32(k));
+        sum += weight * (value_noise(world / scale + f32(k) * 17.3) - 0.5);
+    }
+    return sum;
+}
+
+fn ground_clumps(world: vec3<f32>, n: vec3<f32>, dx: vec3<f32>, dy: vec3<f32>, sun_seen: f32, far: f32) -> vec3<f32> {
+    let luma = vec3<f32>(0.2126, 0.7152, 0.0722);
+    let foot = max(length(dx), length(dy));
+    let here = ground_clump_field(world, foot);
+    let t = smoothstep(0.25, 0.75, 0.5 + 1.6 * here);
+    let green_at = smoothstep(0.3, 0.7, value_noise(world / 2.6 + 5.1));
+    let green = mix(GROUND_CLUMP_DRY, GROUND_CLUMP_GREEN, green_at);
+    var tint = mix(GROUND_CLUMP_DRY, green, t);
+    tint = mix(vec3<f32>(1.0), tint / dot(tint, luma), GROUND_CLUMP_TINT);
+    let to_sun = -frame.sun.xyz;
+    var across = to_sun - n * dot(to_sun, n);
+    across = across / max(length(across), 1e-3);
+    let toward = ground_clump_field(world + across * GROUND_CLUMP_STEP, foot);
+    let lit = clamp((here - toward) / GROUND_CLUMP_STEP * GROUND_CLUMP_RELIEF * 0.4, -0.5, 0.5);
+    let shade = GROUND_CLUMP_GAIN * (1.0 - GROUND_CLUMP_GAP * (1.0 - t)) * (1.0 + lit * sun_seen);
+    return mix(vec3<f32>(1.0), tint * shade, far);
+}
+
 // The colour `colour_in` at `world` of a face with unit normal `n` and derivatives `dx` and `dy` (taken in uniform
 // control flow) under the ground scan, `sun_seen` of the sun reaching it, over the stage's own `surface` colour.
 fn ground_scan(colour_in: vec3<f32>, world: vec3<f32>, n: vec3<f32>, dx: vec3<f32>, dy: vec3<f32>, sun_seen: f32, surface: vec3<f32>) -> vec3<f32> {
@@ -2266,6 +2349,7 @@ fn ground_scan(colour_in: vec3<f32>, world: vec3<f32>, n: vec3<f32>, dx: vec3<f3
     let mean = textureSampleLevel(road_scans, road_scan_sampler, vec2<f32>(0.5), 3, 20.0);
     let mean_normal = textureSampleLevel(road_scans, road_scan_sampler, vec2<f32>(0.5), 4, 20.0);
     let luma = vec3<f32>(0.2126, 0.7152, 0.0722);
+    let far = ground_far(world);
     var ratio = vec3<f32>(1.0);
     var hollows = 0.0;
     var tilt = vec3<f32>(0.0);
@@ -2314,10 +2398,10 @@ fn ground_scan(colour_in: vec3<f32>, world: vec3<f32>, n: vec3<f32>, dx: vec3<f3
         kept = max(kept, 1e-3);
         let each = select(colour, softer, k == 0) / kept / max(mean.rgb, vec3<f32>(1e-3));
         let bright = dot(each, luma);
-        ratio *= pow(vec3<f32>(bright), vec3<f32>(GROUND_DETAIL[k])) * pow(each / max(bright, 1e-3), vec3<f32>(GROUND_CHROMA));
+        ratio *= pow(vec3<f32>(bright), vec3<f32>(GROUND_DETAIL[k])) * pow(each / max(bright, 1e-3), vec3<f32>(select(GROUND_CHROMA, GROUND_CHROMA * (1.0 - GROUND_FAR_CALM.x * far), far > 0.0)));
         if (k == 0) {
             // The fine grain over its softer self, its contrast raised: the scan's blades are faint at 1024 texels.
-            ratio *= pow(colour / max(softer, vec3<f32>(1e-3)), vec3<f32>(GROUND_GRAIN));
+            ratio *= pow(colour / max(softer, vec3<f32>(1e-3)), vec3<f32>(select(GROUND_GRAIN, GROUND_GRAIN * (1.0 - GROUND_FAR_CALM.y * far), far > 0.0)));
             hollows = (mean.a - height / kept) * GROUND_HOLLOWS;
             tilt = tilt / kept;
         }
@@ -2335,8 +2419,14 @@ fn ground_scan(colour_in: vec3<f32>, world: vec3<f32>, n: vec3<f32>, dx: vec3<f3
     let to_sun = -frame.sun.xyz;
     let lit = clamp(dot(tilt, to_sun) / max(dot(n, to_sun), 0.15), -1.0, 1.0);
     let relief = 1.0 + lit * sun_seen * GROUND_RELIEF * smoothstep(0.02, 0.15, to_sun.y);
-    let scanned = colour_in * clamp(tint * relief * (1.0 - hollows), vec3<f32>(0.3), vec3<f32>(2.0));
-    return mix(scanned, vec3<f32>(dot(scanned, luma)), rock * GROUND_ROCK_GREY);
+    var scanned = colour_in * clamp(tint * relief * (1.0 - hollows), vec3<f32>(0.3), vec3<f32>(2.0));
+    scanned = mix(scanned, vec3<f32>(dot(scanned, luma)), rock * GROUND_ROCK_GREY);
+    // The far ground's grass clumps, not on bright grey ground or rock.
+    let shown = far * (1.0 - grey * bright) * (1.0 - rock);
+    if (shown > 0.0) {
+        scanned = scanned * ground_clumps(world, n, dx, dy, sun_seen, shown);
+    }
+    return scanned;
 }
 
 // A scan normal's stage direction from its stored x and y (OpenGL: y up the image, which is the stage's -z).

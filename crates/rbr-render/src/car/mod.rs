@@ -504,6 +504,7 @@ impl Car {
             texture_names: BTreeMap::new(),
             textures: self.textures,
             start_digits: None,
+            snow_ground: false,
             start: None,
             atmosphere: Default::default(),
             driveline: Vec::new(),

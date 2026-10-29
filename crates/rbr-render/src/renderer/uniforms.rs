@@ -342,7 +342,7 @@ impl Renderer {
                     f32::from(self.enhance.lighting),
                     f32::from(self.enhance.water),
                     f32::from(self.enhance.wet),
-                    0.0,
+                    f32::from(self.snow_ground),
                 ],
                 sun_matrices: [cascades.matrices[0], cascades.matrices[1], cascades.matrices[2], cascades.far]
                     .map(|m| m.to_cols_array_2d()),
