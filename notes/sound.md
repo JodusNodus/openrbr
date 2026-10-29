@@ -11,6 +11,7 @@ gain, limiter, ours-divergences), distances in `world.rs`. The model is NGP 7.4.
 modelled only for cars that have one (`fmod`). The pipeline never writes physics or gameplay state.
 
 - Sound limit evidence: tanner in the car plays 1431 of 1607 gravel hits at 32 against 604 at 16 (not in code).
+- A gain is `SOUNDDEF` volume times amp times a player option; volumes are linear amplitude (`SetVol` 0x4d2740).
 - The 30 ms sound thread never runs (not in code); the in-car flag is the viewer's bonnet and cockpit views.
 
 ## Faithful and ours
@@ -31,6 +32,7 @@ Mechanics in `engine.rs` (inputs, bank, slew, crossfade, grains, `MixScale`, out
 `reflections.rs`, whine/turbo/blow-off in `car.rs`.
 
 - All 8 cars use `subaru.eng`; four of the other `.eng` files cannot load in 1.02 (not in code).
+- Output is `E30Engine::Vf08` (0x4ced85): in the car the 400 Hz low-pass at gain 2 (`InsideCutFrequency` is not read); outside the dry block plus its low-passed self above 2500 rpm.
 
 ## Exhaust and car effects
 
