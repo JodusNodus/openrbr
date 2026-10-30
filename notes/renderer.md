@@ -876,8 +876,9 @@ maximum. Quick with two binaries: about 2.5 to 4 minutes.
 ## Open
 
 - Sky dome and cloud transforms and inputs (`SkyDome.vso` `c41`-`c66`); stage in-scatter not reproduced.
-- With `Enhance::sky` at night (sun -15 degrees, 462M and 41M at 23:00) the aerial table's haze is red twilight, which
-  tints the stage and backdrop red under a dark blue sky (on main too).
-- Cut-out backdrop strips with black transparent texels (Odry's panoramas) show a dark rim along the ridge.
+- Cut-out backdrop strips with black transparent texels (Odry's panoramas) show a dark rim along the ridge: the
+  alpha cut falls where the filtered colour is half black (462 `HOR_1`, `HOR_2`: transparent texels (0, 0, 0)). A fix
+  bleeds the colour into them at load (the textures upload as BCn, so a decode and re-encode) or reads such textures
+  as premultiplied; either changes every cut-out with black transparent texels, trees included.
 - Stage `c90`; kind-byte blend bits; reflection items `(1,7)`; water texture; mip levels beyond the 4 stored.
 - Wheel set shown; `Plane_*` shadows; detached node motion; `pc_e_window_*` panels.
