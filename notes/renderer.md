@@ -517,8 +517,9 @@ needles and displays from RBRHUD's gauges, drawn into the dial textures from the
 game draws it. The launcher's Quality section (`graphics_page::Graphics`, user decisions 2026-10-29) sets them by
 preset (Low, Medium, High by default, Ultra) or one by one: `anisotropy`, `decals` and `water` always on (free), the
 four scans as one "Surfaces" switch, `wet` with `--reflections` as "Wet roads" (off; low: no screen-space rays;
-medium; high). Removed: `lens`; `ao`, `msaa`, `taa`, `wind` (user decision
-2026-10-19); `hdr` (2026-10-26: float targets, bloom, exposure and AgX are always on). Older settings and names are
+medium; high), `grass` as "Dense grass" on High and Ultra (user decision 2026-10-30: a half-density, shorter
+field cost more frame time than the full one at 4K, so no middle setting). Removed: `lens`; `ao`, `msaa`, `taa`,
+`wind` (user decision 2026-10-19); `hdr` (2026-10-26: float targets, bloom, exposure and AgX are always on). Older settings and names are
 not read (user decision). The launcher's render scale is 100 % by default. The default frame was
 byte-identical before and after (chase, cockpit, heavy rain, 1920x1080).
 

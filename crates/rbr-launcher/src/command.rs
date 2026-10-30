@@ -1127,14 +1127,14 @@ mod tests {
         assert_eq!(enhance_list(&Quality::Low.graphics(false)), "anisotropy,decals,water");
         assert_eq!(
             enhance_list(&DEFAULT_GRAPHICS),
-            "anisotropy,asphalt,cabin,contact,decals,gravel,ground,lighting,particles,snow,water,wet"
+            "anisotropy,asphalt,cabin,contact,decals,grass,gravel,ground,lighting,particles,snow,water,wet"
         );
         // Ultra with the tyre marks is every addition.
         assert_eq!(Enhance::parse(&enhance_list(&Quality::Ultra.graphics(true))), Enhance::parse("all,grass"));
         for preset in Quality::ALL {
             assert_eq!(Quality::of(preset.graphics(true)), Some(preset));
         }
-        assert_eq!(Quality::of(Graphics { grass: true, ..DEFAULT_GRAPHICS }), None);
+        assert_eq!(Quality::of(Graphics { grass: false, ..DEFAULT_GRAPHICS }), None);
     }
 
     /// The advanced H-shifter takes the car's gearbox and the grind from RBRControls' folder.

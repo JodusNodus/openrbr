@@ -94,7 +94,7 @@ pub enum Quality {
     /// Every addition but our lighting, the costliest.
     Medium,
     High,
-    /// High with the dense grass and the Ultra detail.
+    /// High with the Ultra detail.
     Ultra,
 }
 
@@ -109,7 +109,7 @@ impl Quality {
             surfaces: true,
             cabin: true,
             contact: true,
-            grass: false,
+            grass: true,
             marks,
             wet_roads: WetRoads::High,
             detail: Detail::High,
@@ -122,15 +122,16 @@ impl Quality {
                 surfaces: false,
                 cabin: false,
                 contact: false,
+                grass: false,
                 wet_roads: WetRoads::Off,
                 mirrors: Rate::Off,
                 ..high
             },
             Quality::Medium => {
-                Graphics { lighting: false, wet_roads: WetRoads::Medium, mirrors: Rate::Every(3), ..high }
+                Graphics { lighting: false, grass: false, wet_roads: WetRoads::Medium, mirrors: Rate::Every(3), ..high }
             }
             Quality::High => high,
-            Quality::Ultra => Graphics { grass: true, detail: Detail::Ultra, ..high },
+            Quality::Ultra => Graphics { detail: Detail::Ultra, ..high },
         }
     }
 
@@ -466,8 +467,8 @@ impl Form {
         ui.add_space(4.0);
         let g = &mut self.graphics;
         fields(ui, "quality", |ui| {
-            let tip = "Sets the choices below. Low: the game's look. Medium: all but Lighting, the costliest. High: \
-                       all but Dense grass and Ultra detail. Ultra: all. The render scale, anti-aliasing and tyre \
+            let tip = "Sets the choices below. Low: the game's look. Medium: all but Lighting, the costliest, and Dense \
+                       grass, which needs it. High: all but Ultra detail. Ultra: all. The render scale, anti-aliasing and tyre \
                        marks stay as they are";
             ui.label("Preset").on_hover_text(tip);
             ComboBox::from_id_salt("preset")
