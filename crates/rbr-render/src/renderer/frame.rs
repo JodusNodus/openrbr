@@ -300,7 +300,7 @@ impl Renderer {
             pass.set_pipeline(pipeline);
             pass.set_bind_group(0, &self.shadow_frame, &[]);
             let mut bound = Bound::new(&self.buffers);
-            for mesh in &self.meshes {
+            for mesh in self.meshes.iter().filter(|mesh| mesh.present()) {
                 for draw in mesh.draws.iter().filter(|draw| draw.casts_shadow) {
                     bound.draw(&mut pass, mesh, draw);
                 }

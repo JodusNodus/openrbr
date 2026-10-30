@@ -75,6 +75,10 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   `viewer track-20_N --anti-aliasing off` failed validation before.
 - The car's shadow map's depth range about each 4x4 texel cell (`ShadowRange`, `shadow_range.wgsl`,
   `renderer/shadows.rs`): the cockpit gains little, its own faces vary within the filter.
+- The car's shadow layers draw only the parts the view or the outside views show (`GpuMesh::present`, 2026-10-30):
+  outside, the hidden interior and the other state of a lamp or window cast no more. 580 208 chase 1080p 1.03 to
+  0.71 ms; cockpits byte-identical, outside views within 0.4 % RMSE (shadow edges by a few pixels, the interior
+  through the rear window).
 - The sky draws after the opaque meshes at depth 0 (`PipelineKey::sky`): the frame matches the sky-first order
   (13 scenes) but for `--anti-aliasing off`, where 10 cut-out edge pixels on track-54_E differ by up to 3/255. 4K
   cockpit on Semetin at dusk in heavy rain, every enhancement: 36.7 to 31.3 ms (M3 Pro, 2026-10-20).

@@ -56,6 +56,12 @@ impl GpuMesh {
         }
     }
 
+    /// Whether the mesh is there to cast the car's shadow: shown in this view or in the outside views, so that in the
+    /// cockpit the body casts and outside the hidden interior does not, nor a lamp's or window's other state.
+    pub(super) fn present(&self) -> bool {
+        self.visible || self.outside == Some(true)
+    }
+
     /// Whether the view of `view_projection` leaves the mesh out with its visibility cell (`visibility`).
     pub(super) fn cell_hidden(&self, view_projection: Mat4) -> bool {
         self.cell.is_some_and(|(center, half_extent)| visibility::beyond_reach(view_projection, center, half_extent))
