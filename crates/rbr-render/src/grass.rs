@@ -70,7 +70,7 @@ const SYNC_DISTANCE: f32 = 24.0;
 const UPLOAD_TILES: usize = 64;
 const UPLOAD_BYTES: usize = 8_000_000;
 /// A card's height range, metres, before its patch and kind scale it, and its width against its height.
-const HEIGHT: [f32; 2] = [0.1, 0.2];
+const HEIGHT: [f32; 2] = [0.07, 0.14];
 const WIDTH: [f32; 2] = [1.0, 1.6];
 /// How deep a card's foot goes into the ground, metres: the ground curves away from the plane it stands on.
 const SINK: f32 = 0.03;

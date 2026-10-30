@@ -622,6 +622,11 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             let luma = dot(albedo, vec3<f32>(0.2126, 0.7152, 0.0722));
             let pale = smoothstep(TUFT_PALE.x, TUFT_PALE.y, luma) * (1.0 - smoothstep(TUFT_SNOW.x, TUFT_SNOW.y, luma));
             albedo = albedo * mix(vec3<f32>(TUFT_DARK_LIFT), TUFT_STRAW, pale);
+            // Green leaves no brighter than `TUFT_GREEN_MOST` (leaves measure about 0.08 to 0.15): the retail ferns'
+            // lime read as lit card next to our grass. Straw and snow keep theirs.
+            let green = albedo.g - max(albedo.r, albedo.b);
+            let y = dot(albedo, vec3<f32>(0.2126, 0.7152, 0.0722));
+            albedo = albedo * mix(1.0, min(TUFT_GREEN_MOST / max(y, 1e-4), 1.0), smoothstep(0.02, 0.06, green));
         }
     }
     // A shrub's dark leaves are lifted, a tall tree's are not (`CROWN_SHRUB`, by the crown's half height).
@@ -1207,24 +1212,25 @@ const TUFT_STRAW: vec3<f32> = vec3<f32>(1.07, 1.03, 0.9);
 const GRASS_MARK: f32 = 4.0;
 const GRASS_TIP: vec3<f32> = vec3<f32>(1.12);
 const GRASS_WRAP: f32 = 0.3;
-const GRASS_BASE: f32 = 0.45;
-const GRASS_SUN_BASE: vec2<f32> = vec2<f32>(0.25, 0.5);
+const GRASS_BASE: f32 = 0.6;
+const GRASS_SUN_BASE: vec2<f32> = vec2<f32>(0.4, 0.6);
 const GRASS_RISE: f32 = 0.9;
 const TUFT_PALE: vec2<f32> = vec2<f32>(0.06, 0.16);
 const TUFT_SNOW: vec2<f32> = vec2<f32>(0.3, 0.5);
-const TUFT_DARK_LIFT: f32 = 1.5;
+const TUFT_DARK_LIFT: f32 = 1.2;
+const TUFT_GREEN_MOST: f32 = 0.15;
 const TUFT_BASE: f32 = 0.5;
 const TUFT_RISE: f32 = 0.7;
 const TUFT_SUN_BASE: f32 = 0.5;
 const TUFT_BEND: f32 = 0.8;
 const TUFT_WRAP: f32 = 0.6;
-const TUFT_TRANSMIT: f32 = 0.5;
+const TUFT_TRANSMIT: f32 = 0.35;
 const TUFT_SKY_TINT: f32 = 0.4;
 const CROWN_LIFT: f32 = 1.5;
 const CROWN_SHRUB: vec2<f32> = vec2<f32>(1.0, 3.0);
 const CROWN_BASE: f32 = 0.75;
 const CROWN_WRAP: f32 = 0.25;
-const TUFT_TIP: vec3<f32> = vec3<f32>(1.25, 1.12, 0.9);
+const TUFT_TIP: vec3<f32> = vec3<f32>(1.12, 1.06, 0.94);
 const CROWN_INNER: f32 = 0.7;
 const TUFT_GROUND: vec3<f32> = vec3<f32>(0.3, 0.24, 0.14);
 
