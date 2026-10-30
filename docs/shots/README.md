@@ -27,17 +27,17 @@ Renault Clio Rally3, Sipirkakim (retail 52), flyby view, 13:00
 
 ## Golden hour
 
+### golden-532-clio-cockpit
+
+Renault Clio Rally3, Wythop I (RSF 532), cockpit view, 18:30
+
+![golden-532-clio-cockpit](golden-532-clio-cockpit.jpg)
+
 ### golden-532-fiesta-chase
 
 Ford Fiesta Rally2, Wythop I (RSF 532), chase view, 18:30
 
 ![golden-532-fiesta-chase](golden-532-fiesta-chase.jpg)
-
-### golden-532-m3-cockpit
-
-BMW M3 E30 GrpA, Wythop I (RSF 532), cockpit view, 18:30
-
-![golden-532-m3-cockpit](golden-532-m3-cockpit.jpg)
 
 ### golden-580-208-chase
 

@@ -109,20 +109,20 @@
   "at": 4900
  },
  {
+  "name": "golden-532-clio-cockpit",
+  "stage": 532,
+  "car": "Renault Clio Rally3",
+  "view": "cockpit-clean",
+  "clock": "18:30",
+  "at": 4900
+ },
+ {
   "name": "golden-532-fiesta-chase",
   "stage": 532,
   "car": "Ford Fiesta Rally2",
   "view": "chase",
   "clock": "18:30",
   "at": 4400
- },
- {
-  "name": "golden-532-m3-cockpit",
-  "stage": 532,
-  "car": "BMW M3 E30 GrpA",
-  "view": "cockpit-clean",
-  "clock": "18:30",
-  "at": 4900
  },
  {
   "name": "golden-580-208-chase",
