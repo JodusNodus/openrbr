@@ -555,9 +555,9 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             if (second_draw()) {
                 paved_mean = mix(paved_mean, terrain_even(texture1, v.uv1, 0.0, ASPHALT_MEAN).rgb, second.a * v.color.a);
             }
-            var probe = terrain_even(texture0, v.uv0, levels.x, ASPHALT_BLUR).rgb;
+            var probe = terrain_even(texture0, v.uv0, 0.0, ASPHALT_BLUR).rgb;
             if (second_draw()) {
-                probe = mix(probe, terrain_even(texture1, v.uv1, levels.y, ASPHALT_BLUR).rgb, second.a * v.color.a);
+                probe = mix(probe, terrain_even(texture1, v.uv1, 0.0, ASPHALT_BLUR).rgb, second.a * v.color.a);
             }
             let top = max(probe.r, max(probe.g, probe.b));
             paved_grey = 1.0 - smoothstep(ASPHALT_GREY.x, ASPHALT_GREY.y, (top - min(probe.r, min(probe.g, probe.b))) / max(top, 1e-3));
@@ -623,12 +623,12 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             // Our grass cards (`grass.rs`) take the ground's brightness under them.
             albedo = albedo * (v.specular.x - GRASS_MARK);
         } else if (is_tuft(v)) {
-            // Pale tufts take the straw tint, dark bushes a lift of their dark leaves.
+            // Pale tufts take the straw tint, and green leaves are no brighter than `TUFT_GREEN_MOST` (leaves measure
+            // about 0.08 to 0.15): brighter, 580's lime ferns read as lit card beside our grass. Straw and snow keep
+            // theirs.
             let luma = dot(albedo, vec3<f32>(0.2126, 0.7152, 0.0722));
             let pale = smoothstep(TUFT_PALE.x, TUFT_PALE.y, luma) * (1.0 - smoothstep(TUFT_SNOW.x, TUFT_SNOW.y, luma));
-            albedo = albedo * mix(vec3<f32>(TUFT_DARK_LIFT), TUFT_STRAW, pale);
-            // Green leaves no brighter than `TUFT_GREEN_MOST` (leaves measure about 0.08 to 0.15): the retail ferns'
-            // lime read as lit card next to our grass. Straw and snow keep theirs.
+            albedo = albedo * mix(vec3<f32>(1.0), TUFT_STRAW, pale);
             let green = albedo.g - max(albedo.r, albedo.b);
             let y = dot(albedo, vec3<f32>(0.2126, 0.7152, 0.0722));
             albedo = albedo * mix(1.0, min(TUFT_GREEN_MOST / max(y, 1e-4), 1.0), smoothstep(0.02, 0.06, green));
@@ -1160,36 +1160,36 @@ fn own_light(v: VertexOut, sun_seen: f32, under_cloud: f32) -> vec3<f32> {
     var occlusion = 1.0;
     var ambient_occlusion = 1.0;
     if (tuft || crown) {
-        // Blades lit from both sides: a wrapped facing (a crown's tighter, to keep its lit and shaded halves), the light
-        // through them behind, and the sunlit tips of a tuft a little warmer.
-        // Our grass cards (`grass.rs`) are a dense field rather than lone tufts: a tighter wrap, so each clump has a lit
-        // and a shaded side, and the sun and the sky shut out deeper down it, the sun the more the lower it is
-        // (`GRASS_SUN_BASE` from a low sun to a high one). They keep the ground's hue: no straw in their tips, the sky's
-        // colour as the ground takes it, and the light through the blades tinted by them once more.
-        let ours = tuft && v.specular.x > GRASS_MARK;
-        let wrap = select(select(TUFT_WRAP, GRASS_WRAP, ours), CROWN_WRAP, crown);
+        // Blades lit from both sides: a wrapped facing (a crown's tighter, to keep its lit and shaded halves) and the
+        // light through them behind.
+        // Tufts, our grass cards (`grass.rs`) and the stage's alike, are lit as a dense field: a tight wrap, so each
+        // clump has a lit and a shaded side, the sun and the sky shut out deeper down it, the sun the more the lower it
+        // is (`GRASS_SUN_BASE` from a low sun to a high one), no straw in their tips, and the light through the blades
+        // tinted by their vertex colour. Lit as lone tufts (a wide wrap, warm tips), 580's ferns were 2.4 to 3.7 times
+        // as bright as our grass beside them.
+        let wrap = select(GRASS_WRAP, CROWN_WRAP, crown);
         let wrapped = max(facing + wrap, 0.0) / (1.0 + wrap);
         let behind = max(-facing, 0.0);
-        var shade = mix(TUFT_SUN_BASE, 1.0, smoothstep(0.0, 0.5, height));
-        var through_tint = TUFT_STRAW;
-        if (ours) {
-            let base = mix(GRASS_SUN_BASE.x, GRASS_SUN_BASE.y, smoothstep(0.1, 0.8, -frame.sun.y));
-            shade = mix(base, 1.0, smoothstep(0.0, GRASS_RISE, height));
-            let leaf = pow(hue, vec3<f32>(2.2));
-            through_tint = leaf / max(max(leaf.r, max(leaf.g, leaf.b)), 1e-3);
-        }
-        var tip = mix(vec3<f32>(1.0), select(TUFT_TIP, GRASS_TIP, ours), smoothstep(0.5, 1.0, height));
+        let base = mix(GRASS_SUN_BASE.x, GRASS_SUN_BASE.y, smoothstep(0.1, 0.8, -frame.sun.y));
+        var shade = mix(base, 1.0, smoothstep(0.0, GRASS_RISE, height));
+        let leaf = pow(hue, vec3<f32>(2.2));
+        var through_tint = leaf / max(max(leaf.r, max(leaf.g, leaf.b)), 1e-3);
+        var tip = mix(vec3<f32>(1.0), GRASS_TIP, smoothstep(0.5, 1.0, height));
         if (crown) {
-            // Only the crown's inside is shaded from the sun, not its lit surface.
+            // Only the crown's inside is shaded from the sun, not its lit surface; the light through its leaves is
+            // straw-tinted.
             shade = mix(CROWN_INNER, 1.0, smoothstep(0.2, 0.9, length(crown_at(v))));
             tip = vec3<f32>(1.0);
+            through_tint = TUFT_STRAW;
         }
         sun = sun_unit * (wrapped + TUFT_TRANSMIT * behind * through_tint) * sun_seen * shade * tip;
-        // The sky's light is neutral on straw, and the sunlit ground around it sends its warm light up from below.
+        // The sky's light is near neutral on the stage's plants (their grey-green textures read bluish under a blue
+        // sky; our grass has the ground's hue), and the sunlit ground around a plant sends its warm light up from below.
+        let ours = tuft && v.specular.x > GRASS_MARK;
         let grey = dot(sky, vec3<f32>(0.2126, 0.7152, 0.0722));
         sky = mix(vec3<f32>(grey), sky, select(TUFT_SKY_TINT, 1.0, ours));
         bounce = bounce + TUFT_GROUND * (sky_unit * 0.5 + sun_unit * max(-frame.sun.y, 0.0) * sun_seen) * (1.0 - height);
-        occlusion = mix(select(TUFT_BASE, GRASS_BASE, ours), 1.0, smoothstep(0.0, select(TUFT_RISE, GRASS_RISE, ours), height));
+        occlusion = mix(GRASS_BASE, 1.0, smoothstep(0.0, GRASS_RISE, height));
         if (crown) {
             // The sky's and the ground's light, not the sun's, is shut out of a crown's lower and inner parts.
             ambient_occlusion = mix(CROWN_BASE, 1.0, smoothstep(0.0, 0.6, height)) * mix(CROWN_INNER, 1.0, smoothstep(0.2, 1.0, length(crown_at(v))));
@@ -1211,14 +1211,14 @@ fn own_light(v: VertexOut, sun_seen: f32, under_cloud: f32) -> vec3<f32> {
 }
 
 // A grass tuft's or low bush's pixel (`foliage::with_plants`: `specular.y` 1, `wet` its share of height, `uv1` the way
-// out across), lit as vegetation rather than as a flat card (ours). The straw tint on its albedo (the retail
-// textures are a grey-green with no straw in them), the occlusion from `TUFT_BASE` at its foot to 1 at `TUFT_RISE`
-// of its height, the sun's share at the foot `TUFT_SUN_BASE`, a normal that turns out of the tuft by `TUFT_BEND` at
-// the tip, the sun's wrap past the terminator `TUFT_WRAP` and its transmission behind `TUFT_TRANSMIT`, the sky's
-// colour kept `TUFT_SKY_TINT`, and the ground's `TUFT_GROUND` returned from below.
+// out across), lit as vegetation rather than as a flat card (ours), as our grass is (`GRASS_*`). The straw tint on its
+// pale texels (the retail textures are a grey-green with no straw in them; not the snow's), its green leaves no brighter
+// than `TUFT_GREEN_MOST`, a normal that turns out of the tuft by `TUFT_BEND` at the tip, its transmission behind
+// `TUFT_TRANSMIT`, the sky's colour kept `TUFT_SKY_TINT` (a crown's too; our grass keeps all of it), and the ground's
+// `TUFT_GROUND` returned from below.
 const TUFT_STRAW: vec3<f32> = vec3<f32>(1.07, 1.03, 0.9);
-// `specular.x` of our grass cards past this is their brightness (`grass::GRASS_MARK`); their sunlit tips' lift, wrap,
-// occlusion and sun at the foot, and the share of height both reach 1 at.
+// `specular.x` of our grass cards past this is their brightness (`grass::GRASS_MARK`); a tuft's sunlit tips' lift,
+// wrap, occlusion and sun at the foot, and the share of height both reach 1 at.
 const GRASS_MARK: f32 = 4.0;
 const GRASS_TIP: vec3<f32> = vec3<f32>(1.12);
 const GRASS_WRAP: f32 = 0.3;
@@ -1227,20 +1227,14 @@ const GRASS_SUN_BASE: vec2<f32> = vec2<f32>(0.4, 0.6);
 const GRASS_RISE: f32 = 0.9;
 const TUFT_PALE: vec2<f32> = vec2<f32>(0.06, 0.16);
 const TUFT_SNOW: vec2<f32> = vec2<f32>(0.3, 0.5);
-const TUFT_DARK_LIFT: f32 = 1.2;
-const TUFT_GREEN_MOST: f32 = 0.15;
-const TUFT_BASE: f32 = 0.5;
-const TUFT_RISE: f32 = 0.7;
-const TUFT_SUN_BASE: f32 = 0.5;
+const TUFT_GREEN_MOST: f32 = 0.09;
 const TUFT_BEND: f32 = 0.8;
-const TUFT_WRAP: f32 = 0.6;
 const TUFT_TRANSMIT: f32 = 0.35;
 const TUFT_SKY_TINT: f32 = 0.4;
 const CROWN_LIFT: f32 = 1.5;
 const CROWN_SHRUB: vec2<f32> = vec2<f32>(1.0, 3.0);
 const CROWN_BASE: f32 = 0.75;
 const CROWN_WRAP: f32 = 0.25;
-const TUFT_TIP: vec3<f32> = vec3<f32>(1.12, 1.06, 0.94);
 const CROWN_INNER: f32 = 0.7;
 const TUFT_GROUND: vec3<f32> = vec3<f32>(0.3, 0.24, 0.14);
 
@@ -2358,7 +2352,9 @@ const GROUND_HUE: f32 = 0.3;
 const GROUND_BLUR: f32 = 0.75;
 const GROUND_MAGNIFIED: vec2<f32> = vec2<f32>(0.4, 1.0);
 const GROUND_KEEP: f32 = 0.7;
-// The levels past the footprint the paved road's grey test reads its texture at (`paved_grey`).
+// The mip the paved road's grey test reads its texture at (`paved_grey`), whatever the footprint: read that many levels
+// past it, the far road read a mip where the verge painted beside it in the texture blends in, failed the test and took
+// the ground scan as a shoulder, green and pink patches swimming ahead of the car (RSF Helette 580).
 const ASPHALT_BLUR: f32 = 3.0;
 // The finest the paved road's own texture is read, metres a pixel: the asphalt scan carries the grain under it, and the
 // texture's flecks magnified read as scratches. Its gradients are widened to it (`paved_reach` in `shade_stage`), so the
