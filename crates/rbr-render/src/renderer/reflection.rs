@@ -11,11 +11,11 @@ use crate::profile::Profiler;
 use glam::camera::lh::view;
 use glam::{Mat4, Vec3};
 
+/// The mip chain's downsampling shader.
+pub(crate) const BLIT: &str = include_str!("../blit.wgsl");
 /// The car's reflection (renderer choice standing in for the game's reflection cube, `notes/formats.md` "Shaders and vertex layouts"): the stage without
 /// the car, drawn into a cube map `REFLECTION_SIZE` texels square at the car's centre. All six faces are drawn on the
 /// first frame, then one face per frame.
-/// The mip chain's downsampling shader.
-pub(crate) const BLIT: &str = include_str!("../blit.wgsl");
 pub(super) const REFLECTION_SIZE: u32 = 128;
 /// The reflection cube leaves out the meshes without a visibility cell wholly beyond this, metres (ours; it takes the
 /// stage's cells by [`CUBE_REACH`](crate::visibility::CUBE_REACH), and the surroundings cube reaches the main view's
