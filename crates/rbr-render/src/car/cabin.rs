@@ -290,7 +290,8 @@ impl SunIn {
     ) -> (f32, Vec3, Vec3) {
         let mut decoded: BTreeMap<TextureRef, Option<(usize, usize, Vec<u8>)>> = BTreeMap::new();
         let mut texel = |key: &TextureRef, uv: Vec2| -> Option<Vec3> {
-            let entry = decoded.entry(*key).or_insert_with(|| small_rgba(textures.get(key)?.image.as_ref()?));
+            let entry =
+                decoded.entry(*key).or_insert_with(|| rgba_at_most(textures.get(key)?.image.as_ref()?, ALBEDO_LEVEL));
             let (w, h, rgba) = entry.as_ref()?;
             let x = ((uv.x.rem_euclid(1.0) * *w as f32) as usize).min(w - 1);
             let y = ((uv.y.rem_euclid(1.0) * *h as f32) as usize).min(h - 1);
@@ -416,14 +417,14 @@ impl SunIn {
     }
 }
 
-/// A texture's level at most [`ALBEDO_LEVEL`] wide as RGBA rows, its width and height.
-fn small_rgba(image: &Image) -> Option<(usize, usize, Vec<u8>)> {
+/// A texture's level at most `largest` wide as RGBA rows, its width and height.
+pub(crate) fn rgba_at_most(image: &Image, largest: u32) -> Option<(usize, usize, Vec<u8>)> {
     match image {
         Image::Solid(texel) => Some((1, 1, texel.to_vec())),
         Image::Dds(bytes) => {
             let file = rbr_formats::dds::parse(bytes).ok()?;
             let levels = file.levels();
-            let level = levels.iter().find(|l| l.width.max(l.height) <= ALBEDO_LEVEL).or(levels.last())?;
+            let level = levels.iter().find(|l| l.width.max(l.height) <= largest).or(levels.last())?;
             let rgba = crate::particles::gpu::decode_blocks(level.width, level.height, file.format, level.data)?;
             Some((level.width as usize, level.height as usize, rgba))
         }

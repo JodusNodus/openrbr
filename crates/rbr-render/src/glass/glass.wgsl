@@ -63,7 +63,8 @@ struct Instance {
     @location(5) alpha: f32,
     @location(6) color: vec4<f32>,
     @location(7) normal: vec4<f32>,
-    @location(8) far: vec4<f32>,
+    @location(8) far: vec3<f32>,
+    @location(9) tint: vec4<f32>,
 };
 
 struct Out {
@@ -82,6 +83,8 @@ struct Out {
     @location(8) @interpolate(flat) axis_u: vec3<f32>,
     @location(9) @interpolate(flat) axis_v: vec3<f32>,
     @location(10) @interpolate(flat) normal: vec3<f32>,
+    // What a pane cell's glass lets through of the light outside (its texture's sun strip), across the cell.
+    @location(11) tint: f32,
 };
 
 fn to_screen(clip: vec4<f32>) -> vec2<f32> {
@@ -98,7 +101,7 @@ fn vs_main(@builtin(vertex_index) corner: u32, instance: Instance) -> Out {
         // A pane cell: its low corner and the others' offsets from it, so each corner lands exactly where its
         // neighbours' does and the cells meet without cracks or pinholes.
         let low = select(vec3<f32>(0.0), instance.axis_u, corner == 1u);
-        let high = select(instance.axis_v, instance.far.xyz, corner == 3u);
+        let high = select(instance.axis_v, instance.far, corner == 3u);
         world = instance.centre + select(low, high, corner >= 2u);
     }
     var out: Out;
@@ -120,6 +123,7 @@ fn vs_main(@builtin(vertex_index) corner: u32, instance: Instance) -> Out {
     out.axis_u = normalize(instance.axis_u);
     out.axis_v = normalize(instance.axis_v);
     out.normal = instance.normal.xyz;
+    out.tint = select(1.0, instance.tint[corner & 3u], abs(instance.kind - 6.0) < 0.5);
     return out;
 }
 
@@ -372,11 +376,12 @@ fn mud_inside(in: Out, rim: f32, soft: f32) -> vec4<f32> {
 //   pivot toward the sun.
 const PANE_F0: f32 = 0.04;
 // The dust: the share of the sun's light on the pane it scatters toward the eye (a forward lobe, `DUST_G`, and a broad
-// one, `DUST_BROAD` of it), and of the sky's; patches `DUST_PATCH` across, the swept areas at `DUST_SWEPT` of it.
-const DUST: f32 = 0.01;
+// one, `DUST_BROAD` of it), and of the sky's; patches `DUST_PATCH` across, the swept areas at `DUST_SWEPT` of it. A
+// light film: at 1% the whole view went milky driving toward a low sun.
+const DUST: f32 = 0.004;
 const DUST_G: f32 = 0.8;
 const DUST_BROAD: f32 = 0.3;
-const DUST_SKY: f32 = 0.008;
+const DUST_SKY: f32 = 0.0032;
 const DUST_PATCH: f32 = 0.12;
 const DUST_SWEPT: f32 = 0.55;
 // The side windows' dust against the windscreen's, and the most the slant lengthens the light's way through it.
@@ -476,9 +481,10 @@ fn pane(in: Out, per_pixel: mat2x2<f32>) -> vec4<f32> {
     let fresnel = PANE_F0 + (1.0 - PANE_F0) * pow(1.0 - cos_v, 5.0);
     var through = (1.0 - fresnel) * (1.0 - fresnel);
     let sun = frame.sun.xyz;
-    let sun_on = max(dot(sun, n), 0.0) * frame.sun.w * sun_reach(in.world + n * 0.05);
+    // The outside's light on the pane, behind what its texture lets through (a sun strip keeps it off the dust).
+    let sun_on = max(dot(sun, n), 0.0) * frame.sun.w * sun_reach(in.world + n * 0.05) * in.tint;
     let sun_light = linear(frame.sun_light.rgb) * sun_on;
-    let sky = linear(frame.light.rgb);
+    let sky = linear(frame.light.rgb) * in.tint;
     let cos_t = dot(sun, view);
 
     // The wipers' areas: cleaner, and scratched.

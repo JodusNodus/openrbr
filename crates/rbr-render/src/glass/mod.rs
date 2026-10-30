@@ -22,16 +22,20 @@
 pub mod gpu;
 pub mod model;
 
+use std::collections::BTreeMap;
+
 use glam::{Mat4, Vec2, Vec3};
 use rbr_formats::data::Data;
 use rbr_formats::sgc;
 
 use crate::car;
 use crate::coords;
+use crate::damage::{self, MeshDamage};
 use crate::dirt::Spray;
 use crate::particles::Precipitation;
 use crate::playback::Playback;
 use crate::renderer::Renderer;
+use crate::stage::{Mesh, StageTexture, TextureRef};
 use model::{Conditions, Glass, Kind, Switch, Wiper, Wiping};
 
 /// The windscreen and wiper parts of the interior set, and of the exterior set.
@@ -229,9 +233,10 @@ pub struct CarGlass {
     pub sides: Vec<Side>,
 }
 
-/// A side window (ours): its interior pane's chart, and its exterior pane's when the car has one.
+/// A side window (ours): its interior part, its interior pane's chart, and its exterior pane's when the car has one.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Side {
+    pub part: &'static str,
     pub inside: Windscreen,
     pub outside: Option<Windscreen>,
 }
@@ -284,10 +289,80 @@ impl CarGlass {
         let sides = SIDES
             .iter()
             .filter_map(|&(inside, outside, out)| {
-                Some(Side { inside: pane(inside, out)?, outside: pane(outside, out) })
+                Some(Side { part: inside, inside: pane(inside, out)?, outside: pane(outside, out) })
             })
             .collect();
         Ok(CarGlass { windscreen, wipers, exterior, sides })
+    }
+}
+
+/// What the interior set's window faces let through (ours): `1 - alpha` of their texture's texel under a point of a
+/// pane, 1 off them. The sun strips and visors printed on the glass keep the sun and the sky off the dust behind them.
+#[derive(Debug, Clone, Default)]
+pub struct Tints {
+    /// The faces: their window slot ([`damage::window_slot`]), model-space corners, uvs and image in `images`.
+    faces: Vec<(usize, [Vec3; 3], [Vec2; 3], usize)>,
+    /// The textures as RGBA rows, their width and height.
+    images: Vec<(usize, usize, Vec<u8>)>,
+}
+
+/// The largest texture level [`Tints`] reads.
+const TINT_LEVEL: u32 = 512;
+
+impl Tints {
+    /// The blended faces of the window parts among `meshes` (the interior set, model space), `damage` per mesh.
+    pub fn measure(meshes: &[Mesh], damage: &[MeshDamage], textures: &BTreeMap<TextureRef, StageTexture>) -> Tints {
+        let mut tints = Tints::default();
+        let mut keys: Vec<TextureRef> = Vec::new();
+        for (mesh, slot) in meshes.iter().zip(damage).filter_map(|(mesh, d)| Some((mesh, d.window?))) {
+            for draw in mesh.draws.iter().filter(|draw| draw.state.blend) {
+                let Some(key) = draw.state.textures[0] else { continue };
+                let image = match keys.iter().position(|k| *k == key) {
+                    Some(image) => image,
+                    None => {
+                        let image = textures.get(&key).and_then(|t| t.image.as_ref());
+                        let Some(rgba) = image.and_then(|image| car::cabin::rgba_at_most(image, TINT_LEVEL)) else {
+                            continue;
+                        };
+                        keys.push(key);
+                        tints.images.push(rgba);
+                        keys.len() - 1
+                    }
+                };
+                for t in mesh.indices[draw.indices.clone()].chunks_exact(3) {
+                    let v = [t[0], t[1], t[2]].map(|i| &mesh.vertices[i as usize]);
+                    tints.faces.push((slot, v.map(|v| Vec3::from(v.position)), v.map(|v| Vec2::from(v.uv0)), image));
+                }
+            }
+        }
+        tints
+    }
+
+    /// What window part `part`'s faces let through at chart point `at` of its chart `w`.
+    fn through(&self, part: &str, w: &Windscreen, at: Vec2) -> f32 {
+        let Some(slot) = damage::window_slot(part) else { return 1.0 };
+        self.faces
+            .iter()
+            .filter(|face| face.0 == slot)
+            .find_map(|(_, corners, uvs, image)| {
+                let [a, b, c] = corners.map(|p| w.chart(p));
+                let weights = barycentric(at, a, b, c)?;
+                let uv = uvs[0] * weights[0] + uvs[1] * weights[1] + uvs[2] * weights[2];
+                let (width, height, rgba) = &self.images[*image];
+                let x = ((uv.x.rem_euclid(1.0) * *width as f32) as usize).min(width - 1);
+                let y = ((uv.y.rem_euclid(1.0) * *height as f32) as usize).min(height - 1);
+                Some(1.0 - rgba[(y * width + x) * 4 + 3] as f32 / 255.0)
+            })
+            .unwrap_or(1.0)
+    }
+
+    /// What window part `part` lets through at each film corner of `glass` on its chart `w`, row by row.
+    fn film_corners(&self, part: &str, glass: &Glass, w: &Windscreen) -> Vec<f32> {
+        let [columns, rows] = model::FILM_CELLS;
+        (0..=rows)
+            .flat_map(|row| (0..=columns).map(move |column| (column, row)))
+            .map(|(column, row)| self.through(part, w, glass.film_corner(column, row)))
+            .collect()
     }
 }
 
@@ -295,6 +370,8 @@ impl CarGlass {
 pub struct Drawn {
     car: CarGlass,
     glass: Glass,
+    /// What the windscreen, then each side window, lets through at each film corner ([`Tints::film_corners`]).
+    through: Vec<Vec<f32>>,
     precipitation: Option<Precipitation>,
     /// The wiper switch, and the schedule it gives (changed only while the blades are parked).
     pub switch: Switch,
@@ -314,8 +391,8 @@ impl Drawn {
         &self.car.windscreen
     }
 
-    /// The glass of car `name` in `precipitation`, with the wiper meshes found among `playback`'s interior parts.
-    /// `None` (reported on stderr) when the car has no windscreen part.
+    /// The glass of car `name` in `precipitation`, with the wiper meshes found among `playback`'s interior parts and
+    /// what its windows' faces let through, `tints`. `None` (reported on stderr) when the car has no windscreen part.
     /// The wipers start at `switch`.
     pub fn load(
         data: &Data,
@@ -323,6 +400,7 @@ impl Drawn {
         precipitation: Option<Precipitation>,
         playback: &Playback,
         switch: Switch,
+        tints: &Tints,
     ) -> Option<Drawn> {
         let car = CarGlass::load(data, name).map_err(|e| eprintln!("glass: {e}")).ok()?;
         let [lo, hi] = car.windscreen.bounds;
@@ -333,6 +411,9 @@ impl Drawn {
                 let back = Vec2::new(Vec3::Z.dot(w.axes[0]), Vec3::Z.dot(w.axes[1]));
                 Glass::side(w.bounds, w.area, back, 0x6c_a55 + k)
             })
+            .collect::<Vec<_>>();
+        let through = std::iter::once(tints.film_corners(WINDSCREEN, &glass, &car.windscreen))
+            .chain(car.sides.iter().zip(&sides).map(|(side, g)| tints.film_corners(side.part, g, &side.inside)))
             .collect();
         let parts: Vec<Vec<usize>> = car.wipers.iter().map(|(_, centre)| playback.parts_at(*centre, true)).collect();
         let exterior_parts: Vec<Vec<usize>> = car
@@ -354,7 +435,7 @@ impl Drawn {
             switch.name(),
             wiping
         );
-        Some(Drawn { car, glass, precipitation, switch, wiping, parts, exterior_parts, sides, last: None })
+        Some(Drawn { car, glass, through, precipitation, switch, wiping, parts, exterior_parts, sides, last: None })
     }
 
     /// Follows the drive to its current frame (each frame one physics step, with its tyre `spray`), turns the wiper
@@ -458,9 +539,9 @@ impl Drawn {
         // The panes themselves seen from inside, under all else on them.
         let mut drops = Vec::new();
         if outside.is_none() && effects {
-            drops.extend(pane_cells(&self.glass, w, to_stage, 0.0));
-            for (side, glass) in self.car.sides.iter().zip(&self.sides) {
-                drops.extend(pane_cells(glass, &side.inside, to_stage, 1.0));
+            drops.extend(pane_cells(&self.glass, w, to_stage, 0.0, &self.through[0]));
+            for ((side, glass), through) in self.car.sides.iter().zip(&self.sides).zip(&self.through[1..]) {
+                drops.extend(pane_cells(glass, &side.inside, to_stage, 1.0, through));
             }
         }
         drops.extend(pane_drops(&self.glass, w, outside, to_stage, streak, lit));
@@ -494,7 +575,8 @@ impl Drawn {
                     alpha: 1.0,
                     color: [0.95, 0.96, 1.0, 1.0],
                     normal: [0.0; 4],
-                    far: [0.0; 4],
+                    far: [0.0; 3],
+                    tint: [0; 4],
                 });
             }
         }
@@ -559,7 +641,8 @@ fn pane_drops(
             alpha: index as f32,
             color,
             normal: [0.0; 4],
-            far: [0.0; 4],
+            far: [0.0; 3],
+            tint: [0; 4],
         });
     }
     drops.extend(glass.drops.iter().map(|d| {
@@ -601,7 +684,8 @@ fn pane_drops(
             alpha,
             color,
             normal: [0.0; 4],
-            far: [0.0; 4],
+            far: [0.0; 3],
+            tint: [0; 4],
         }
     }));
     drops
@@ -609,9 +693,10 @@ fn pane_drops(
 
 /// The cells of one pane's chart `w` (its `glass`'s film cells) on the glass, stage space, for the pane seen from
 /// inside (kind 6, `glass.wgsl`): each with its middle and size in the chart, metres, in `color`, and which of its
-/// corners are on the glass in `alpha` (bits low, right, top, far); `seed` 0 the windscreen, 1 a side window. Its
-/// corners as [`gpu::Drop`] says, exact: the glass's corners need not lie in a plane.
-fn pane_cells(glass: &Glass, w: &Windscreen, to_stage: Mat4, seed: f32) -> Vec<gpu::Drop> {
+/// corners are on the glass in `alpha` (bits low, right, top, far), and what they let through (`through` per film
+/// corner, [`Tints::film_corners`]) in `tint`; `seed` 0 the windscreen, 1 a side window. Its corners as
+/// [`gpu::Drop`] says, exact: the glass's corners need not lie in a plane.
+fn pane_cells(glass: &Glass, w: &Windscreen, to_stage: Mat4, seed: f32, through: &[f32]) -> Vec<gpu::Drop> {
     // The chart's mean plane's: the grid's heights step from cell to cell.
     let out = to_stage.transform_vector3(w.axes[2]).normalize();
     (0..glass.film.len())
@@ -619,7 +704,12 @@ fn pane_cells(glass: &Glass, w: &Windscreen, to_stage: Mat4, seed: f32) -> Vec<g
             let (at, size) = glass.film_cell(index);
             // Neighbours take a shared corner's point, so its height, from the same sum.
             let (column, row) = (index % model::FILM_CELLS[0], index / model::FILM_CELLS[0]);
-            let corners = [(0, 0), (1, 0), (0, 1), (1, 1)].map(|(i, j)| glass.film_corner(column + i, row + j));
+            let offsets = [(0, 0), (1, 0), (0, 1), (1, 1)];
+            let corners = offsets.map(|(i, j)| glass.film_corner(column + i, row + j));
+            let tint = offsets.map(|(i, j)| {
+                let t = through.get((row + j) * (model::FILM_CELLS[0] + 1) + column + i).copied().unwrap_or(1.0);
+                (t.clamp(0.0, 1.0) * 255.0).round() as u8
+            });
             let on = corners.iter().enumerate().filter(|(_, &c)| w.inside(c)).map(|(k, _)| 1 << k).sum::<u32>();
             if on == 0 {
                 return None;
@@ -634,7 +724,8 @@ fn pane_cells(glass: &Glass, w: &Windscreen, to_stage: Mat4, seed: f32) -> Vec<g
                 alpha: on as f32,
                 color: [at.x, at.y, size.x, size.y],
                 normal: out.extend(0.0).to_array(),
-                far: (far - low).extend(0.0).to_array(),
+                far: (far - low).to_array(),
+                tint,
             })
         })
         .collect()
@@ -715,5 +806,27 @@ mod tests {
         assert!((wiper.pivot.x + 0.15).abs() < 0.01, "{:?}", wiper.pivot);
         assert!(wiper.park.abs() < 0.1 && wiper.turn == 1.0);
         assert!(wiper.reach[0] > 0.3 && wiper.reach[1] > 0.8);
+    }
+
+    #[test]
+    fn a_sun_strip_on_the_glass_lets_little_through() {
+        // The windscreen's faces with uv v 0 at the top, on a texture clear below and a near-opaque strip on top.
+        let up = Vec3::new(0.0, 0.53, 0.85) * 0.8;
+        let (a, b) = (Vec3::new(0.7, 0.72, -2.13), Vec3::new(-0.7, 0.72, -2.13));
+        let uv = |u: f32, v: f32| Vec2::new(u, v);
+        let slot = damage::window_slot(WINDSCREEN).unwrap();
+        let tints = Tints {
+            faces: vec![
+                (slot, [a, b, b + up], [uv(0.0, 1.0), uv(1.0, 1.0), uv(1.0, 0.0)], 0),
+                (slot, [a, b + up, a + up], [uv(0.0, 1.0), uv(1.0, 0.0), uv(0.0, 0.0)], 0),
+            ],
+            images: vec![(1, 4, [[0, 0, 0, 240], [9, 9, 9, 30], [9, 9, 9, 30], [9, 9, 9, 30]].concat())],
+        };
+        let w = flat();
+        let on = |up_the_glass: f32| w.chart(a.lerp(b, 0.5) + up * up_the_glass);
+        assert!(tints.through(WINDSCREEN, &w, on(0.9)) < 0.1, "the strip");
+        assert!((tints.through(WINDSCREEN, &w, on(0.3)) - 0.88).abs() < 0.01, "the clear glass");
+        assert_eq!(tints.through(WINDSCREEN, &w, Vec2::new(0.0, 5.0)), 1.0, "off the glass");
+        assert_eq!(tints.through("i_window_lf", &w, on(0.9)), 1.0, "another window's faces");
     }
 }

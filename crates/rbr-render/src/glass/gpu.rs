@@ -11,7 +11,8 @@ use crate::atmosphere::Atmosphere;
 /// One drop, flake or bug on the glass: its centre and half axes in stage space, its kind (0 water, 1 snow, 2 bug,
 /// 3 mud, 4 a cell of the wet film, 5 mud seen from inside, 6 a cell of the pane itself seen from inside), a seed for its ragged edge (the film's streak length),
 /// its opacity and its colour (snow, bugs and mud; the film's corners), and the pane's outward normal (kind 6). A pane
-/// cell's `centre` is its low corner, and `axis_u`, `axis_v` and `far` the other corners' offsets from it.
+/// cell's `centre` is its low corner, `axis_u`, `axis_v` and `far` the other corners' offsets from it, and `tint` what
+/// each corner's glass lets through (low, right, top, far).
 #[derive(Debug, Clone, Copy, PartialEq, Pod, Zeroable)]
 #[repr(C)]
 pub struct Drop {
@@ -23,11 +24,12 @@ pub struct Drop {
     pub alpha: f32,
     pub color: [f32; 4],
     pub normal: [f32; 4],
-    pub far: [f32; 4],
+    pub far: [f32; 3],
+    pub tint: [u8; 4],
 }
 
 pub(crate) const SHADER: &str = include_str!("glass.wgsl");
-const INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 9] = [
+const INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 10] = [
     wgpu::VertexAttribute { format: wgpu::VertexFormat::Float32x3, offset: 0, shader_location: 0 },
     wgpu::VertexAttribute { format: wgpu::VertexFormat::Float32, offset: 12, shader_location: 1 },
     wgpu::VertexAttribute { format: wgpu::VertexFormat::Float32x3, offset: 16, shader_location: 2 },
@@ -36,7 +38,8 @@ const INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 9] = [
     wgpu::VertexAttribute { format: wgpu::VertexFormat::Float32, offset: 44, shader_location: 5 },
     wgpu::VertexAttribute { format: wgpu::VertexFormat::Float32x4, offset: 48, shader_location: 6 },
     wgpu::VertexAttribute { format: wgpu::VertexFormat::Float32x4, offset: 64, shader_location: 7 },
-    wgpu::VertexAttribute { format: wgpu::VertexFormat::Float32x4, offset: 80, shader_location: 8 },
+    wgpu::VertexAttribute { format: wgpu::VertexFormat::Float32x3, offset: 80, shader_location: 8 },
+    wgpu::VertexAttribute { format: wgpu::VertexFormat::Unorm8x4, offset: 92, shader_location: 9 },
 ];
 
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]

@@ -93,6 +93,9 @@ pub struct MeshDamage {
     pub wheel: Option<usize>,
     /// A mirror's part, by its node name: with the cabin light its glass mirrors ([`crate::car::cabin::Mirror`]).
     pub mirror: Option<crate::car::cabin::Mirror>,
+    /// The window slot ([`window_slot`]) of a window's part, by its node name: the pane seen from inside takes what its
+    /// texture lets through (`crate::glass::Tints`).
+    pub window: Option<usize>,
 }
 
 /// A scrape amount as the vertex colour's alpha byte.

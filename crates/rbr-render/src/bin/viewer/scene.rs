@@ -237,6 +237,7 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
             let (mut playback, mut live, mut mounts, mut crew, mut car_bounds, mut ghost, mut dials) =
                 (None, None, None, None, None, None, None);
             let mut cabin_sun = None;
+            let mut tints = glass::Tints::default();
             // The `--at` frames that first list a detached part (`start_live`).
             let mut detaching = Vec::new();
             if let Some(car_name) = car_name {
@@ -271,9 +272,9 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
                         report_car(&car.add_to_stage(&mut stage));
                         // Both sets are in the stage before the playback looks up their meshes: adding sorts it.
                         let cabin = args.enhance.cabin.then_some(model.as_slice());
-                        let (mut interior, mut interior_damage, sun_in) =
+                        let (mut interior, mut interior_damage, sun_in, window_tints) =
                             add_interior(data, car_name, &mut stage, cabin)?;
-                        cabin_sun = sun_in;
+                        (cabin_sun, tints) = (sun_in, window_tints);
                         car::follow_dents(&interior, &mut interior_damage, &model, &damage);
                         let rsf = args.rsf_install.as_deref().filter(|_| args.dials && args.rsf_car.is_some());
                         dials = rsf.and_then(|root| load_dials(root, car_name, &mut stage));
@@ -374,7 +375,9 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
                 );
             }
             let glass = match (&playback, car_name) {
-                (Some(playback), Some(car)) => glass::Drawn::load(data, car, precipitation, playback, args.wipers),
+                (Some(playback), Some(car)) => {
+                    glass::Drawn::load(data, car, precipitation, playback, args.wipers, &tints)
+                }
                 _ => None,
             };
             if let Some(characters) = &mut characters {
@@ -571,8 +574,9 @@ fn damage_static(car: &mut car::Car, args: &Args) {
     car.crack(&cracks);
 }
 
-/// The interior set's meshes, what damage does to them, and with the cabin light how much sun gets into the cabin.
-type Interior = (Vec<Mesh>, Vec<MeshDamage>, Option<car::cabin::SunIn>);
+/// The interior set's meshes, what damage does to them, with the cabin light how much sun gets into the cabin, and
+/// what its windows let through.
+type Interior = (Vec<Mesh>, Vec<MeshDamage>, Option<car::cabin::SunIn>, glass::Tints);
 
 /// Adds the car's interior set, for the in-car views, to `stage` and returns its meshes and what damage does to them.
 /// With the cabin light, `exterior`, the exterior set's meshes, shade it (`car::cabin`), and it returns how much sun
@@ -591,7 +595,8 @@ fn add_interior(data: &Data, car_name: &str, stage: &mut Stage, exterior: Option
             sun_in.bounce()
         );
     }
-    let meshes = (interior.meshes.clone(), interior.damage.clone(), sun_in);
+    let tints = glass::Tints::measure(&interior.meshes, &interior.damage, &interior.textures);
+    let meshes = (interior.meshes.clone(), interior.damage.clone(), sun_in, tints);
     let report = interior.add_to_stage(stage);
     eprintln!(
         "car interior set (in-car views): {} meshes drawn, {} missing textures, {} bad triangles",

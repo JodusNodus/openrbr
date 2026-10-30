@@ -489,7 +489,11 @@ not ported.
   exactly (the low one and the others' offsets, `Drop::far`), each from its integer film corner: drawn as a centre and
   two axes the non-planar cells cracked into dark lines along every third cell edge (where the 48 x 24 film corners
   meet the 64 x 32 height grid's edges) and pinholes; a hair of overlap instead showed a bright grid (Clio Rally3
-  Wythop, 2026-10-30). Outside views byte-identical.
+  Wythop, 2026-10-30). The outside's light on the pane (its dust, specks, spots and scratches) is weighed by what the
+  window part's texture lets through at each film corner, `1 - alpha` of its blended faces (`glass::Tints`, read at
+  load from the interior set's window parts, `MeshDamage::window`): the Clio Rally3's printed sun strip glowed brown
+  (0.37 against 0.05 with `windscreen` off) and now only shows the cabin reflected in it. Dust 0.4% (was 1%: the view
+  went milky toward a low sun; dark trees +0.15 in display value, now +0.08). Outside views byte-identical.
   Cars without `i_window_f` (RSF M3 E30) have no glass at all.
 
 ## Skid marks
