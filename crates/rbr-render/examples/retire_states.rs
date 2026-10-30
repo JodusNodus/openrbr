@@ -152,7 +152,7 @@ fn spawn(extra: &[&str]) -> Result<Live, Box<dyn Error>> {
     Ok(live)
 }
 
-/// The viewer's readout for a live frame (`viewer.rs`'s `readout`).
+/// The viewer's readout for a live frame (`viewer/draw.rs`'s `readout`).
 fn readout(live: &Live, controls: &Controls) -> Readout {
     let hud = live.hud;
     Readout {

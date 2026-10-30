@@ -3,7 +3,7 @@
 // `TENT` texels wide (wider than bilinear, so that the rays' per-texel noise does not show as blocks), each times how
 // near its depth is to the pixel's (`DEPTH_MATCH` on the relative difference), not renormalised, so that a pixel whose
 // texels lie on another surface (the car over the road, the verge beside it) takes none of their reflection. The
-// texels hold the reflection premultiplied by its weight. Built with `renderer::depth_source`.
+// texels hold the reflection premultiplied by its weight.
 
 @group(0) @binding(0) var traced: texture_2d<f32>;
 @group(0) @binding(1) var traced_depth: texture_2d<f32>;

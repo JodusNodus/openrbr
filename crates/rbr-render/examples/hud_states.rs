@@ -185,7 +185,7 @@ fn drive(live: &mut Live, controls: &Controls) -> Result<Vec<u8>, Box<dyn Error>
     Ok(live.step_payload(&controls.payload())?)
 }
 
-/// The viewer's readout for a live frame (`viewer.rs`'s `readout`).
+/// The viewer's readout for a live frame (`viewer/draw.rs`'s `readout`).
 fn readout(live: &Live, controls: &Controls) -> Readout {
     let hud = live.hud;
     Readout {

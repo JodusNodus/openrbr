@@ -123,7 +123,7 @@ pub struct Renderer {
     /// drawn for the main eye, so the mirrors and the cubes read these rather than their own eye's. The frames before
     /// the main view's read the last frame's.
     shadow_params: std::cell::Cell<[f32; 4]>,
-    /// The car's sun and contact shadows ([`SHADOW_SIZE`], [`GROUND_REACH`](shadows::GROUND_REACH)): the map's two
+    /// The car's sun and contact shadows ([`SHADOW_SIZE`](shadows::SHADOW_SIZE), [`GROUND_REACH`](shadows::GROUND_REACH)): the map's two
     /// layers, the pipelines that draw into them, and the frame binding those read (the world-anchored frame's buffer
     /// without the map).
     shadow_layers: [wgpu::TextureView; 2],

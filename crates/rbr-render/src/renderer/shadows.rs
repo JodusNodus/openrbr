@@ -34,7 +34,7 @@ pub(super) const GROUND_SCALE: f32 = 0.7;
 pub(super) const GROUND_SCALE_COCKPIT: f32 = 0.4;
 pub(super) const GROUND_BLUR: f32 = 0.08;
 
-/// How much the sun's shadow darkens the stage (`sun_shade` in `shader.wgsl`): about the baked light maps' shadows.
+/// How much the sun's shadow darkens the stage (`sun_light` in `shader.wgsl`): about the baked light maps' shadows.
 pub(super) const SUN_SHADE: f32 = 0.45;
 /// Under an overcast sky ([`Renderer::sunless`]) the cascades hold the light from overhead instead ([`Renderer::shadow_light`]):
 /// how much it darkens, and its filter step in texels, wide for a soft shadow under trees and things.

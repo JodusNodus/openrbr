@@ -10,11 +10,11 @@
 //!
 //! [`add`] keeps the ground's triangles by [`TILE`] square tile (a [`Field`]); the stage holds [`SLOTS`] tile meshes,
 //! and the renderer keeps those of the tiles about the eye filled with their cards ([`Ring`]): all of them near and a
-//! thinning share further out ([`density`]), drawn within [`CLOSE_DISTANCE`] ([`Lod::Close`]). A tile holds a little
+//! thinning share further out ([`density`]), drawn within [`CLOSE_DISTANCE`](crate::stage::CLOSE_DISTANCE) ([`Lod::Close`]). A tile holds a little
 //! more than its density draws ([`take`]), its outermost cards shrunk in ([`Card::grow`]) so the field thickens
 //! smoothly as the eye nears rather than popping at share steps. A worker thread makes the cards off the frame
 //! ([`Ring::update`]), the frame only uploading finished tiles. They
-//! are cut-out stage draws marked as grass tufts, so the plants' lighting takes them (`tuft_light` in `shader.wgsl`)
+//! are cut-out stage draws marked as grass tufts, so the plants' lighting takes them (`own_light` in `shader.wgsl`)
 //! and they cast no sun shadow; they take the sky's occlusion and the bounce computed at load for the ground under
 //! them ([`Light`]).
 
@@ -44,7 +44,7 @@ const LEVEL: f32 = 0.45;
 /// The side of the square tiles, metres.
 const TILE: f32 = 8.0;
 /// How far from the eye grass draws, metres: the tiles with their middle within this of the eye stream in and draw
-/// ([`CLOSE_DISTANCE`] covers a tile past it).
+/// ([`CLOSE_DISTANCE`](crate::stage::CLOSE_DISTANCE) covers a tile past it).
 pub(crate) const REACH: f32 = 100.0;
 /// How far past [`REACH`], about the eye a few frames ahead along its motion, tiles are built before the eye needs
 /// them.
@@ -76,7 +76,7 @@ const WIDTH: [f32; 2] = [1.0, 1.6];
 const SINK: f32 = 0.03;
 /// How far a card's top leans, against its height.
 const LEAN: f32 = 0.25;
-/// The share of height a card's foot is lit as (`tuft_light`'s occlusion and sun at the foot): dense grass shades its
+/// The share of height a card's foot is lit as (`own_light`'s occlusion and sun at the foot): dense grass shades its
 /// own foot.
 const FOOT: f32 = 0.0;
 /// `specular.x` of the cards is this plus their linear brightness against the texture's mean, by which the shader

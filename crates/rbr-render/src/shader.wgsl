@@ -1672,8 +1672,8 @@ fn day_lit() -> bool {
 }
 
 // The sun's specular reflection off a dielectric (F0 0.04) of the class's roughness (`CookTorranceM`, the clear coat's
-// `COAT_HIGHLIGHT` where it has one), Beckmann's
-// distribution with the V-cavity shadowing and Schlick's Fresnel, times pi (the day's sun is its illuminance over pi).
+// `COAT_HIGHLIGHT` where it has one), Beckmann's distribution with the V-cavity shadowing and Schlick's Fresnel, times
+// pi (the day's sun is its illuminance over pi).
 fn sun_highlight(n: vec3<f32>, view: vec3<f32>, to_sun: vec3<f32>) -> f32 {
     var m = select(MATTE, max(mode.light.w, LEAST_ROUGHNESS), mode.light.z > 0.0);
     if (coated()) {
@@ -1683,7 +1683,8 @@ fn sun_highlight(n: vec3<f32>, view: vec3<f32>, to_sun: vec3<f32>) -> f32 {
 }
 
 // One of the sun's highlights, of Beckmann roughness `m`.
-fn sun_lobe(n: vec3<f32>, view: vec3<f32>, to_sun: vec3<f32>, m: f32) -> f32 {    let h = normalize(to_sun + view);
+fn sun_lobe(n: vec3<f32>, view: vec3<f32>, to_sun: vec3<f32>, m: f32) -> f32 {
+    let h = normalize(to_sun + view);
     let nh = max(dot(n, h), 1e-3);
     let nv = max(dot(n, view), 1e-3);
     let nl = max(dot(n, to_sun), 1e-3);

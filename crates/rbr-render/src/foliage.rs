@@ -177,7 +177,7 @@ pub(crate) fn with_plants<'a>(
             let grass = on.high.y - on.low.y < GRASS;
             v.specular[1] = f32::from(u8::from(grass));
             v.specular[2] = 1.0;
-            // Where in the tuft, for `tuft_light` in `shader.wgsl`: `wet` the share of its height, `uv1` the way out of
+            // Where in the tuft, for `own_light` in `shader.wgsl`: `wet` the share of its height, `uv1` the way out of
             // its middle across (-1 to 1 over half its width), which plant draws without a second texture do not use.
             if grass && !second {
                 let (centre, half) = ((on.low + on.high) * 0.5, ((on.high - on.low) * 0.5).max(Vec3::splat(0.02)));

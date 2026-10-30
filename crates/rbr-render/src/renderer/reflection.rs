@@ -22,14 +22,14 @@ pub(super) const REFLECTION_SIZE: u32 = 128;
 /// [`CELL_REACH`](crate::visibility::CELL_REACH)): at 128 texels a 90 degree face shows a
 /// 10 m thing 500 m away as one texel, and on a long stage (RSF 129, 6972 meshes) the far draws cost a face 2-3 ms.
 pub(super) const REFLECTION_REACH: f32 = 500.0;
-/// The surroundings cube's side with [`Detail::Ultra`](super::Detail::Ultra), texels: the car's paint and glass
+/// The surroundings cube's side with [`Detail::Ultra`], texels: the car's paint and glass
 /// mirror it at the coat's blur, a mip level finer than at [`REFLECTION_SIZE`].
 pub(super) const ULTRA_SIZE: u32 = 256;
 
 impl Renderer {
     /// Draws the screen-space reflections ([`ScreenReflection`]) over the frame `draw_scene` kept, and resolves it into
     /// `target`: the water draws, and in wet weather the wet roads, again at half size (full with
-    /// [`Detail::Ultra`](super::Detail::Ultra); `fs_reflect`, which hides what lies behind the frame's depth), then
+    /// [`Detail::Ultra`]; `fs_reflect`, which hides what lies behind the frame's depth), then
     /// laid over the frame (`reflection_composite.wgsl`).
     pub(super) fn draw_reflections(
         &self,
@@ -188,7 +188,7 @@ pub(super) fn face_views(eye: Vec3, face: u32) -> (Mat4, Mat4) {
 
 /// The surroundings cube draws one face every this many frames, a full refresh every six times as many (ours: it
 /// feeds blurred light and far reflections, which change slowly); every frame with
-/// [`Detail::Ultra`](super::Detail::Ultra), whose paint mirrors it sharply.
+/// [`Detail::Ultra`], whose paint mirrors it sharply.
 const SURROUNDINGS_EVERY: u32 = 3;
 /// How far the cube's centre may move from where the surroundings cube last drew a face before it draws all six
 /// again, metres (ours): a seek, a teleport or a cut to another car, never driving between two faces.
@@ -219,7 +219,7 @@ pub(super) fn reflects(draw: &GpuDraw, wetness: f32) -> bool {
 }
 
 /// Screen-space reflections (renderer choice, `fs_reflect` in `shader.wgsl`): the frame is resolved into `scene`
-/// first, then the reflecting draws are drawn again at half size (full with [`Detail::Ultra`](super::Detail::Ultra))
+/// first, then the reflecting draws are drawn again at half size (full with [`Detail::Ultra`])
 /// with `pipeline`, which reads `scene` and the depth (`group`) and writes what their reflected rays hit on screen and
 /// their depth into `traced`; `composite` lays that over the frame (`composite_group`).
 pub(super) struct ScreenReflection {
@@ -238,7 +238,7 @@ pub(super) struct ScreenReflection {
     composite: wgpu::RenderPipeline,
     composite_layout: wgpu::BindGroupLayout,
     composite_group: wgpu::BindGroup,
-    /// The traced targets' side over the frame's: a half, or 1 with [`Detail::Ultra`](super::Detail::Ultra).
+    /// The traced targets' side over the frame's: a half, or 1 with [`Detail::Ultra`].
     scale: u32,
 }
 

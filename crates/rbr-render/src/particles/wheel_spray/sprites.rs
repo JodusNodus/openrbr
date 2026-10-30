@@ -2,6 +2,7 @@
 //! snow powder) and a drop (water, drawn streaked along its motion), each white, the pool's colour tinting it. RGBA,
 //! [`SIZE`] square, straight alpha.
 
+use super::ground::smoothstep;
 use crate::particles::gpu::SPRITE_SIZE as SIZE;
 
 /// The sprite ids the pools name, past the game's (`particletextures.ini` has a few dozen).
@@ -65,7 +66,7 @@ fn puff(x: f32, y: f32) -> [f32; 4] {
 fn wisp(x: f32, y: f32) -> [f32; 4] {
     let r2 = x * x + y * y;
     let lumps = 0.5 * noise(x, y, 3.0) + 0.3 * noise(x, y, 6.0) + 0.2 * noise(x, y, 12.0);
-    let alpha = (1.0 - r2).max(0.0).powf(1.5) * smooth(0.3, 0.7, lumps);
+    let alpha = (1.0 - r2).max(0.0).powf(1.5) * smoothstep([0.3, 0.7], lumps);
     [1.0, 1.0, 1.0, alpha]
 }
 
@@ -76,24 +77,19 @@ fn billow(x: f32, y: f32) -> [f32; 4] {
     let (wx, wy) = (x + 0.22 * (noise(x, y, 3.0) - 0.5), y + 0.22 * (noise(y, x, 3.0) - 0.5));
     let ridge = |cells: f32| 1.0 - (2.0 * noise(wx, wy, cells) - 1.0).abs();
     let lobes = 0.5 * ridge(3.0) + 0.3 * ridge(6.0) + 0.2 * ridge(12.0);
-    let body = smooth(0.0, 0.45, 1.0 - r2);
-    let alpha = body * smooth(0.38, 0.68, lobes + 0.25 * (1.0 - r2));
-    let shade = (0.6 + 0.6 * smooth(0.35, 0.95, lobes)) * (0.86 + 0.14 * (y * 0.5 + 0.5));
+    let body = smoothstep([0.0, 0.45], 1.0 - r2);
+    let alpha = body * smoothstep([0.38, 0.68], lobes + 0.25 * (1.0 - r2));
+    let shade = (0.6 + 0.6 * smoothstep([0.35, 0.95], lobes)) * (0.86 + 0.14 * (y * 0.5 + 0.5));
     [shade, shade, shade, alpha]
 }
 
 /// A round drop, bright at its middle.
 fn drop(x: f32, y: f32) -> [f32; 4] {
     let r = (x * x + y * y).sqrt();
-    let alpha = 1.0 - smooth(0.55, 1.0, r);
-    let core = 1.0 - smooth(0.0, 0.5, r);
+    let alpha = 1.0 - smoothstep([0.55, 1.0], r);
+    let core = 1.0 - smoothstep([0.0, 0.5], r);
     let shade = 0.8 + 0.2 * core;
     [shade, shade, shade, alpha]
-}
-
-fn smooth(from: f32, to: f32, x: f32) -> f32 {
-    let t = ((x - from) / (to - from)).clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
 }
 
 #[cfg(test)]

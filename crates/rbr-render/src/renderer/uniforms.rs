@@ -71,7 +71,7 @@ pub(super) struct FrameUniform {
     /// Stage space to the car shadow map's clip space ([`SHADOW_SIZE`]).
     shadow_matrix: [[f32; 4]; 4],
     /// `x` how much the car's shadow darkens the stage (from `Car_Shadow_Alpha`, [`SHADOW_SCALE`]), `y` 1 when the map
-    /// holds the car (0: no shadow), `z` one filter step in map uv ([`SHADOW_PENUMBRA`]).
+    /// holds the car (0: no shadow), `z` one filter step in map uv ([`SHADOW_PENUMBRA`](super::shadows::SHADOW_PENUMBRA)).
     shadow: [f32; 4],
     /// Stage space to the contact shadow layer's clip space ([`GROUND_REACH`]).
     ground_matrix: [[f32; 4]; 4],

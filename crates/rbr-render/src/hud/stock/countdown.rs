@@ -1,4 +1,4 @@
-//! The start countdown as an LED plaque: a dark board of dots with the call ([`super::countdown_call`]) in a 5x7 dot
+//! The start countdown as an LED plaque: a dark board of dots with the call ([`crate::hud::countdown_call`]) in a 5x7 dot
 //! font, its top and bottom rows lit red beside it for 3, 2, 1 and green for GO, dimmed before the 3. Ours: the look
 //! follows RallySimFans' countdown board, drawn as shapes; 1.02 draws its "3 2 1 GO!" sprites instead.
 

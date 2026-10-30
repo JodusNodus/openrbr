@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 
 impl Stage {
     /// Reads the texture files for this stage's selection from `maps` into [`Stage::textures`], and lists
-    /// the ones that are missing in [`LoadReport::missing_textures`].
+    /// the ones that are missing in [`LoadReport::missing_textures`](super::LoadReport::missing_textures).
     ///
     /// A stage in a folder of its own (RallySimFans) overlays its `TextureFilenameMap<id>.ini` on the retail map, and
     /// its requests are looked up in its folder first, then in the other stage folders beside it, then in `maps`, as

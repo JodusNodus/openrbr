@@ -34,7 +34,7 @@ pub(super) fn detach_part(name: &str) -> Option<u32> {
 }
 
 /// The side doors and their interior panels, with the side sign of their hinge (see
-/// [`coords::hinged_panel_to_car`]): the left door's hinge axis is up, the right's is down.
+/// [`coords::hinged_panel_to_car`](crate::coords::hinged_panel_to_car)): the left door's hinge axis is up, the right's is down.
 pub(super) fn hinge_side(name: &str) -> Option<(&'static str, f32)> {
     match name {
         "e_door_l" => Some(("l", 1.0)),

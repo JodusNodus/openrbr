@@ -307,7 +307,7 @@ impl Playback {
         Inputs { brake: self.drive.samples[index].brake_lamp, reverse: self.reverse, game, headlights: self.headlights }
     }
 
-    /// The game's lamps of a recording, by step (a replay's lights events, [`crate::particles::Particles::recorded_lamps`]):
+    /// The game's lamps of a recording, by step (a replay's lights events, [`crate::particles::recorded_lamps`]):
     /// each from the first frame with its step on.
     pub fn set_recorded_lamps(&mut self, lamps: &std::collections::BTreeMap<u32, Lamps>) {
         for (index, sample) in self.drive.samples.iter().enumerate() {
