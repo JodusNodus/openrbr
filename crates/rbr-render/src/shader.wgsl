@@ -767,7 +767,7 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             colour = colour * mix(vec3<f32>(1.0), sun_light(v, front, open_sky, first.rgb), near_sun * (1.0 - under_cloud));
         }
     }
-    colour = backlit(colour, first.rgb, v.uv0, night);
+    colour = backlit(colour, first.rgb, v.uv0, night, 1.0);
     alpha = plant_faded(v, alpha);
     if (ALPHA_TEST && mode.alpha_test != 0u && alpha <= mode.alpha_ref) {
         discard;
@@ -792,16 +792,26 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
 // A texel's backlight (ours): by night, and at dusk as much as the lamps light the stage (always with `mode.glow.z`),
 // the texel glows in the light of its emissive mask (the RBRHUD gauges' `emissive_mask`, `rbr_render::dials`; the
 // start board's digits and lamps, `rbr_render::start_board`): the mask's colour (the bulbs' pools on analog faces)
-// plus its alpha in white (displays, warning lamps).
-fn backlit(colour: vec3<f32>, texel: vec3<f32>, uv: vec2<f32>, night: bool) -> vec3<f32> {
+// plus its alpha in white (displays, warning lamps). In a mirror's pass (`frame.night.z`) the light is what a
+// recessed face shows past its bezel at `facing`, the cosine to the eye (`DIAL_RECESS`): the dials are flat in the
+// meshes, and the windscreen, seeing them from some 75 degrees off, mirrored every face whole at night (Audi quattro
+// A2, Helette). The main view sees the dials about head on, and the lamps standing out of the dash (the A2's orange
+// dome) glow on their sides.
+fn backlit(colour: vec3<f32>, texel: vec3<f32>, uv: vec2<f32>, night: bool, facing: f32) -> vec3<f32> {
     let level = select(select(frame.dusk.w, 1.0, night), 1.0, mode.glow.z != 0.0);
     if (mode.glow.x == 0.0 || level <= 0.0) {
         return colour;
     }
     let mask = textureSampleLevel(glow_texture, texture_sampler, uv, 0.0);
     let backlight = mask.rgb + vec3<f32>(mask.a * mode.glow.y);
-    return max(colour, texel * backlight * DIAL_GLOW * level);
+    let c = clamp(facing, 1e-3, 1.0);
+    let shown = select(1.0, clamp(1.0 - DIAL_RECESS * sqrt(1.0 - c * c) / c, 0.0, 1.0), frame.night.z != 0.0);
+    return max(colour, texel * backlight * DIAL_GLOW * level * shown);
 }
+
+// A dial's or lamp's depth in its housing over its radius (`backlit`): at 25 degrees off its axis 88 % of the face
+// shows, at 75 degrees 7 %.
+const DIAL_RECESS: f32 = 0.25;
 
 // The interior glass's alpha over which a texel is printed on the glass (lit), not a tint: from x, wholly at y (ours);
 // and its colour's chroma (max - min) over which it is printed whatever its alpha (the BMW M3 E30's yellow banner at
@@ -1046,7 +1056,7 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     if (lit_class() == 3u) {
         colour = max(colour, first.rgb * LAMP_GLOW);
     }
-    colour = backlit(colour, first.rgb, v.uv0, night);
+    colour = backlit(colour, first.rgb, v.uv0, night, dot(n, view));
     // The scrape (`CarPaint`, `CarPaintInt`): the scrape texel times the diffuse light (`t3 * v0`, no highlight or
     // reflection) replaces the paint by `sat(v0.w * t3.a)`, `v0.w` being the vertex's damage weight / 100.
     if (second_draw()) {

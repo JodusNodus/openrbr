@@ -513,7 +513,15 @@ not ported.
   it, now 40), and the cabin reflected in the outer face weighed by the texture twice (the strip keeps only the inner
   face's: the Clio Rally3's switch panel over its strip 56 to 35 of 255). Left: the display reflected at the strip's
   edge (lit texels at the Fresnel of 60 degrees, physical; a viewing cone on the backlight changed nothing, its
-  display is not backlit at 18:30). The bulkhead (`glass::bulkhead`, with
+  display is not backlit at 18:30).
+- Dials in the reflection at night (2026-10-30, `backlit` in `shader.wgsl`): the windscreen sees the dash some 75
+  degrees off its faces, and the flat dials of the meshes showed whole and at their full backlight (Audi quattro A2,
+  Helette 22:30: the gauge cluster mirrored over the road). In a mirror's pass a backlit texel shows what a recessed
+  face does past its bezel, `1 - DIAL_RECESS tan` of the angle off its face (0.25: 7 % at 75 degrees); the main view
+  is unchanged (the A2's dash byte-identical; a recess there hollowed the orange dome lamp that stands out of the
+  dash). The dials are 25 cd/m2 (`DIAL_GLOW` over `NIGHT_PRE_EXPOSURE`), their 8 % reflection as bright as the lit
+  road, and local exposure takes the dials themselves down: the pair read alike. Left: the dome's reflection (a lit
+  lamp), the Clio Rally3's display at the top of the glass (seen 45 degrees off from above, physical). The bulkhead (`glass::bulkhead`, with
   `windscreen`): a dark strip hanging 0.6 m from the glass's foot in the interior set, drawn as its first opaque lit
   face, added after the cabin light's bake (seeing no sky) and drawn only in the in-car mirrors' passes, casting no
   shadow (`Renderer::set_reflected_only`). The sets leave gaps between the dash and the glass that the driver never
