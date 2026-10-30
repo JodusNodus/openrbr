@@ -10,7 +10,7 @@ Reimplementation of Richard Burns Rally 1.02 with NGP 7 physics which can run na
   as in RBR 1.02, checked against recordings of the original.
 - **The community's cars and stages.** Any original file format stage and NGP car works out of the box.
 - **A modern look you can switch off.** A physically based sky and sun, HDR, sun shadows, rain and dust, a lit
-  cockpit and working mirrors. Each addition has its own switch, so you can drive the original look too.
+  cockpit, windscreen glass and working mirrors. Each addition has its own switch, so you can drive the original look too.
 
 ## Gallery
 
