@@ -63,6 +63,7 @@ struct Instance {
     @location(5) alpha: f32,
     @location(6) color: vec4<f32>,
     @location(7) normal: vec4<f32>,
+    @location(8) far: vec4<f32>,
 };
 
 struct Out {
@@ -92,7 +93,14 @@ fn to_screen(clip: vec4<f32>) -> vec2<f32> {
 fn vs_main(@builtin(vertex_index) corner: u32, instance: Instance) -> Out {
     let x = f32(corner & 1u) * 2.0 - 1.0;
     let y = f32((corner >> 1u) & 1u) * 2.0 - 1.0;
-    let world = instance.centre + instance.axis_u * x + instance.axis_v * y;
+    var world = instance.centre + instance.axis_u * x + instance.axis_v * y;
+    if (abs(instance.kind - 6.0) < 0.5) {
+        // A pane cell: its low corner and the others' offsets from it, so each corner lands exactly where its
+        // neighbours' does and the cells meet without cracks or pinholes.
+        let low = select(vec3<f32>(0.0), instance.axis_u, corner == 1u);
+        let high = select(instance.axis_v, instance.far.xyz, corner == 3u);
+        world = instance.centre + select(low, high, corner >= 2u);
+    }
     var out: Out;
     out.position = frame.view_projection * vec4<f32>(world, 1.0);
     out.local = vec2<f32>(x, y);

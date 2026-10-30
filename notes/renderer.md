@@ -485,7 +485,11 @@ not ported.
   shows over dark backgrounds and the tinted band, barely over the lit road. +1.7 ms at 1080p (208 cockpit: mirrors span
   1.2 to 2.9 ms), most of it the stage to 300 m behind the rear window. Tried and dropped: a screen-space march over the
   frame's depth (the dash under the glass, what the glass mostly reflects, is hidden from the eye behind the dash's
-  crest). Normal: the chart's mean plane (the grid's stepped heights striped per cell). Outside views byte-identical.
+  crest). Normal: the chart's mean plane (the grid's stepped heights striped per cell). A cell is its four corners
+  exactly (the low one and the others' offsets, `Drop::far`), each from its integer film corner: drawn as a centre and
+  two axes the non-planar cells cracked into dark lines along every third cell edge (where the 48 x 24 film corners
+  meet the 64 x 32 height grid's edges) and pinholes; a hair of overlap instead showed a bright grid (Clio Rally3
+  Wythop, 2026-10-30). Outside views byte-identical.
   Cars without `i_window_f` (RSF M3 E30) have no glass at all.
 
 ## Skid marks

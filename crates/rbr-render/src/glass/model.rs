@@ -361,6 +361,13 @@ impl Glass {
         (lo + size * Vec2::new(column as f32 + 0.5, row as f32 + 0.5), size)
     }
 
+    /// The chart point at the film cells' corner `column`, `row` (0 to [`FILM_CELLS`]), the same for every cell
+    /// meeting there.
+    pub fn film_corner(&self, column: usize, row: usize) -> Vec2 {
+        let [lo, hi] = self.bounds;
+        lo + (hi - lo) * Vec2::new(column as f32 / FILM_CELLS[0] as f32, row as f32 / FILM_CELLS[1] as f32)
+    }
+
     /// One step of `dt` seconds: new drops, flakes and bugs, the drops' motion and merging, melting and fading, then the
     /// wipers moving to `phase` (their angle fraction) and clearing what they swept. `inside` says whether a chart point
     /// is on the glass.

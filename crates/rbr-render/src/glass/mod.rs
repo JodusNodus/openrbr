@@ -494,6 +494,7 @@ impl Drawn {
                     alpha: 1.0,
                     color: [0.95, 0.96, 1.0, 1.0],
                     normal: [0.0; 4],
+                    far: [0.0; 4],
                 });
             }
         }
@@ -558,6 +559,7 @@ fn pane_drops(
             alpha: index as f32,
             color,
             normal: [0.0; 4],
+            far: [0.0; 4],
         });
     }
     drops.extend(glass.drops.iter().map(|d| {
@@ -599,6 +601,7 @@ fn pane_drops(
             alpha,
             color,
             normal: [0.0; 4],
+            far: [0.0; 4],
         }
     }));
     drops
@@ -606,29 +609,32 @@ fn pane_drops(
 
 /// The cells of one pane's chart `w` (its `glass`'s film cells) on the glass, stage space, for the pane seen from
 /// inside (kind 6, `glass.wgsl`): each with its middle and size in the chart, metres, in `color`, and which of its
-/// corners are on the glass in `alpha` (bits low, right, top, far); `seed` 0 the windscreen, 1 a side window.
+/// corners are on the glass in `alpha` (bits low, right, top, far); `seed` 0 the windscreen, 1 a side window. Its
+/// corners as [`gpu::Drop`] says, exact: the glass's corners need not lie in a plane.
 fn pane_cells(glass: &Glass, w: &Windscreen, to_stage: Mat4, seed: f32) -> Vec<gpu::Drop> {
-    let corners = [Vec2::new(-0.5, -0.5), Vec2::new(0.5, -0.5), Vec2::new(-0.5, 0.5), Vec2::new(0.5, 0.5)];
     // The chart's mean plane's: the grid's heights step from cell to cell.
     let out = to_stage.transform_vector3(w.axes[2]).normalize();
     (0..glass.film.len())
         .filter_map(|index| {
             let (at, size) = glass.film_cell(index);
-            let on =
-                corners.iter().enumerate().filter(|(_, &c)| w.inside(at + size * c)).map(|(k, _)| 1 << k).sum::<u32>();
+            // Neighbours take a shared corner's point, so its height, from the same sum.
+            let (column, row) = (index % model::FILM_CELLS[0], index / model::FILM_CELLS[0]);
+            let corners = [(0, 0), (1, 0), (0, 1), (1, 1)].map(|(i, j)| glass.film_corner(column + i, row + j));
+            let on = corners.iter().enumerate().filter(|(_, &c)| w.inside(c)).map(|(k, _)| 1 << k).sum::<u32>();
             if on == 0 {
                 return None;
             }
-            let [low, right, top, far] = corners.map(|c| to_stage.transform_point3(w.point(at + size * c, 0.0)));
+            let [low, right, top, far] = corners.map(|c| to_stage.transform_point3(w.point(c, 0.0)));
             Some(gpu::Drop {
-                centre: ((low + right + top + far) * 0.25).to_array(),
+                centre: low.to_array(),
                 kind: 6.0,
-                axis_u: ((right + far - low - top) * 0.25).to_array(),
+                axis_u: (right - low).to_array(),
                 seed,
-                axis_v: ((top + far - low - right) * 0.25).to_array(),
+                axis_v: (top - low).to_array(),
                 alpha: on as f32,
                 color: [at.x, at.y, size.x, size.y],
                 normal: out.extend(0.0).to_array(),
+                far: (far - low).extend(0.0).to_array(),
             })
         })
         .collect()
