@@ -606,6 +606,13 @@ Shoulders as ground (2026-10-29; `SHOULDER_WALL` in `shader.wgsl`): the paved me
 ground's treatment, so no seam shows beside the terrain (580's straight dark strip; its bank turns mossy earth). RMSE 580
 3.6%, Luceram 2.1%, Gabiria 1.2%, Semetin 0.6%, gravel and snow stages and additions off identical; 580 4K scene pass
 8.40 to 8.92 ms.
+Grey test at a fixed mip (2026-10-30; `ASPHALT_BLUR`): read 3 levels past the footprint, the test reached 580's verge
+(painted beside the road in its texture) from about 8 m out (footprint mip 1), so the far road took the ground scan as a
+shoulder: green and pink patches moving with the car (Evo chase replay; gone with asphalt or ground off). It reads mip 3
+at any distance, the near road's level before. 580 road patch chroma std 6.4 to 2.9; shots RMSE 580 0.0034, Gabiria up
+to 0.0042 (its dirt strip on the paved mesh reads as road further out), Luceram up to 0.0033, Sardian up to 0.0044
+(calmer curb streaks), Sturec snow 0.0052 (the wall top takes the shoulder's earth, as near the car), the rest under
+0.001 or identical.
 Far hillside (2026-10-29; `ground_far`, `ground_clumps` in `shader.wgsl`): from 8 to 18 m out the ground texture
 is read blurrier, its pale texels eased, the scan's chroma and grain eased, and grass clumps added (value noise at
 1.5, 0.7 and 0.32 m; snow stages left alone). The speckle on the hill is mostly the stage texture's own (there with
