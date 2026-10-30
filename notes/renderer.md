@@ -370,6 +370,9 @@ swaps the `Predicate = on/off` parts and restarts the flare fade.
   `Enhance::lighting` and a drawn map (else a zero matrix reads lit): day and shadows-off frames byte-identical.
   41M start chase in fog cuts the air into shafts (mean diff 0.32, max 147/255); scene/particles/shafts within noise
   at 1440p (+0.06 ms at most). The retail skid marks keep their unshadowed lamp light.
+- Foliage cards in the headlights' shadow keep half their light (`LAMP_THROUGH` in `night.wgsl`, as `sun_light` halves
+  the sun's shadow on cut-outs; 2026-10-30): a tuft's opaque foot shadowed the next tuft's whole, a black bar under each
+  tuft along the verges (41M 23:00 chase, Gabiria night chase). Night shots 0.7 to 2.4 % RMSE, day byte-identical.
 - Rear lamps are capped by a soft knee on their summed light (2026-10-27): a brake lamp's 100 cd saturated red within
   a few metres under the night's exposure. Maps 450/369 fly-by 22:00-22:15 and 466 chase 23:00 show small lamps and
   a faint wash; headlights unchanged (map 126 night chase MAE 0.0004 to 0.0005).

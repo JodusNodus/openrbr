@@ -24,7 +24,11 @@ const LAMP_REACH: f32 = 150.0;
 
 // The light the lit lamps and their bounce off the road (`lamp_bounce`) give a surface at `world` with normal `n`
 // (`two_sided` for foliage cards), in the lamps' units (`lights::CANDELA`), before the knee (`lamp_knee`). `fs_main`
-// works it out once for all its paths.
+// works it out once for all its paths. A foliage card in the headlights' shadow keeps `LAMP_THROUGH` of their light, as
+// the sun's shadow takes half off one (`sun_light`): the light comes through the leaves in front, and the tufts' opaque
+// feet, a card's height of the lamps' view, shadowed the next tuft's whole: a black bar under each along the verge
+// (41M at 23:00).
+const LAMP_THROUGH: f32 = 0.5;
 // The most the rear lamps (tail, brake, reverse) give a surface, a soft knee on their sum in the lamps' units (about
 // 1 lux): a brake lamp's 100 cd flooded the bushes, banks and spectators round a close car with saturated red.
 const REAR_KNEE: f32 = 0.004;
@@ -54,6 +58,9 @@ fn lamp_sum(world: vec3<f32>, n: vec3<f32>, two_sided: bool) -> vec3<f32> {
         if (lamp.forward.w != 0.0) {
             if (shadow < 0.0) {
                 shadow = lamp_reach(world, n, normalize(lamp.position.xyz - world));
+                if (two_sided) {
+                    shadow = mix(LAMP_THROUGH, 1.0, shadow);
+                }
             }
             light *= shadow;
         }
