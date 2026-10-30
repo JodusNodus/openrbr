@@ -24,7 +24,7 @@
 
 use crate::damage::MeshDamage;
 use crate::parallel::in_parallel;
-use crate::stage::{Draw, Image, Mesh, Stage, TextureRef, TextureSet, Vertex};
+use crate::stage::{Draw, Image, Mesh, Stage, StageTexture, TextureRef, TextureSet, Vertex};
 use glam::{IVec3, Mat4, Vec2, Vec3};
 use rbr_formats::dds;
 use rbr_formats::rsf::gauges::{self, Atlas, Kind};
@@ -157,6 +157,27 @@ fn opaque(draw: &Draw) -> bool {
     draw.state.depth_write && !draw.state.blend
 }
 
+/// The normal and area of each triangle of `mesh`'s blended draws: the glass.
+fn panes(mesh: &Mesh) -> impl Iterator<Item = (Vec3, f32)> + '_ {
+    let at = |i: u32| Vec3::from(mesh.vertices[i as usize].position);
+    mesh.draws.iter().filter(|draw| draw.state.blend).flat_map(move |draw| {
+        mesh.indices[draw.indices.clone()].chunks_exact(3).map(move |t| {
+            let cross = (at(t[1]) - at(t[0])).cross(at(t[2]) - at(t[0]));
+            (cross.normalize_or_zero(), 0.5 * cross.length())
+        })
+    })
+}
+
+/// The share of the light at cosine `cos` to a clear pane's normal through its two faces, `(1 - F)^2`, `F` Schlick's
+/// with [`PANE_F0`] (`glass.wgsl`'s). Over the sky (the cosine-weighed hemisphere) it is 0.848, `cabin.wgsl`'s
+/// `CABIN_SKY_THROUGH`.
+fn pane_through(cos: f32) -> f32 {
+    let f = PANE_F0 + (1.0 - PANE_F0) * (1.0 - cos.clamp(0.0, 1.0)).powi(5);
+    (1.0 - f) * (1.0 - f)
+}
+
+const PANE_F0: f32 = 0.04;
+
 /// The triangles of `mesh`'s [`opaque`] draws.
 fn opaque_triangles(mesh: &Mesh) -> impl Iterator<Item = [Vec3; 3]> + '_ {
     let at = |i: u32| Vec3::from(mesh.vertices[i as usize].position);
@@ -168,9 +189,14 @@ fn opaque_triangles(mesh: &Mesh) -> impl Iterator<Item = [Vec3; 3]> + '_ {
 /// Stores in each vertex of `interior` how much it is shut off from the sky, `1 - sky`, past the opaque faces of both
 /// `interior` and `exterior` (at the same placement), in `specular[2]`, and marks those of its [`opaque`] draws
 /// [`INTERIOR`] (the glass the outside is seen through stays lit as in the game), and the glass of its mirror parts
-/// (`damage`, per mesh) [`MIRROR`], with where each sees the sky ([`seen`]). Returns how much sun gets into the cabin by
-/// the sun's direction ([`SunIn`]).
-pub fn bake(interior: &mut [Mesh], damage: &[MeshDamage], exterior: &[Mesh]) -> Option<SunIn> {
+/// (`damage`, per mesh) [`MIRROR`], with where each sees the sky ([`seen`]). Returns how light gets into the cabin
+/// ([`SunIn`]), the interior's faces' colours read from `textures`.
+pub fn bake(
+    interior: &mut [Mesh],
+    damage: &[MeshDamage],
+    exterior: &[Mesh],
+    textures: &BTreeMap<TextureRef, StageTexture>,
+) -> Option<SunIn> {
     let triangles: Vec<[Vec3; 3]> = interior.iter().chain(exterior).flat_map(opaque_triangles).collect();
     let grid = Grid::new(&triangles)?;
     let points: Vec<(Vec3, Vec3)> = interior
@@ -178,7 +204,8 @@ pub fn bake(interior: &mut [Mesh], damage: &[MeshDamage], exterior: &[Mesh]) -> 
         .flat_map(|m| m.vertices.iter().map(|v| (Vec3::from(v.position), Vec3::from(v.normal))))
         .collect();
     let skies = in_parallel(&points, |&(p, n)| grid.sky(p, n));
-    let sun_in = SunIn::measure(&grid, interior);
+    let panes: Vec<(Vec3, f32)> = interior.iter().chain(exterior).flat_map(panes).collect();
+    let sun_in = SunIn::measure(&grid, interior, &skies, &panes, textures);
     let mirrors: Vec<Option<Mirror>> = (0..interior.len()).map(|k| damage.get(k).and_then(|d| d.mirror)).collect();
     let glass_parts = mirrors.contains(&Some(Mirror::Glass));
     let mut skies = skies.into_iter();
@@ -216,14 +243,23 @@ pub fn bake(interior: &mut [Mesh], damage: &[MeshDamage], exterior: &[Mesh]) -> 
     Some(sun_in)
 }
 
-/// How much sun gets into the cabin, by the sun's direction in the car's model space (ours): the mean over the interior
-/// set's opaque faces (by area) of the sun on each, `n.l` where the sun reaches it past the car's opaque faces. The
-/// cabin's sunlit patches light the rest of it back (`cabin.wgsl`, the roof lining over a sunlit dash or seat).
-/// Measured at load for [`SUN_DIRECTIONS`] directions over the sphere from [`SUN_FACES`] of the faces.
+/// How light gets into the cabin (ours), means over the interior set's opaque faces by area: the sun on each by the
+/// sun's direction in the car's model space, `n.l` where the sun reaches it past the car's opaque faces, measured at
+/// load for [`SUN_DIRECTIONS`] directions over the sphere from [`SUN_FACES`] of the faces, with the share of the sun the
+/// glass lets through from each (its panes weighed by their area toward the sun, [`pane_through`]; 1 with no glass
+/// that way, an open cockpit); the share of the sky each
+/// sees and where it sees it ([`Grid::sky`]); and their linear albedo per channel, the texel at the face's middle times
+/// its vertex colour as `shader.wgsl` shades it. The light that comes in lights the rest of the cabin back off its faces
+/// (`cabin.wgsl`): the roof lining over a sunlit dash or seat, the footwells.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SunIn {
     directions: Vec<Vec3>,
     lit: Vec<f32>,
+    through: Vec<f32>,
+    /// The mean sky share, the mean of where the faces see it (model space) and the mean albedo.
+    pub sky: f32,
+    pub seen: Vec3,
+    pub albedo: Vec3,
 }
 
 /// The directions [`SunIn`] measures.
@@ -233,8 +269,75 @@ const SUN_FACES: usize = 3000;
 /// How sharply [`SunIn::at`] weighs the measured directions by their closeness.
 const SUN_SHARPNESS: i32 = 32;
 
+/// The largest texel the albedo is read at: the texture's level at most this wide.
+const ALBEDO_LEVEL: u32 = 64;
+/// The most a face's albedo is taken as (`shader.wgsl`'s `ALBEDO_MOST`).
+const ALBEDO_MOST: f32 = 0.9;
+
 impl SunIn {
-    fn measure(grid: &Grid, interior: &[Mesh]) -> SunIn {
+    /// The cabin's light bounced back off its faces against the light that comes in, per channel: the
+    /// interreflection of a closed room of mean albedo `a`, `a / (1 - a)` (a tan cabin's light is warm).
+    pub fn bounce(&self) -> Vec3 {
+        self.albedo / (Vec3::ONE - self.albedo).max(Vec3::splat(0.1))
+    }
+
+    /// The faces' mean sky share, where they see it and their albedo ([`SunIn`]), `skies` per vertex of `interior` in
+    /// order ([`Grid::sky`]).
+    fn incoming(
+        interior: &[Mesh],
+        skies: &[(f32, Vec3)],
+        textures: &BTreeMap<TextureRef, StageTexture>,
+    ) -> (f32, Vec3, Vec3) {
+        let mut decoded: BTreeMap<TextureRef, Option<(usize, usize, Vec<u8>)>> = BTreeMap::new();
+        let mut texel = |key: &TextureRef, uv: Vec2| -> Option<Vec3> {
+            let entry = decoded.entry(*key).or_insert_with(|| small_rgba(textures.get(key)?.image.as_ref()?));
+            let (w, h, rgba) = entry.as_ref()?;
+            let x = ((uv.x.rem_euclid(1.0) * *w as f32) as usize).min(w - 1);
+            let y = ((uv.y.rem_euclid(1.0) * *h as f32) as usize).min(h - 1);
+            let at = (y * w + x) * 4;
+            Some(Vec3::new(rgba[at] as f32, rgba[at + 1] as f32, rgba[at + 2] as f32) / 255.0)
+        };
+        let (mut area, mut sky, mut seen, mut albedo) = (0.0, 0.0, Vec3::ZERO, Vec3::ZERO);
+        let mut first = 0;
+        for mesh in interior {
+            for draw in mesh.draws.iter().filter(|draw| opaque(draw)) {
+                for t in mesh.indices[draw.indices.clone()].chunks_exact(3) {
+                    let t = [t[0], t[1], t[2]];
+                    let v = t.map(|i| &mesh.vertices[i as usize]);
+                    let [a, b, c] = v.map(|v| Vec3::from(v.position));
+                    let size = 0.5 * (b - a).cross(c - a).length();
+                    let middle = v.iter().map(|v| Vec2::from(v.uv0)).sum::<Vec2>() / 3.0;
+                    let tint = v
+                        .iter()
+                        .map(|v| Vec3::new(v.color[0] as f32, v.color[1] as f32, v.color[2] as f32))
+                        .sum::<Vec3>()
+                        / (3.0 * 255.0);
+                    let colour =
+                        draw.state.textures[0].as_ref().and_then(|key| texel(key, middle)).unwrap_or(Vec3::ONE) * tint;
+                    let linear = colour.powf(2.2).min(Vec3::splat(ALBEDO_MOST));
+                    let [sa, sb, sc] = t.map(|i| skies[first + i as usize]);
+                    area += size;
+                    sky += size * (sa.0 + sb.0 + sc.0) / 3.0;
+                    seen += size * (sa.1 + sb.1 + sc.1) / 3.0;
+                    albedo += size * linear;
+                }
+            }
+            first += mesh.vertices.len();
+        }
+        if area <= 0.0 {
+            return (0.0, Vec3::ZERO, Vec3::ZERO);
+        }
+        (sky / area, seen / area, albedo / area)
+    }
+
+    fn measure(
+        grid: &Grid,
+        interior: &[Mesh],
+        skies: &[(f32, Vec3)],
+        panes: &[(Vec3, f32)],
+        textures: &BTreeMap<TextureRef, StageTexture>,
+    ) -> SunIn {
+        let (sky, seen, albedo) = SunIn::incoming(interior, skies, textures);
         let faces: Vec<(Vec3, Vec3, f32)> = interior
             .iter()
             .flat_map(|mesh| {
@@ -271,21 +374,60 @@ impl SunIn {
                 0.0
             }
         });
-        SunIn { directions, lit }
+        let through = directions
+            .iter()
+            .map(|&l| {
+                let (sum, weight) = panes.iter().fold((0.0, 0.0), |(sum, weight), &(n, a)| {
+                    let cos = n.dot(l).abs();
+                    (sum + a * cos * pane_through(cos), weight + a * cos)
+                });
+                if weight > 0.0 {
+                    sum / weight
+                } else {
+                    1.0
+                }
+            })
+            .collect();
+        SunIn { directions, lit, through, sky, seen, albedo }
     }
 
     /// The cabin's mean sun with the sun toward `to_sun` (model space): the measured directions near it, weighed.
     pub fn at(&self, to_sun: Vec3) -> f32 {
+        self.weighed(&self.lit, to_sun)
+    }
+
+    /// The share of the sun toward `to_sun` (model space) the glass lets in.
+    pub fn through(&self, to_sun: Vec3) -> f32 {
+        self.weighed(&self.through, to_sun)
+    }
+
+    /// `values` per measured direction at `to_sun`: the directions near it, weighed.
+    fn weighed(&self, values: &[f32], to_sun: Vec3) -> f32 {
         let to_sun = to_sun.normalize_or_zero();
-        let (sum, weight) = self.directions.iter().zip(&self.lit).fold((0.0, 0.0), |(sum, weight), (d, &lit)| {
+        let (sum, weight) = self.directions.iter().zip(values).fold((0.0, 0.0), |(sum, weight), (d, &value)| {
             let w = d.dot(to_sun).max(0.0).powi(SUN_SHARPNESS);
-            (sum + w * lit, weight + w)
+            (sum + w * value, weight + w)
         });
         if weight > 0.0 {
             sum / weight
         } else {
             0.0
         }
+    }
+}
+
+/// A texture's level at most [`ALBEDO_LEVEL`] wide as RGBA rows, its width and height.
+fn small_rgba(image: &Image) -> Option<(usize, usize, Vec<u8>)> {
+    match image {
+        Image::Solid(texel) => Some((1, 1, texel.to_vec())),
+        Image::Dds(bytes) => {
+            let file = rbr_formats::dds::parse(bytes).ok()?;
+            let levels = file.levels();
+            let level = levels.iter().find(|l| l.width.max(l.height) <= ALBEDO_LEVEL).or(levels.last())?;
+            let rgba = crate::particles::gpu::decode_blocks(level.width, level.height, file.format, level.data)?;
+            Some((level.width as usize, level.height as usize, rgba))
+        }
+        _ => None,
     }
 }
 
@@ -501,6 +643,16 @@ mod tests {
     }
 
     #[test]
+    fn a_pane_passes_less_at_a_slant() {
+        assert!((pane_through(1.0) - 0.96 * 0.96).abs() < 1e-6);
+        assert!(pane_through(0.2) < 0.75 && pane_through(0.0) == 0.0);
+        // Over the cosine-weighed hemisphere: `cabin.wgsl`'s `CABIN_SKY_THROUGH`.
+        let steps = 10_000;
+        let sky: f32 = (0..steps).map(|k| (k as f32 + 0.5) / steps as f32).map(|c| pane_through(c) * 2.0 * c).sum();
+        assert!((sky / steps as f32 - 0.848).abs() < 1e-3, "{}", sky / steps as f32);
+    }
+
+    #[test]
     fn the_sun_gets_in_under_an_open_side() {
         // A floor under a roof open toward +x, as the interior's one opaque face.
         let floor = square(
@@ -516,8 +668,21 @@ mod tests {
             Vec3::new(-3.0, 0.5, 3.0),
         );
         let grid = Grid::new(&[floor, roof].concat()).unwrap();
-        let mesh = opaque_mesh(&floor, Vec3::Y);
-        let sun_in = SunIn::measure(&grid, &[mesh]);
+        let mut mesh = opaque_mesh(&floor, Vec3::Y);
+        for v in &mut mesh.vertices {
+            v.color = [128, 128, 128, 255];
+        }
+        let skies: Vec<(f32, Vec3)> =
+            mesh.vertices.iter().map(|v| grid.sky(Vec3::from(v.position), Vec3::from(v.normal))).collect();
+        let sun_in = SunIn::measure(&grid, &[mesh], &skies, &[], &BTreeMap::new());
+        // Seen out the open side only, and grey 128 untextured: (128 / 255)^2.2 linear.
+        assert!(sun_in.sky > 0.05 && sun_in.sky < 0.6, "{}", sun_in.sky);
+        assert!(sun_in.seen.x > 0.0, "{}", sun_in.seen);
+        assert!(
+            (sun_in.albedo - Vec3::splat((128.0f32 / 255.0).powf(2.2))).abs().max_element() < 1e-3,
+            "{}",
+            sun_in.albedo
+        );
         let low_side = sun_in.at(Vec3::new(1.0, 0.4, 0.0));
         assert!(low_side > 0.05, "{low_side}");
         for shut in [Vec3::Y, Vec3::new(-1.0, 0.4, 0.0), Vec3::NEG_Y] {

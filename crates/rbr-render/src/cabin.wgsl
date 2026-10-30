@@ -57,7 +57,7 @@ fn cabin_light(v: VertexOut, n: vec3<f32>, shadowed: f32, under_cloud: f32, outs
         stage = cabin_stage_lit(v.world, n);
     }
     let sunlit = CABIN_SUN * (1.0 - shadowed) * stage * (1.0 - CLOUD_CAR_SHADE * under_cloud);
-    var ambient = INTERIOR_AMBIENT * (CABIN_FLOOR + CABIN_SKY * sky * cabin_window(cabin_seen(v), sky));
+    var ambient = INTERIOR_AMBIENT * (CABIN_FLOOR + CABIN_SKY * sky * cabin_window(cabin_seen(v), sky, CABIN_TINT, CABIN_RANGE));
     // Paint (the classes that reflect, `Kf` over 0) open to the sky is the body seen through the glass (the bonnet):
     // lit as the outside view lights it, not by the interior's ambient, which blew it out white.
     if (mode.fresnel.z != 0.0) {
@@ -97,18 +97,21 @@ fn cabin_headlights(n: vec3<f32>) -> vec3<f32> {
 }
 
 // With the day's light (`day_on`) the cabin's faces as the lit draws outside (`lit`): the texel's linear albedo under
-// the day's sky and sun in pre-exposed linear light. The sky reaches a face only through the windows, as much of it
-// as the face sees (`specular.z`), coloured and weighed by what lies outside that way (`cabin_window`), plus
-// `CABIN_INSIDE` of the open sky's light bounced about inside the car, both dimmed in the stage's shade about the car
-// (`cabin_shade`); the sun through the glass (`CABIN_GLASS`) past the car's, the stage's and the clouds' shadows; the
-// sun off the cabin's sunlit faces, about their albedo (`CABIN_SUN_BACK`), as much as the car is in the sun; by night the headlights off the road (`lamp_bounce`). Paint open to the sky (the bonnet seen from
-// inside) takes the outside view's light. So the cabin sits as far below the sunlit outside as the sky it sees. The
-// sun's highlight is left out: on the dash, seen at a grazing angle, it lit the plastic white; `cabin_sheen` reflects.
-// A dial face takes at least `CABIN_GAUGE_LEAST` of the open sky's light, so that it reads in the binnacle's shade.
-const CABIN_INSIDE: f32 = 0.05;
+// the day's sky and sun in pre-exposed linear light. All light comes in through the glass: the sky's `CABIN_SKY_THROUGH`, the sun's as the panes facing it pass it
+// (`frame.cabin_seen.w`, `SunIn::through`). The
+// sky reaches a face as much as the face sees of it (`specular.z`), coloured and weighed by what lies outside that way
+// (`cabin_window`, in full), dimmed in the stage's shade about the car (`cabin_shade`); the sun past the car's, the
+// stage's and the clouds' shadows. What comes in onto all the cabin's faces (`frame.cabin`, `car::cabin::SunIn`: their
+// mean sky share and where they see it, the sun on them) comes back off them as a closed room of their mean albedo
+// gives it back (`SunIn::bounce`), onto the share of each face's view that is the cabin, the sun's more onto the faces
+// turned down (the sunlit patches lie on the floor, the seats and the dash). By night the headlights off the road
+// (`lamp_bounce`). Paint open to the sky (the bonnet seen from inside) takes the outside view's light. The sun's
+// highlight is left out: on the dash, seen at a grazing angle, it lit the plastic white; `cabin_sheen` reflects. A dial
+// face takes at least `CABIN_GAUGE_LEAST` of the open sky's light, so that it reads in the binnacle's shade.
 const CABIN_GAUGE_LEAST: f32 = 0.25;
-const CABIN_GLASS: f32 = 0.85;
-const CABIN_SUN_BACK: f32 = 0.3;
+// A clear pane's two faces' share of the sky's light, `(1 - F)^2` over the cosine-weighed hemisphere (`F` Schlick's,
+// `F0` 0.04: `car::cabin::pane_through`).
+const CABIN_SKY_THROUGH: f32 = 0.848;
 
 fn cabin_day_lit(colour: vec3<f32>, v: VertexOut, n: vec3<f32>, shadowed: f32, under_cloud: f32, outside: vec4<f32>) -> vec3<f32> {
     let sky = 1.0 - v.specular.z;
@@ -120,11 +123,13 @@ fn cabin_day_lit(colour: vec3<f32>, v: VertexOut, n: vec3<f32>, shadowed: f32, u
     }
     let ndl = max(dot(n, to_sun), 0.0) * (1.0 - shadowed) * stage * cloud;
     let shade = v.bounce_sun;
-    let window = CABIN_INSIDE * shade.y + sky * cabin_window(cabin_seen(v), sky) * shade.x;
-    var e = frame.day_sky.rgb * window + frame.day_sun.rgb * ndl * CABIN_GLASS;
-    if (frame.wetness.z > 0.0) {
-        e += CABIN_SUN_BACK * frame.wetness.z * shade.z * cloud * (0.75 - 0.25 * n.y) * frame.day_sun.rgb;
-    }
+    let window = sky * cabin_window(cabin_seen(v), sky, 1.0, CABIN_DAY_RANGE) * shade.x;
+    let sky_in = frame.cabin.w * cabin_window(frame.cabin_seen.xyz, frame.cabin.w, 1.0, CABIN_DAY_RANGE) * shade.y;
+    let sun_in = frame.wetness.z * shade.z * cloud * (1.0 - n.y / 3.0);
+    let sky_through = frame.day_sky.rgb * CABIN_SKY_THROUGH;
+    let sun_through = frame.day_sun.rgb * frame.cabin_seen.w;
+    let bounce = (1.0 - sky) * frame.cabin.rgb * (sky_through * sky_in + sun_through * sun_in);
+    var e = sky_through * window + sun_through * ndl + bounce;
     let level = select(frame.dusk.w, 1.0, frame.night.x != 0.0);
     if (level > 0.0) {
         var bounce = vec3<f32>(0.0);
@@ -232,12 +237,15 @@ const CABIN_OPEN_EDGE: f32 = 0.15;
 // outside that way (`cabin_outside`), blurred over the cone the open rays span (`CABIN_LEVELS`: the cube's level for
 // the whole hemisphere and for a narrow window), against what lies overhead as blurred as the widest, in linear light:
 // a face that sees the open sky above keeps the light it had. `CABIN_TINT` of its colour, the brightness held to
-// `CABIN_RANGE`. A face turned to a sunset window takes its warm light, one that sees out only toward the trees less.
+// `range`, `tint` of its colour: with the game's light `CABIN_TINT` and `CABIN_RANGE`, with the day's (`cabin_day_lit`)
+// all of it, held only from the cube's extremes (`CABIN_DAY_RANGE`). A face turned to a sunset window takes its warm
+// light, one that sees out only toward the trees less, and their green.
 const CABIN_LEVELS: vec2<f32> = vec2<f32>(5.5, 3.0);
 const CABIN_TINT: f32 = 0.3;
 const CABIN_RANGE: vec2<f32> = vec2<f32>(0.25, 2.0);
+const CABIN_DAY_RANGE: vec2<f32> = vec2<f32>(0.03, 4.0);
 
-fn cabin_window(seen: vec3<f32>, share: f32) -> vec3<f32> {
+fn cabin_window(seen: vec3<f32>, share: f32, tint: f32, range: vec2<f32>) -> vec3<f32> {
     let length = length(seen);
     if (length < 1e-4) {
         return vec3<f32>(1.0);
@@ -248,8 +256,8 @@ fn cabin_window(seen: vec3<f32>, share: f32) -> vec3<f32> {
     let overhead = dot(cabin_outside(vec3<f32>(0.0, 1.0, 0.0), CABIN_LEVELS.x), luma);
     let ratio = outside / max(overhead, 1e-4);
     let grey = dot(ratio, luma);
-    let tinted = mix(vec3<f32>(grey), ratio, CABIN_TINT);
-    return tinted * clamp(grey, CABIN_RANGE.x, CABIN_RANGE.y) / max(grey, 1e-4);
+    let tinted = mix(vec3<f32>(grey), ratio, tint);
+    return tinted * clamp(grey, range.x, range.y) / max(grey, 1e-4);
 }
 
 // What lies outside the car along `dir`, blurred to the surroundings cube's `level` (the sky before the cube is drawn),

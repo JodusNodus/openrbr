@@ -706,6 +706,18 @@ light in shade. The first cascade at 5 x 5 points about the cabin now dims the w
 vertex stage), +0.05 ms at 4K (per pixel it was +0.6). Wythop 532 cockpit frames in shade darker, open and
 overcast frames unchanged.
 
+Cabin bounce by the day's light (ours, 2026-10-30, `cabin_day_lit`): the constant inside floor and the sun's back share
+are gone. A closed room's interreflection gives the bounce: E = (1 - sky) x rho / (1 - rho) x the mean light the
+interior takes in, the sky's through the cabin's mean seen direction and the sun's mean n.l (`SunIn`). rho is the
+area-weighted interior albedo (texel at each face's uv centroid at 64 px or less, times the vertex colour, per channel,
+at most 0.9; the bounce per channel, so a tan cabin's is warm). Measured (luma) sky share / albedo / bounce: Escort
+0.280 / 0.124 / 0.141, GC8 0.343 / 0.075 / 0.081, Clio 0.361 / 0.154 / 0.183, 131 0.222 / 0.185 / 0.227, 208 0.296 /
+0.088 / 0.097, Fiesta 0.236 / 0.055 / 0.058, Yaris 0.198 / 0.447 / 0.810. Dark cabins fall off to the roof and
+footwells, the white Yaris shell is lighter; the window term is untinted (`CABIN_DAY_RANGE` 0.03 to 4). The glass: the
+sky's share through two clear faces, `(1 - F)^2` over the cosine-weighed hemisphere, 0.848 (`CABIN_SKY_THROUGH`; the
+former 0.85 was this); the sun's from the blended panes facing it, weighed by area toward it, per measured direction
+(`SunIn::through`; 208 at 19:30 about 0.8). Left heuristic: `CABIN_SHADE`, `CABIN_GAUGE_LEAST`.
+
 Exposure in the cockpit (user's call, 2026-10-30): the cabin meters at 2/5 of the outside (`CABIN_WEIGHT`), between an
 eye on the road (1/5, the cabin dark) and a camera's full weight (cabin readable, outside washed out); 208 cockpit frame
 mean 46 / 60 / 80 for 1, 2, 5.

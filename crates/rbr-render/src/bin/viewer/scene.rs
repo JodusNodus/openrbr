@@ -581,7 +581,16 @@ fn add_interior(data: &Data, car_name: &str, stage: &mut Stage, exterior: Option
     let mut interior = car::load_interior(data, car_name, car::placement_at(None))
         .map_err(|e| e.to_string())?
         .after_textures_of(stage);
-    let sun_in = exterior.and_then(|exterior| car::cabin::bake(&mut interior.meshes, &interior.damage, exterior));
+    let sun_in = exterior
+        .and_then(|exterior| car::cabin::bake(&mut interior.meshes, &interior.damage, exterior, &interior.textures));
+    if let Some(sun_in) = &sun_in {
+        eprintln!(
+            "cabin: mean sky share {:.3}, albedo {:.3}, bounce {:.3}",
+            sun_in.sky,
+            sun_in.albedo,
+            sun_in.bounce()
+        );
+    }
     let meshes = (interior.meshes.clone(), interior.damage.clone(), sun_in);
     let report = interior.add_to_stage(stage);
     eprintln!(

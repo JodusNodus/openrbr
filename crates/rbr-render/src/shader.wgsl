@@ -106,6 +106,11 @@ struct Frame {
     cloud_shadow: vec4<f32>,
     // The car's dirt colour, and w the share of the paint's reflection it keeps (`dirt::Look`).
     car_dirt: vec4<f32>,
+    // How light gets into the cabin (`car::cabin::SunIn`): rgb its faces' light bounced back against what comes in, w
+    // their mean sky share; and where they see it, stage space, w the share of the sun the glass lets in
+    // (`cabin_day_lit`).
+    cabin: vec4<f32>,
+    cabin_seen: vec4<f32>,
 }
 
 struct Mode {

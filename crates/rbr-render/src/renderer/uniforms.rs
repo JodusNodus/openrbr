@@ -160,6 +160,12 @@ pub(super) struct FrameUniform {
     pub(super) cloud_shadow: [f32; 4],
     /// The car's dirt colour, and `w` the share of the paint's reflection it keeps ([`Look`](crate::dirt::Look)).
     car_dirt: [f32; 4],
+    /// How light gets into the cabin ([`SunIn`](crate::car::cabin::SunIn)): `rgb` its faces' light bounced back
+    /// against what comes in ([`SunIn::bounce`](crate::car::cabin::SunIn::bounce)), `w` their mean sky share; and
+    /// where they see it, stage space, `w` the share of the sun the glass lets in
+    /// ([`SunIn::through`](crate::car::cabin::SunIn::through)). 0 without the cabin light.
+    cabin: [f32; 4],
+    cabin_seen: [f32; 4],
 }
 
 /// The most lamps that light the stage at night ([`Renderer::set_lamps`]).
@@ -293,6 +299,13 @@ impl Renderer {
         let volume = f32::from(u8::from(crate::height_fog::is_volume(a)));
         let cabin_sun = (self.cabin_sun.as_ref().zip(self.car_body))
             .map_or(0.0, |(sun_in, body)| sun_in.at(body.inverse().transform_vector3(-a.sun_direction)));
+        let cabin = (self.cabin_sun.as_ref().zip(self.car_body)).map_or(([0.0; 4], [0.0; 4]), |(sun_in, body)| {
+            let through = sun_in.through(body.inverse().transform_vector3(-a.sun_direction));
+            (
+                sun_in.bounce().extend(sun_in.sky).to_array(),
+                body.transform_vector3(sun_in.seen).extend(through).to_array(),
+            )
+        });
         // The backdrop's depth in the physically based sky's haze is scaled as the game's scattering scales it.
         let depth_scale = a.superbowl_scale.clamp(0.0, 1.0);
         // The sky's draw in the main view lays the volumetric clouds' image over the sky, the other views their dome once
@@ -392,6 +405,8 @@ impl Renderer {
                     _ => self.shadow_params.get(),
                 },
                 car_dirt: [dirt.colour[0], dirt.colour[1], dirt.colour[2], dirt.sheen],
+                cabin: cabin.0,
+                cabin_seen: cabin.1,
             };
             *slot = uniform;
         }

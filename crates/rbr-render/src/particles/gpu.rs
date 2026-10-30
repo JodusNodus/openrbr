@@ -117,7 +117,7 @@ fn decode_dds(bytes: &[u8]) -> Option<Vec<u8>> {
 }
 
 /// Decodes BC1 or BC2 blocks into RGBA rows (BC3 through `texpresso`; plain RGBA as it is).
-fn decode_blocks(width: u32, height: u32, format: dds::Format, data: &[u8]) -> Option<Vec<u8>> {
+pub(crate) fn decode_blocks(width: u32, height: u32, format: dds::Format, data: &[u8]) -> Option<Vec<u8>> {
     let (w, h) = (width as usize, height as usize);
     if format == dds::Format::Rgba8 {
         return Some(data.to_vec());
