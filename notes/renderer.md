@@ -361,7 +361,8 @@ swaps the `Predicate = on/off` parts and restarts the flare fade.
 - Tried for the beam's white look (2026-10-25) and dropped: pulling the meter toward the 97th percentile, and local
   exposure from 1.5 stops (halos, day highlights down). The road under the beam at 1 to 5 lux against ~50x dimmer
   moonlight is physical.
-- Ours: a car with no kind 1 record (an RSF car installed with headlights off) gets a beam per
+- Ours: a car with no kind 1 record that ever lights (an RSF car installed with headlights off: none, or all
+  `Active = false` without their switch box, as 19 installed cars incl. the Escort Mk II, 2026-10-30) gets a beam per
   `Point_light_lf`/`rf` for the night light, no flare, in the colour of its "on" option's headlight record
   (`rsf::headlights_on`), else the retail 255, 255, 233. Points the car's `<car>.ini` lacks come from the "on"
   option's (`lights::with_headlight_points`, 2026-10-30): 9 of 108 installed cars had neither records nor points and lit

@@ -252,10 +252,11 @@ pub struct Flare {
 /// texture of a file name in the car's `Textures` folder. As `InitLights` reads them: `Light0`, `Light1`, ... up to the
 /// first one without an `Id` key.
 ///
-/// A car with no headlight record gets one per `Point_light_lf` and `Point_light_rf` part, in colour `beam`, which
-/// lights the stage at night and draws no flare (ours). RSF cars ship that way when their top-level files are the
-/// modder's "lights off" option (the Focus WRC 2006, Fiesta WRC 2019, Delta HF 4WD, Escort Cosworth, BMW M3 E30 and
-/// Lancer Evo IX samples): RSF's car-parts picker swaps in the "on" option's files, which we do not apply
+/// A car with no headlight record that ever lights gets one per `Point_light_lf` and `Point_light_rf` part, in colour
+/// `beam`, which lights the stage at night and draws no flare (ours). RSF cars ship that way when their top-level files
+/// are the modder's "lights off" option, with no headlight records (the Focus WRC 2006, Fiesta WRC 2019, Delta HF 4WD,
+/// Escort Cosworth, BMW M3 E30 and Lancer Evo IX samples) or with ones that are `Active = false` and have no switch box
+/// (the Escort Mk II): RSF's car-parts picker swaps in the "on" option's files, which we do not apply
 /// (`notes/formats.md` "RSF cars").
 pub fn flares(
     settings: &[Section],
@@ -281,7 +282,7 @@ pub fn flares(
             Some(light)
         })
         .collect();
-    if lights.iter().all(|light| light.kind != Kind::Front) {
+    if lights.iter().all(|light| light.kind != Kind::Front || light.fixed == Some(false)) {
         lights.extend(HEADLIGHT_POINTS.into_iter().zip(0..).map(|(part, lamp)| Light {
             kind: Kind::Front,
             lamp,
@@ -594,7 +595,8 @@ mod tests {
     fn flares_sit_at_their_part_and_draw_additively() {
         let parts = sections("[Point_light_lf]\r\nNormal = 0 0 -1\r\nPos = 1 2 3\r\n");
         let settings = sections(
-            "[Light0]\r\nId = 4\r\nCar Part = Point_light_lf\r\n[Light1]\r\nId = 5\r\nCar Part = Point_light_gone\r\n",
+            "[Light0]\r\nId = 4\r\nCar Part = Point_light_lf\r\nActive = true\r\n\
+             [Light1]\r\nId = 5\r\nCar Part = Point_light_gone\r\n",
         );
         let flares = flares(&settings, &parts, RETAIL_HEADLIGHT, |file| TextureRef {
             set: TextureSet::Car,
@@ -658,6 +660,30 @@ mod tests {
         );
         let lens = Lens { eye: Vec3::new(0.0, 0.0, -10.0), forward: Vec3::Z, up: Vec3::Y, fov: 1.0, near: 0.1 };
         assert!(sprite(&flares[1].light, Vec3::ZERO, Vec3::NEG_Z, &lens, 1.0).is_none(), "no flare, facing the eye");
+    }
+
+    #[test]
+    fn a_car_whose_headlight_records_never_light_gets_beams() {
+        // As the RSF Escort Mk II as installed: headlight records `Active = false`, its lamps' parts on the `light` box.
+        let parts = sections(
+            "[e_light_lf_lit]\r\nSwitch = true\r\nSwitchBox = light\r\nPredicate = off\r\n\
+             [Point_light_lf]\r\nPos = -1 0 0\r\nNormal = 0 0 -1\r\n[Point_light_rf]\r\nPos = 1 0 0\r\nNormal = 0 0 -1\r\n",
+        );
+        let off = "[Light0]\r\nId = 4\r\nCar Part = Point_light_lf\r\nActive = false\r\n\
+                   [Light1]\r\nId = 5\r\nCar Part = Point_light_rf\r\nActive = false\r\n";
+        let beams = |settings: &str| -> Vec<(u32, Option<bool>, bool)> {
+            flares(&sections(settings), &parts, RETAIL_HEADLIGHT, |_| TextureRef { set: TextureSet::Car, index: 0 })
+                .iter()
+                .map(|f| (f.light.lamp, f.light.fixed, f.light.flare))
+                .collect()
+        };
+        assert_eq!(beams(off), [(0, Some(false), true), (1, Some(false), true), (0, None, false), (1, None, false)]);
+        let on = off.replace("false", "true");
+        assert_eq!(
+            beams(&on),
+            [(0, Some(true), true), (1, Some(true), true)],
+            "the \"on\" option's lamps always light"
+        );
     }
 
     #[test]
