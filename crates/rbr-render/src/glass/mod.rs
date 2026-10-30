@@ -35,7 +35,7 @@ use crate::dirt::Spray;
 use crate::particles::Precipitation;
 use crate::playback::Playback;
 use crate::renderer::Renderer;
-use crate::stage::{Mesh, StageTexture, TextureRef};
+use crate::stage::{Bounds, Draw, DrawState, Mesh, StageTexture, TextureRef, Vertex};
 use model::{Conditions, Glass, Kind, Switch, Wiper, Wiping};
 
 /// The windscreen and wiper parts of the interior set, and of the exterior set.
@@ -364,6 +364,67 @@ impl Tints {
             .map(|(column, row)| self.through(part, w, glass.film_corner(column, row)))
             .collect()
     }
+}
+
+/// How far the bulkhead ([`bulkhead`]) hangs below the windscreen's foot, metres.
+const BULKHEAD_DEPTH: f32 = 0.6;
+/// The bulkhead's vertex colour over the face it copies: the dark of the cabin behind the dash.
+const BULKHEAD_COLOUR: [u8; 4] = [10, 10, 10, 255];
+
+/// The bulkhead under the windscreen (ours) for the interior set `meshes` (model space, `damage` per mesh): a dark
+/// strip hanging from the glass's foot, drawn as the set's first opaque lit face, in the windscreen's reflection only
+/// ([`Renderer::set_reflected_only`]). The sets leave gaps between the dash and the glass that the driver never sees
+/// past; the reflection does, and showed the road under the car and the sky through them (Clio Rally3, Wythop). On
+/// an upright windscreen it hangs in front of the footwell (Escort Mk II). `None` without a windscreen part.
+pub fn bulkhead(meshes: &[Mesh], damage: &[MeshDamage]) -> Option<Mesh> {
+    let front = damage::window_slot(WINDSCREEN)?;
+    let triangles: Vec<[Vec3; 3]> = (meshes.iter().zip(damage))
+        .filter(|(_, d)| d.window == Some(front))
+        .flat_map(|(mesh, _)| {
+            mesh.indices
+                .chunks_exact(3)
+                .map(|t| [t[0], t[1], t[2]].map(|i| Vec3::from(mesh.vertices[i as usize].position)))
+        })
+        .collect();
+    let w = Windscreen::new(&triangles)?;
+    let lit = |draw: &&Draw| draw.state.shade.is_some_and(|shade| !shade.glass) && !draw.state.blend;
+    let (source, draw) = meshes.iter().find_map(|mesh| Some((mesh, mesh.draws.iter().find(lit)?)))?;
+    // The glass's foot: a cell below each column's lowest cell on the glass, so that it reaches past where the glass
+    // ends between the grid's cells.
+    let [lo, hi] = w.bounds;
+    let cell = (hi - lo) / Vec2::new(GRID[0] as f32, GRID[1] as f32);
+    let foot: Vec<Vec3> = (0..GRID[0])
+        .filter_map(|x| {
+            let i = (0..GRID[1]).map(|y| y * GRID[0] + x).find(|&i| w.heights[i].is_some())?;
+            let at = cell_centre([lo, hi], i) - Vec2::new(0.0, cell.y * 1.5);
+            Some(w.origin + w.axes[0] * at.x + w.axes[1] * at.y + w.axes[2] * w.heights[i]?)
+        })
+        .collect();
+    if foot.len() < 2 {
+        return None;
+    }
+    // Facing the cabin (the model's back is `+z`), both sides drawn; one of the copied face's vertices, which with the
+    // cabin light's bake (`car::cabin::bake`, run before) sees no sky, as the dark behind the dash.
+    let mut like = source.vertices[source.indices[draw.indices.start] as usize];
+    if like.specular[1] >= car::cabin::INTERIOR {
+        like.specular[2] = 1.0;
+    }
+    let vertex = |p: Vec3| Vertex { position: p.to_array(), color: BULKHEAD_COLOUR, normal: [0.0, 0.0, 1.0], ..like };
+    let vertices: Vec<Vertex> =
+        foot.iter().flat_map(|&p| [vertex(p), vertex(p + Vec3::NEG_Y * BULKHEAD_DEPTH)]).collect();
+    let indices: Vec<u32> = (0..foot.len() as u32 - 1)
+        .flat_map(|k| [2 * k, 2 * k + 1, 2 * k + 2, 2 * k + 2, 2 * k + 1, 2 * k + 3])
+        .collect();
+    let (low, high) =
+        vertices.iter().fold((Vec3::MAX, Vec3::MIN), |(l, h), v| (l.min(v.position.into()), h.max(v.position.into())));
+    let draw = Draw { indices: 0..indices.len(), state: DrawState { cull_back: false, ..draw.state }, ..draw.clone() };
+    Some(Mesh {
+        bounds: Some(Bounds { center: (low + high) * 0.5, half_extent: (high - low) * 0.5 }),
+        vertices,
+        indices,
+        draws: vec![draw],
+        ..source.clone()
+    })
 }
 
 /// The glass as the viewer draws it: the car's glass, the model and the drive's weather.
@@ -828,5 +889,55 @@ mod tests {
         assert!((tints.through(WINDSCREEN, &w, on(0.3)) - 0.88).abs() < 0.01, "the clear glass");
         assert_eq!(tints.through(WINDSCREEN, &w, Vec2::new(0.0, 5.0)), 1.0, "off the glass");
         assert_eq!(tints.through("i_window_lf", &w, on(0.9)), 1.0, "another window's faces");
+    }
+
+    #[test]
+    fn the_bulkhead_hangs_from_the_windscreen_s_foot_as_the_cabin_s_first_lit_face() {
+        use crate::stage::{Address, Anchor, Layer, Lod, Shade};
+        use bytemuck::Zeroable;
+        let mesh = |triangles: &[[Vec3; 3]], blend: bool, shade: Option<Shade>| {
+            let vertices: Vec<Vertex> = triangles
+                .iter()
+                .flatten()
+                .map(|&p| Vertex { position: p.into(), color: [200; 4], ..Vertex::zeroed() })
+                .collect();
+            let state = DrawState {
+                textures: [None, None],
+                shadow: None,
+                address: [Address::Wrap; 2],
+                second_texture: false,
+                alpha_ref: None,
+                mip_bias: false,
+                cull_back: true,
+                blend,
+                additive: false,
+                depth_test: true,
+                depth_write: !blend,
+                shade,
+                specular: None,
+            };
+            Mesh {
+                layer: Layer::Solid,
+                anchor: Anchor::World,
+                bounds: None,
+                cell: None,
+                indices: (0..vertices.len() as u32).collect(),
+                draws: vec![Draw { indices: 0..vertices.len(), state, lod: Lod::Always }],
+                vertices,
+            }
+        };
+        let up = Vec3::new(0.0, 0.53, 0.85) * 0.8;
+        let (a, b) = (Vec3::new(0.7, 0.72, -2.13), Vec3::new(-0.7, 0.72, -2.13));
+        let glass = mesh(&[[a, b, b + up], [a, b + up, a + up]], true, Some(Shade { glass: true, ..Shade::default() }));
+        let dash = mesh(&[[Vec3::ZERO, Vec3::X, Vec3::Z]], false, Some(Shade::default()));
+        let windscreen = MeshDamage { window: damage::window_slot(WINDSCREEN), ..MeshDamage::default() };
+        let hung = bulkhead(&[glass.clone(), dash], &[windscreen.clone(), MeshDamage::default()]).unwrap();
+        let (top, bottom) = (hung.vertices[0].position, hung.vertices[1].position);
+        assert!((top[1] - 0.72).abs() < 0.03 && (top[2] + 2.13).abs() < 0.05, "at the foot: {top:?}");
+        assert!((bottom[1] - (top[1] - BULKHEAD_DEPTH)).abs() < 1e-5 && bottom[2] == top[2], "straight down");
+        let draw = &hung.draws[0];
+        assert!(!draw.state.blend && !draw.state.cull_back && draw.indices == (0..hung.indices.len()));
+        assert_eq!(hung.vertices[0].color, BULKHEAD_COLOUR);
+        assert!(bulkhead(&[glass], &[MeshDamage::default()]).is_none(), "no windscreen part");
     }
 }

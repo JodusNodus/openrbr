@@ -493,7 +493,15 @@ not ported.
   window part's texture lets through at each film corner, `1 - alpha` of its blended faces (`glass::Tints`, read at
   load from the interior set's window parts, `MeshDamage::window`): the Clio Rally3's printed sun strip glowed brown
   (0.37 against 0.05 with `windscreen` off) and now only shows the cabin reflected in it. Dust 0.4% (was 1%: the view
-  went milky toward a low sun; dark trees +0.15 in display value, now +0.08). Outside views byte-identical.
+  went milky toward a low sun; dark trees +0.15 in display value, now +0.08). The bulkhead (`glass::bulkhead`, with
+  `windscreen`): a dark strip hanging 0.6 m from the glass's foot in the interior set, drawn as its first opaque lit
+  face, added after the cabin light's bake (seeing no sky) and drawn only in the in-car mirrors' passes, casting no
+  shadow (`Renderer::set_reflected_only`). The sets leave gaps between the dash and the glass that the driver never
+  sees past; the reflection showed the road under the car and the sky through them (Clio Rally3: a ragged white patch
+  over the dash; with the stage left out of the pass it turned to sky). Drawn in the main view it hid the Escort Mk
+  II's footwell (upright glass), and baked it took the cabin's sky share from 0.280 to 0.267; now the Escort is
+  unchanged and the Clio changes only in the gap; a few dim lines stay at the dash's edge. Tried and dropped: sloping
+  it back under the dash at 45 degrees (lit grey facets, a larger gap). Outside views byte-identical.
   Cars without `i_window_f` (RSF M3 E30) have no glass at all.
 
 ## Skid marks

@@ -64,6 +64,8 @@ pub struct Scene {
     pub ghost: Option<ghost::Session>,
     /// How much sun gets into the cabin, with the cabin light (`car::cabin::SunIn`).
     pub cabin_sun: Option<car::cabin::SunIn>,
+    /// The bulkhead under the windscreen, drawn only in its reflection (`glass::bulkhead`).
+    pub bulkhead: Option<Mesh>,
     /// The grass streamed about the eye (`--enhance grass`, [`rbr_render::grass`]).
     pub grass: Option<std::sync::Arc<rbr_render::grass::Field>>,
 }
@@ -87,6 +89,9 @@ impl Scene {
         }
         renderer.set_precipitation(self.precipitation);
         renderer.set_cabin_sun(self.cabin_sun.clone());
+        if let Some(index) = self.bulkhead.as_ref().and_then(|b| self.stage.meshes.iter().position(|m| m == b)) {
+            renderer.set_reflected_only(index);
+        }
         if let Some(grass) = &self.grass {
             renderer.set_grass(grass.clone());
         }
@@ -185,6 +190,7 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
                 hud: args.hud,
                 ghost: None,
                 cabin_sun: None,
+                bulkhead: None,
                 grass: None,
             })
         }
@@ -238,6 +244,7 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
                 (None, None, None, None, None, None, None);
             let mut cabin_sun = None;
             let mut tints = glass::Tints::default();
+            let mut bulkhead = None;
             // The `--at` frames that first list a detached part (`start_live`).
             let mut detaching = Vec::new();
             if let Some(car_name) = car_name {
@@ -272,9 +279,9 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
                         report_car(&car.add_to_stage(&mut stage));
                         // Both sets are in the stage before the playback looks up their meshes: adding sorts it.
                         let cabin = args.enhance.cabin.then_some(model.as_slice());
-                        let (mut interior, mut interior_damage, sun_in, window_tints) =
-                            add_interior(data, car_name, &mut stage, cabin)?;
-                        (cabin_sun, tints) = (sun_in, window_tints);
+                        let (mut interior, mut interior_damage, sun_in, window_tints, under_glass) =
+                            add_interior(data, car_name, &mut stage, cabin, args.enhance.windscreen)?;
+                        (cabin_sun, tints, bulkhead) = (sun_in, window_tints, under_glass);
                         car::follow_dents(&interior, &mut interior_damage, &model, &damage);
                         let rsf = args.rsf_install.as_deref().filter(|_| args.dials && args.rsf_car.is_some());
                         dials = rsf.and_then(|root| load_dials(root, car_name, &mut stage));
@@ -412,6 +419,7 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
                 hud: args.hud,
                 ghost,
                 cabin_sun,
+                bulkhead,
                 grass,
             })
         }
@@ -574,14 +582,21 @@ fn damage_static(car: &mut car::Car, args: &Args) {
     car.crack(&cracks);
 }
 
-/// The interior set's meshes, what damage does to them, with the cabin light how much sun gets into the cabin, and
-/// what its windows let through.
-type Interior = (Vec<Mesh>, Vec<MeshDamage>, Option<car::cabin::SunIn>, glass::Tints);
+/// The interior set's meshes, what damage does to them, with the cabin light how much sun gets into the cabin, what its
+/// windows let through, and with the windscreen's effects the bulkhead in its reflection.
+type Interior = (Vec<Mesh>, Vec<MeshDamage>, Option<car::cabin::SunIn>, glass::Tints, Option<Mesh>);
 
 /// Adds the car's interior set, for the in-car views, to `stage` and returns its meshes and what damage does to them.
 /// With the cabin light, `exterior`, the exterior set's meshes, shade it (`car::cabin`), and it returns how much sun
-/// gets into the cabin.
-fn add_interior(data: &Data, car_name: &str, stage: &mut Stage, exterior: Option<&[Mesh]>) -> Result<Interior, String> {
+/// gets into the cabin. With the windscreen's effects it adds the bulkhead under the glass after the cabin light's bake,
+/// for the windscreen's reflection only (`glass::bulkhead`).
+fn add_interior(
+    data: &Data,
+    car_name: &str,
+    stage: &mut Stage,
+    exterior: Option<&[Mesh]>,
+    windscreen: bool,
+) -> Result<Interior, String> {
     let mut interior = car::load_interior(data, car_name, car::placement_at(None))
         .map_err(|e| e.to_string())?
         .after_textures_of(stage);
@@ -595,8 +610,13 @@ fn add_interior(data: &Data, car_name: &str, stage: &mut Stage, exterior: Option
             sun_in.bounce()
         );
     }
+    let bulkhead = glass::bulkhead(&interior.meshes, &interior.damage).filter(|_| windscreen);
+    if let Some(bulkhead) = &bulkhead {
+        interior.meshes.push(bulkhead.clone());
+        interior.damage.push(MeshDamage::default());
+    }
     let tints = glass::Tints::measure(&interior.meshes, &interior.damage, &interior.textures);
-    let meshes = (interior.meshes.clone(), interior.damage.clone(), sun_in, tints);
+    let meshes = (interior.meshes.clone(), interior.damage.clone(), sun_in, tints, bulkhead);
     let report = interior.add_to_stage(stage);
     eprintln!(
         "car interior set (in-car views): {} meshes drawn, {} missing textures, {} bad triangles",

@@ -24,6 +24,9 @@ pub(super) struct GpuMesh {
     /// For the car's parts, whether the outside views would draw it ([`Renderer::set_outside_visible`]): the door
     /// mirrors' passes draw those (`View::Mirror`).
     pub(super) outside: Option<bool>,
+    /// Drawn only in the in-car mirrors' passes (the windscreen's reflection, the centre mirror), casting no shadow
+    /// ([`Renderer::set_reflected_only`]).
+    pub(super) reflected: bool,
     pub(super) anchor: Anchor,
     pub(super) layer: Layer,
     /// Where its vertices and indices are ([`Packing`]); its draws' index ranges are in the shared index buffer.
@@ -47,8 +50,9 @@ impl GpuMesh {
     /// Whether `view` draws the mesh.
     pub(super) fn shown_in(&self, view: super::frame::View) -> bool {
         match view {
-            super::frame::View::Mirror { side: true } => self.outside.unwrap_or(self.visible),
-            _ => self.visible,
+            super::frame::View::Mirror { side: true } => !self.reflected && self.outside.unwrap_or(self.visible),
+            super::frame::View::Mirror { side: false } => self.visible,
+            _ => self.visible && !self.reflected,
         }
     }
 
@@ -427,6 +431,16 @@ impl Renderer {
     pub fn set_outside_visible(&mut self, index: usize, visible: bool) {
         if let Some(Some(slot)) = self.slots.get(index) {
             self.meshes[*slot].outside = Some(visible);
+        }
+    }
+
+    /// Draws stage mesh `index` only in the in-car mirrors' passes, with no shadow (`glass::bulkhead`; after
+    /// [`Renderer::set_car`]).
+    pub fn set_reflected_only(&mut self, index: usize) {
+        if let Some(Some(slot)) = self.slots.get(index) {
+            let mesh = &mut self.meshes[*slot];
+            mesh.reflected = true;
+            mesh.draws.iter_mut().for_each(|draw| draw.casts_shadow = false);
         }
     }
 }
