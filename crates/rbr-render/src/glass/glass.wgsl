@@ -13,7 +13,8 @@ struct Frame {
     light: vec4<f32>,
     // At night (renderer addition, `Atmosphere::night`): rgb the headlights' glow on the glass, w 1 (`night_light`).
     night: vec4<f32>,
-    // x 1 seen from outside: the film's wet layer (`wet_layer`).
+    // x 1 seen from outside: the film's wet layer (`wet_layer`); y how wet the glass has been, 0 to 1 (its dried
+    // spots).
     outside: vec4<f32>,
     // The eye, stage space.
     eye: vec4<f32>,
@@ -375,7 +376,8 @@ fn mud_inside(in: Out, rim: f32, soft: f32) -> vec4<f32> {
 //   wipers sweep;
 // - dirt specks `SPECK_CELL` apart at most, a few tenths of a millimetre, dark against the view behind, bright when the
 //   sun lights them from ahead;
-// - dried water spots, `SPOT_CELL` apart at most, rings of what the water left, faint unless the sun lights them;
+// - dried water spots, `SPOT_CELL` apart at most, as many as the glass has been wet, rings of what the water left,
+//   faint unless the sun lights them;
 // - the wipers' fine scratches, arcs about their pivots in bands: a scratch lights where the sun's light, bent about
 //   it, reaches the eye (the cone `dot(t, sun - view) = 0` about its tangent `t`), so the lit arcs line up through the
 //   pivot toward the sun.
@@ -384,10 +386,11 @@ const PANE_F0: f32 = 0.04;
 const PANE_EDGE: f32 = 0.05;
 // The dust: the share of the sun's light on the pane it scatters toward the eye (a forward lobe, `DUST_G`, and a broad
 // one, `DUST_BROAD` of it), and of the sky's; patches `DUST_PATCH` across, the swept areas at `DUST_SWEPT` of it. A
-// light film: at 1% the whole view went milky driving toward a low sun.
-const DUST: f32 = 0.004;
+// light film: at 1% the whole view went milky driving toward a low sun. Onboard footage shows the haze toward the sun
+// and next to none away from it, so the forward lobe carries it.
+const DUST: f32 = 0.006;
 const DUST_G: f32 = 0.8;
-const DUST_BROAD: f32 = 0.3;
+const DUST_BROAD: f32 = 0.1;
 const DUST_SKY: f32 = 0.0032;
 const DUST_PATCH: f32 = 0.12;
 const DUST_SWEPT: f32 = 0.55;
@@ -395,20 +398,32 @@ const DUST_SWEPT: f32 = 0.55;
 const DUST_SIDE: f32 = 0.5;
 const DUST_SLANT: f32 = 2.5;
 const SPECK_CELL: f32 = 0.008;
-const SPECK_CHANCE: f32 = 0.12;
-const SPECK_RADIUS: vec2<f32> = vec2<f32>(0.0002, 0.0012);
+// A cell's chance of a speck and its radius, metres (road dust: at 1.2 mm and one cell in eight they read as orange
+// flecks a few pixels wide on a side window), and the light it scatters toward the eye besides its forward glow, of
+// the sun's and of the sky's (seen from inside, its lit side faces away).
+const SPECK_CHANCE: f32 = 0.03;
+const SPECK_RADIUS: vec2<f32> = vec2<f32>(0.0001, 0.0004);
 const SPECK_COLOUR: vec3<f32> = vec3<f32>(0.62, 0.56, 0.47);
 const SPECK_SHADE: f32 = 0.7;
+const SPECK_DIFFUSE: vec2<f32> = vec2<f32>(0.04, 0.08);
 // The scratches: rings `SCRATCH_PITCH` apart about the pivot, each there by `SCRATCH_CHANCE` with a strength of its
 // own, in bands `SCRATCH_BAND` across; a scratch's light spread over the pixel it falls in (`SCRATCH_LINE` wide).
-const SCRATCH: f32 = 8.0;
+// Toward a low sun they read as a few faint streaks in the footage, not a pattern of arcs.
+const SCRATCH: f32 = 3.0;
+// A scratch's runs along its arc: their scale, metres, the noise above which there is one, and the share of the arc
+// they cover.
+const SCRATCH_RUN: vec3<f32> = vec3<f32>(0.06, 0.6, 0.3);
 const SPOT_CELL: f32 = 0.014;
 const SPOT_CHANCE: f32 = 0.06;
-const SPOT_RADIUS: vec2<f32> = vec2<f32>(0.0015, 0.004);
+// A spot's radius, metres, its rim's width over the radius and how much the rim wanders in and out (a dried drop's
+// edge is not a circle: at 4 mm and a sharp rim they read as drawn rings).
+const SPOT_RADIUS: vec2<f32> = vec2<f32>(0.0008, 0.0025);
+const SPOT_RIM: f32 = 0.3;
+const SPOT_WOBBLE: f32 = 0.25;
 const SPOT_LIGHT: f32 = 0.25;
 const SCRATCH_WIDTH: f32 = 0.1;
 const SCRATCH_PITCH: f32 = 0.0012;
-const SCRATCH_CHANCE: f32 = 0.3;
+const SCRATCH_CHANCE: f32 = 0.15;
 const SCRATCH_LINE: f32 = 0.0002;
 const SCRATCH_BAND: f32 = 0.02;
 
@@ -510,10 +525,14 @@ fn pane(in: Out, per_pixel: mat2x2<f32>) -> vec4<f32> {
                 let ring = w.y / SCRATCH_PITCH;
                 let h = hash4(u32(ring) * 2654435761u + u32(i) * 97u);
                 let d = abs(fract(ring) - 0.5) * SCRATCH_PITCH;
-                let line = select(0.0, h.y, h.x < SCRATCH_CHANCE) * min(SCRATCH_LINE / pixel, 1.0)
+                // Grit under the blade cuts a run of the arc, not all of it.
+                let pivot = at - frame.wipers[i * 2].xy;
+                let along = atan2(pivot.y, pivot.x) * w.y / SCRATCH_RUN.x;
+                let run = smoothstep(SCRATCH_RUN.y, SCRATCH_RUN.y + 0.1, value_noise(vec2<f32>(along, floor(ring)), 12u));
+                let line = select(0.0, h.y, h.x < SCRATCH_CHANCE) * run * min(SCRATCH_LINE / pixel, 1.0)
                     * exp(-d * d / max(pixel * pixel * 0.5, 1e-12));
                 // Finer than a pixel the rings average out.
-                let mean = SCRATCH_CHANCE * 0.5 * SCRATCH_LINE / SCRATCH_PITCH;
+                let mean = SCRATCH_CHANCE * 0.5 * SCRATCH_LINE / SCRATCH_PITCH * SCRATCH_RUN.z;
                 let fine = mix(line, mean, smoothstep(SCRATCH_PITCH * 0.5, SCRATCH_PITCH * 2.0, pixel));
                 let ahead = (0.5 + 0.5 * cos_t) * (0.5 + 0.5 * cos_t);
                 scratch += sun_light * SCRATCH * w.x * band * fine * exp(-off * off) * ahead / cos_v;
@@ -536,7 +555,8 @@ fn pane(in: Out, per_pixel: mat2x2<f32>) -> vec4<f32> {
         let d2 = dot(at - centre, at - centre);
         let spread = radius * radius + 0.36 * pixel * pixel;
         let cover = min(radius * radius / spread, 1.0) * exp(-d2 / spread);
-        let lit = linear(SPECK_COLOUR) * (sun_light * (0.15 + henyey_greenstein(cos_t, 0.5) * 2.0) + sky * 0.25);
+        let lit = linear(SPECK_COLOUR)
+            * (sun_light * (SPECK_DIFFUSE.x + henyey_greenstein(cos_t, 0.5) * 2.0) + sky * SPECK_DIFFUSE.y);
         light += lit * cover;
         through *= 1.0 - cover * SPECK_SHADE;
     }
@@ -544,12 +564,15 @@ fn pane(in: Out, per_pixel: mat2x2<f32>) -> vec4<f32> {
     let spot_cell = floor(at / SPOT_CELL);
     let spot_key = vec2<u32>(vec2<i32>(spot_cell) + vec2<i32>(8192));
     let s = hash4(spot_key.x * 83492791u ^ spot_key.y * 2971215073u ^ u32(in.seed) * 19349663u);
-    if (s.x < SPOT_CHANCE * mix(1.0, 0.3, swept)) {
+    if (s.x < SPOT_CHANCE * frame.outside.y * mix(1.0, 0.3, swept)) {
         let radius = mix(SPOT_RADIUS.x, SPOT_RADIUS.y, s.y);
         let centre = (spot_cell + 0.3 + 0.4 * s.zw) * SPOT_CELL;
-        let r = length(at - centre) / radius;
-        let width = max(0.12, pixel / radius);
-        let ring = exp(-(r - 1.0) * (r - 1.0) / (width * width)) * min(0.12 / width, 1.0);
+        let d = at - centre;
+        let turn = atan2(d.y, d.x) * 0.9549297;
+        let wobble = value_noise(vec2<f32>(turn, s.y * 64.0), 23u) - 0.5;
+        let r = length(d) / (radius * (1.0 + SPOT_WOBBLE * wobble));
+        let width = max(SPOT_RIM, pixel / radius);
+        let ring = exp(-(r - 1.0) * (r - 1.0) / (width * width)) * min(SPOT_RIM / width, 1.0) * 0.5;
         let film = (1.0 - smoothstep(0.8, 1.0, r)) * 0.15;
         let residue = ring + film;
         light += sun_light * henyey_greenstein(cos_t, 0.7) * SPOT_LIGHT * residue + sky * 0.02 * residue;

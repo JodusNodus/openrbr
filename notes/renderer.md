@@ -330,6 +330,8 @@ probably fit the wrong hour.
 - `CarIntGlass` in the in-car view with the day's light (ours, 2026-10-26; `shader.wgsl`): translucent texels darken
   what is seen through them, near-opaque ones (sun strips, visors) stay lit. A light texel (RSF 52's `i_window_f`,
   grey 134 at alpha 85) greyed the view in overcast and wet. 12 RSF cars checked; additions off byte-identical.
+  Coloured texels stay lit too (chroma 0.15 to 0.3, `INT_GLASS_PRINTED_CHROMA`, 2026-10-30): the RSF M3 E30's yellow
+  banner is drawn at alpha 0.47 and went dark against the sky; its clear glass is grey at 0.22.
 
 ## Lights
 
@@ -498,7 +500,13 @@ not ported.
   window part's texture lets through at each film corner, `1 - alpha` of its blended faces (`glass::Tints`, read at
   load from the interior set's window parts, `MeshDamage::window`): the Clio Rally3's printed sun strip glowed brown
   (0.37 against 0.05 with `windscreen` off) and now only shows the cabin reflected in it. Dust 0.4% (was 1%: the view
-  went milky toward a low sun; dark trees +0.15 in display value, now +0.08). The bulkhead (`glass::bulkhead`, with
+  went milky toward a low sun; dark trees +0.15 in display value, now +0.08). Against onboard footage and matched
+  frames (2026-10-30; M3 E30 621 13:00 heavy cloud, Fiesta Rally2 Luceram 08:30): the glass hazes toward a low sun and
+  reads clear away from it, with a few faint streaks and no visible dots or rings. Dust 0.6% with the broad lobe a
+  tenth (was 0.4% and 0.3); scratches a third as strong, half as many, each a run of its arc (`SCRATCH_RUN`, about
+  0.3 of it: whole rings read as a regular pattern of arcs); specks a quarter as many and at most 0.4 mm (orange flecks
+  on the side windows); dried spots only as the glass has been wet (`Renderer::wetness` or the precipitation, so none on
+  a dry stage), 0.8 to 2.5 mm with a soft wavering rim (drawn rings). The bulkhead (`glass::bulkhead`, with
   `windscreen`): a dark strip hanging 0.6 m from the glass's foot in the interior set, drawn as its first opaque lit
   face, added after the cabin light's bake (seeing no sky) and drawn only in the in-car mirrors' passes, casting no
   shadow (`Renderer::set_reflected_only`). The sets leave gaps between the dash and the glass that the driver never
@@ -735,7 +743,11 @@ Cabin bounce by the day's light (ours, 2026-10-30, `cabin_day_lit`): the constan
 are gone. A closed room's interreflection gives the bounce: E = (1 - sky) x rho / (1 - rho) x the mean light the
 interior takes in, the sky's through the cabin's mean seen direction and the sun's mean n.l (`SunIn`). rho is the
 area-weighted interior albedo (texel at each face's uv centroid at 64 px or less, times the vertex colour, per channel,
-at most 0.9; the bounce per channel, so a tan cabin's is warm). Measured (luma) sky share / albedo / bounce: Escort
+at most 0.9; the bounce per channel, so a tan cabin's is warm), over the faces that see the sky at most 0.6 to 0.9 of
+the time (`cabin::OUTSIDE`): the interior set holds outside body panels, and the RSF M3 E30's green livery (13.7 of its
+28.7 m^2) lit its headliner teal (albedo 0.099 / 0.183 / 0.146, now 0.095 / 0.112 / 0.106; roof 19 / 44 / 34 of 255,
+now 23 / 29 / 28; sky share unchanged). Weighing the sky share by it too took the share to 0.092 and the roof to 7.
+The day's window light and sky inside take `IBL_TINT` as the outside's ambient does (no visible change). Measured (luma) sky share / albedo / bounce: Escort
 0.280 / 0.124 / 0.141, GC8 0.343 / 0.075 / 0.081, Clio 0.361 / 0.154 / 0.183, 131 0.222 / 0.185 / 0.227, 208 0.296 /
 0.088 / 0.097, Fiesta 0.236 / 0.055 / 0.058, Yaris 0.198 / 0.447 / 0.810. Dark cabins fall off to the roof and
 footwells, the white Yaris shell is lighter; the window term is untinted (`CABIN_DAY_RANGE` 0.03 to 4). The glass: the

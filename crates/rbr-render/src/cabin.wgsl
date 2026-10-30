@@ -123,8 +123,8 @@ fn cabin_day_lit(colour: vec3<f32>, v: VertexOut, n: vec3<f32>, shadowed: f32, u
     }
     let ndl = max(dot(n, to_sun), 0.0) * (1.0 - shadowed) * stage * cloud;
     let shade = v.bounce_sun;
-    let window = sky * cabin_window(cabin_seen(v), sky, 1.0, CABIN_DAY_RANGE) * shade.x;
-    let sky_in = frame.cabin.w * cabin_window(frame.cabin_seen.xyz, frame.cabin.w, 1.0, CABIN_DAY_RANGE) * shade.y;
+    let window = sky * cabin_window(cabin_seen(v), sky, IBL_TINT, CABIN_DAY_RANGE) * shade.x;
+    let sky_in = frame.cabin.w * cabin_window(frame.cabin_seen.xyz, frame.cabin.w, IBL_TINT, CABIN_DAY_RANGE) * shade.y;
     let sun_in = frame.wetness.z * shade.z * cloud * (1.0 - n.y / 3.0);
     let sky_through = frame.day_sky.rgb * CABIN_SKY_THROUGH;
     let sun_through = frame.day_sun.rgb * frame.cabin_seen.w;
@@ -238,8 +238,9 @@ const CABIN_OPEN_EDGE: f32 = 0.15;
 // the whole hemisphere and for a narrow window), against what lies overhead as blurred as the widest, in linear light:
 // a face that sees the open sky above keeps the light it had. `CABIN_TINT` of its colour, the brightness held to
 // `range`, `tint` of its colour: with the game's light `CABIN_TINT` and `CABIN_RANGE`, with the day's (`cabin_day_lit`)
-// all of it, held only from the cube's extremes (`CABIN_DAY_RANGE`). A face turned to a sunset window takes its warm
-// light, one that sees out only toward the trees less, and their green.
+// `IBL_TINT`, as the outside view's ambient keeps of its direction's colour, held only from the cube's extremes
+// (`CABIN_DAY_RANGE`). A face turned to a sunset window takes its warm light, one that sees out only toward the trees
+// less, and their green.
 const CABIN_LEVELS: vec2<f32> = vec2<f32>(5.5, 3.0);
 const CABIN_TINT: f32 = 0.3;
 const CABIN_RANGE: vec2<f32> = vec2<f32>(0.25, 2.0);

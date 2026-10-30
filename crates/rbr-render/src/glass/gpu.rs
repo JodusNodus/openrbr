@@ -56,7 +56,8 @@ struct FrameUniform {
     light: [f32; 4],
     /// At night (renderer addition, `Atmosphere::night`): rgb the headlights' glow on the glass, w 1.
     night: [f32; 4],
-    /// Seen from outside (ours): x 1, the wet layer of the film (`glass.wgsl`); 0 inside.
+    /// Seen from outside (ours): x 1, the wet layer of the film (`glass.wgsl`); 0 inside. y how wet the glass has been,
+    /// 0 to 1 (the dried water spots).
     outside: [f32; 4],
     /// The eye, stage space.
     eye: [f32; 4],
@@ -273,7 +274,8 @@ impl Pass {
         self.count > 0
     }
 
-    /// The frame's camera, size and light.
+    /// The frame's camera, size and light; `wet` how wet the stage is (0 dry, 1 wet).
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn prepare(
         &self,
         queue: &wgpu::Queue,
@@ -281,6 +283,7 @@ impl Pass {
         (width, height): (u32, u32),
         a: &Atmosphere,
         outside: bool,
+        wet: f32,
         cascades: Option<&crate::sun::Cascades>,
     ) {
         let (w, h) = (width.max(1) as f32, height.max(1) as f32);
@@ -290,7 +293,7 @@ impl Pass {
             screen: [w, h, 1.0 / w, 1.0 / h],
             light: light.extend(1.0).to_array(),
             night: if a.night { [NIGHT_GLOW[0], NIGHT_GLOW[1], NIGHT_GLOW[2], 1.0] } else { [0.0; 4] },
-            outside: [f32::from(u8::from(outside)), 0.0, 0.0, 0.0],
+            outside: [f32::from(u8::from(outside)), wet.max(a.precipitation()).clamp(0.0, 1.0), 0.0, 0.0],
             eye: crate::camera::eye(view_projection).extend(1.0).to_array(),
             sun: (-a.sun_direction.normalize_or_zero()).extend(if a.night { 0.0 } else { 1.0 }).to_array(),
             sun_light: a.diffuse.extend(1.0).to_array(),

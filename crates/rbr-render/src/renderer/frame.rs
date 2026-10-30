@@ -113,7 +113,7 @@ impl Renderer {
             particles.prepare(&self.queue, effects_view, &lit);
         }
         if let Some(glass) = &self.glass {
-            glass.prepare(&self.queue, drawn[0], size, &lit, self.outside_view, self.cascades.as_ref());
+            glass.prepare(&self.queue, drawn[0], size, &lit, self.outside_view, self.wetness, self.cascades.as_ref());
         }
         let day = self.day_light();
         if let Some(effects) = &mut self.effects {

@@ -803,8 +803,11 @@ fn backlit(colour: vec3<f32>, texel: vec3<f32>, uv: vec2<f32>, night: bool) -> v
     return max(colour, texel * backlight * DIAL_GLOW * level);
 }
 
-// The interior glass's alpha over which a texel is printed on the glass (lit), not a tint: from x, wholly at y (ours).
+// The interior glass's alpha over which a texel is printed on the glass (lit), not a tint: from x, wholly at y (ours);
+// and its colour's chroma (max - min) over which it is printed whatever its alpha (the BMW M3 E30's yellow banner at
+// alpha 0.47 over a grey glass at 0.22).
 const INT_GLASS_PRINTED: vec2<f32> = vec2<f32>(0.5, 0.75);
+const INT_GLASS_PRINTED_CHROMA: vec2<f32> = vec2<f32>(0.15, 0.3);
 
 // The glass seen from outside (ours): the least share of the view it absorbs, and the share of the day's light its own
 // colour keeps (dry, rain).
@@ -1026,9 +1029,11 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     }
     // With the day's light the interior glass's translucent texels only darken what is seen through it, by their
     // alpha and darkness: lit as in the game under the day's exposure, a light one (RSF 52's `i_window_f`) greyed the
-    // view. Near-opaque texels (sun strips, visors printed on the glass) stay lit.
+    // view. Near-opaque texels (sun strips, visors printed on the glass) and coloured ones (banners) stay lit.
     if (inside && day_on() && mode.grime.y != 0.0 && mirror >= MIRROR_COUNT) {
-        let printed = smoothstep(INT_GLASS_PRINTED.x, INT_GLASS_PRINTED.y, alpha);
+        let chroma = max(first.r, max(first.g, first.b)) - min(first.r, min(first.g, first.b));
+        let printed = max(smoothstep(INT_GLASS_PRINTED.x, INT_GLASS_PRINTED.y, alpha),
+            smoothstep(INT_GLASS_PRINTED_CHROMA.x, INT_GLASS_PRINTED_CHROMA.y, chroma));
         let tint = alpha * (1.0 - dot(first.rgb, vec3<f32>(0.2126, 0.7152, 0.0722)));
         let blended = mix(tint, alpha, printed);
         colour = colour * printed * alpha / max(blended, 1e-4);

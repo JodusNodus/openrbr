@@ -250,7 +250,9 @@ pub fn bake(
 /// that way, an open cockpit); the share of the sky each
 /// sees and where it sees it ([`Grid::sky`]); and their linear albedo per channel, the texel at the face's middle times
 /// its vertex colour as `shader.wgsl` shades it. The light that comes in lights the rest of the cabin back off its faces
-/// (`cabin.wgsl`): the roof lining over a sunlit dash or seat, the footwells.
+/// (`cabin.wgsl`): the roof lining over a sunlit dash or seat, the footwells. The albedo weighs each face by how far it
+/// is inside the cabin ([`inside`]): the interior set holds the body seen through the glass too, the BMW M3 E30's half
+/// of its area in its green livery, which turned the bounce teal.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SunIn {
     directions: Vec<Vec3>,
@@ -268,6 +270,16 @@ const SUN_DIRECTIONS: usize = 128;
 const SUN_FACES: usize = 3000;
 /// How sharply [`SunIn::at`] weighs the measured directions by their closeness.
 const SUN_SHARPNESS: i32 = 32;
+
+/// The sky share over which a face goes from inside the cabin to outside it (the body seen through the glass), the
+/// range over which `cabin.wgsl` lights a face as the outside view does (`CABIN_OUT`).
+const OUTSIDE: [f32; 2] = [0.6, 0.9];
+
+/// How far a face that sees `sky` of the sky is inside the cabin, 1 to 0 over [`OUTSIDE`].
+fn inside(sky: f32) -> f32 {
+    let t = ((sky - OUTSIDE[0]) / (OUTSIDE[1] - OUTSIDE[0])).clamp(0.0, 1.0);
+    1.0 - t * t * (3.0 - 2.0 * t)
+}
 
 /// The largest texel the albedo is read at: the texture's level at most this wide.
 const ALBEDO_LEVEL: u32 = 64;
@@ -298,7 +310,7 @@ impl SunIn {
             let at = (y * w + x) * 4;
             Some(Vec3::new(rgba[at] as f32, rgba[at + 1] as f32, rgba[at + 2] as f32) / 255.0)
         };
-        let (mut area, mut sky, mut seen, mut albedo) = (0.0, 0.0, Vec3::ZERO, Vec3::ZERO);
+        let (mut area, mut sky, mut seen, mut albedo, mut within) = (0.0, 0.0, Vec3::ZERO, Vec3::ZERO, 0.0);
         let mut first = 0;
         for mesh in interior {
             for draw in mesh.draws.iter().filter(|draw| opaque(draw)) {
@@ -317,10 +329,12 @@ impl SunIn {
                         draw.state.textures[0].as_ref().and_then(|key| texel(key, middle)).unwrap_or(Vec3::ONE) * tint;
                     let linear = colour.powf(2.2).min(Vec3::splat(ALBEDO_MOST));
                     let [sa, sb, sc] = t.map(|i| skies[first + i as usize]);
+                    let share = (sa.0 + sb.0 + sc.0) / 3.0;
                     area += size;
-                    sky += size * (sa.0 + sb.0 + sc.0) / 3.0;
+                    sky += size * share;
                     seen += size * (sa.1 + sb.1 + sc.1) / 3.0;
-                    albedo += size * linear;
+                    within += size * inside(share);
+                    albedo += size * inside(share) * linear;
                 }
             }
             first += mesh.vertices.len();
@@ -328,7 +342,7 @@ impl SunIn {
         if area <= 0.0 {
             return (0.0, Vec3::ZERO, Vec3::ZERO);
         }
-        (sky / area, seen / area, albedo / area)
+        (sky / area, seen / area, albedo / f32::max(within, 1e-6))
     }
 
     fn measure(
