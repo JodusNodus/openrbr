@@ -338,9 +338,10 @@ impl Effects {
         queue.write_buffer(&self.mirror_uniform, 0, bytes_of(&uniform));
     }
 
-    /// Draws the rain or snow into a mirror's `pass` with its [`Effects::mirror_group`].
+    /// Draws the rain or snow into a mirror's `pass` with its [`Effects::mirror_group`]: the near layer only, the far
+    /// one's drops under a pixel there (it took most of the mirrors' time in rain).
     pub(crate) fn draw_mirror_rain(&self, pass: &mut wgpu::RenderPass<'_>, group: &wgpu::BindGroup) {
-        self.draw_with(pass, &self.rain, group);
+        self.draw_with(pass, &self.rain, group, NEAR_COUNT);
     }
 
     /// The bind group the particles' soft pipeline takes at group 1.
@@ -356,12 +357,19 @@ impl Effects {
             pass.set_bind_group(1, &self.group, &[]);
             pass.draw(0..3, 0..1);
         }
-        self.draw_with(pass, &self.rain, &self.group);
+        self.draw_with(pass, &self.rain, &self.group, NEAR_COUNT + FAR_COUNT);
     }
 
-    fn draw_with(&self, pass: &mut wgpu::RenderPass<'_>, pipeline: &wgpu::RenderPipeline, group: &wgpu::BindGroup) {
+    /// Draws the first `layers` drops at full rain or snow (the near layer's come first, `rain.wgsl`).
+    fn draw_with(
+        &self,
+        pass: &mut wgpu::RenderPass<'_>,
+        pipeline: &wgpu::RenderPipeline,
+        group: &wgpu::BindGroup,
+        layers: u32,
+    ) {
         let Some(precipitation) = self.precipitation else { return };
-        let count = ((NEAR_COUNT + FAR_COUNT) as f32 * precipitation.intensity.clamp(0.0, 1.0)) as u32;
+        let count = (layers as f32 * precipitation.intensity.clamp(0.0, 1.0)) as u32;
         if count == 0 {
             return;
         }

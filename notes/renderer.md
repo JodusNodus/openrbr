@@ -650,7 +650,8 @@ Lighting, in pieces (all with `lighting`; each measured on its own before the me
   cube 0.82 to 0.52, CPU drawn-only 15.4 to 12.2; Gabiria fly-by 3.83 to 1.64. What is left is cut-out fill at 4096
   (cascades 0.5/1.5/1.7 ms; 0.2/0.3/0.3 without cut-outs). Frames differ only in the paint's cube (no grass) and the
   asphalt. Tried and dropped: alpha from a coarser mip in `fs_sun` (-0.5 ms on cascade 3, changes coverage), cut-out
-  casters sorted front to back (no gain).
+  casters sorted front to back (no gain). The mirrors draw only the rain's near layer (the far one's drops are under a
+  pixel there): 4K Luceram rain cockpit mirrors 0.91 to 0.72 ms, the mirror images unchanged to the eye (2026-10-30).
 - Clouds: the main view's clouds are volumetric (`renderer/cloud_volume.rs`, `cloud_volume.wgsl`; by night lit by the
   moon) and the game's cloud faces are not drawn (2026-10-25). The layer's kind by the cover: clear cumulus 1.2 km up
   under cirrus, partly 2.2 km thick, light stratocumulus 1.1 km up, overcast a closed deck 0.9 km up. A sunlit layer's
