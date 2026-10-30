@@ -9,11 +9,10 @@
 //! lusher or drier ([`patches`]), the cards lean a little and the shader sways their tops in the wind (`grass_sway`).
 //!
 //! [`add`] keeps the ground's triangles by [`TILE`] square tile (a [`Field`]); the stage holds [`SLOTS`] tile meshes,
-//! and the renderer keeps those of the tiles about the eye filled with their cards ([`Ring`]): all of them near and a
-//! thinning share further out ([`density`]), drawn within [`CLOSE_DISTANCE`] ([`Lod::Close`]). A tile holds a little
-//! more than its density draws ([`take`]), its outermost cards shrunk in ([`Card::grow`]) so the field thickens
-//! smoothly as the eye nears rather than popping at share steps. A worker thread makes the cards off the frame
-//! ([`Ring::update`]), the frame only uploading finished tiles. They
+//! and the renderer keeps those of the tiles about the eye filled with all their cards ([`Ring`]), each in the
+//! smallest free mesh that holds them, drawn within [`CLOSE_DISTANCE`] ([`Lod::Close`]); the shader flattens them into
+//! the ground over the last metres of [`REACH`] (`GRASS_FADE`), so they rise in rather than pop. A worker
+//! thread makes the cards off the frame ([`Ring::update`]), the frame only uploading finished tiles. They
 //! are cut-out stage draws marked as grass tufts, so the plants' lighting takes them (`tuft_light` in `shader.wgsl`)
 //! and they cast no sun shadow; they take the sky's occlusion and the bounce computed at load for the ground under
 //! them ([`Light`]).
@@ -27,7 +26,7 @@ use crate::stage::{
 use bytemuck::Zeroable;
 use glam::{Vec2, Vec3, Vec3Swizzles, Vec4Swizzles};
 use rbr_formats::dds;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 /// The grass texture's file name in [`Stage::texture_names`] (not a game file: [`texture`] draws it).
@@ -44,23 +43,18 @@ const LEVEL: f32 = 0.45;
 /// The side of the square tiles, metres.
 const TILE: f32 = 8.0;
 /// How far from the eye grass draws, metres: the tiles with their middle within this of the eye stream in and draw
-/// ([`CLOSE_DISTANCE`] covers a tile past it).
-pub(crate) const REACH: f32 = 100.0;
+/// ([`CLOSE_DISTANCE`] covers a tile past it), full to 10 m short of it and flattened into the ground over those
+/// (`GRASS_FADE` in `shader.wgsl`, which the ground under it fades its thatch over too).
+pub(crate) const REACH: f32 = 110.0;
 /// How far past [`REACH`], about the eye a few frames ahead along its motion, tiles are built before the eye needs
 /// them.
 const PREFETCH: f32 = 16.0;
-/// The drawn grass is full within this of the eye ([`density`]).
-const FULL_DENSE: f32 = 14.0;
-const HALVING: f32 = 10.0;
-/// A tile holds this much more of its cards than its density draws, so the drawn share's outermost cards shrink in
-/// rather than pop ([`Card::grow`]).
-const GROW_MARGIN: f32 = 1.5;
-/// The inclusion's steps a tile over ([`take`]): a tile rebuilds when its inclusion crosses one.
-const LADDER: f32 = 24.0;
-/// The tile meshes the stage holds, filled with the tiles about the eye: how many of them hold up to which share of
-/// [`CAPACITY`] (the nearer tiles hold more of their cards, [`take`]). Sized to hold every drawn tile along a road
-/// within [`REACH`], within 300 MB of video memory ([`tests::slots_fit_video_budget`]).
-const SLOTS: [(usize, f32); 5] = [(48, 1.0), (40, 0.5), (52, 0.25), (100, 0.125), (320, 0.0625)];
+/// The tile meshes the stage holds, filled with the tiles about the eye: how many hold up to how many cards. Each
+/// tile takes the smallest free one that holds its cards; the ground with none takes none. Sized for every grassy tile
+/// within [`REACH`] of the RSF stages 580, 621, 532, 450, 417, 176 and retail 52 (the farthest of a few at Odry 462's
+/// densest spot go without), in about 650 MB of video memory ([`tests::slots_fit_video_budget`]).
+const SLOTS: [(usize, usize); 9] =
+    [(60, 6400), (50, 5600), (60, 4800), (60, 4000), (60, 3200), (60, 2400), (70, 1600), (70, 800), (90, 400)];
 /// The most cards a tile holds: its clumps at [`DENSITY`], with room for ground laid over ground.
 const CAPACITY: usize = (TILE * TILE * DENSITY * 2.0 * 1.25) as usize;
 /// The tiles built on the frame itself, within this of the eye, so the near field is there on the first frame and
@@ -152,8 +146,7 @@ struct Ground {
 }
 
 /// One card of grass: its foot's middle, the ground's normal there, half its width across (x and z), its top's lean,
-/// its height, its brightness against the texture's ([`GRASS_MARK`]), its tint, its picture, the ground's light, and
-/// how grown it is (0 a point at its foot, 1 full): the inclusion's outermost cards shrink in rather than pop.
+/// its height, its brightness against the texture's ([`GRASS_MARK`]), its tint, its picture and the ground's light.
 #[derive(Clone, Copy)]
 struct Card {
     at: Vec3,
@@ -165,7 +158,6 @@ struct Card {
     hue: [u8; 3],
     picture: usize,
     light: Light,
-    grow: f32,
 }
 
 /// The light the load computes for a ground vertex, unpacked: how little of the sky it sees
@@ -288,7 +280,7 @@ pub fn add(stage: &mut Stage) -> Option<Field> {
         }
     }
     let slots =
-        SLOTS.iter().flat_map(|&(count, share)| (0..count).map(move |_| slot_mesh(texture, slot_capacity(share))));
+        SLOTS.iter().flat_map(|&(count, capacity)| (0..count).map(move |_| slot_mesh(texture, capacity)));
     stage.meshes.splice(blended..blended, slots);
     stage
         .texture_names
@@ -298,10 +290,8 @@ pub fn add(stage: &mut Stage) -> Option<Field> {
 }
 
 impl Field {
-    /// The cards of `tile`: `take` of them (0 to 1, an even subset: the same cards at any inclusion that holds
-    /// them) with `density` of them full size and the rest shrunk in ([`Card::grow`]), lit by `light`, each
-    /// triangle's corners' (none: open sky). `take` of 1 draws the same cards as before, full size.
-    fn cards(&self, tile: (i32, i32), take: f32, density: f32, capacity: usize, light: &[[Light; 3]]) -> Vec<Card> {
+    /// The cards of `tile`, up to `capacity` of them, lit by `light`, each triangle's corners' (none: open sky).
+    fn cards(&self, tile: (i32, i32), capacity: usize, light: &[[Light; 3]]) -> Vec<Card> {
         let mut cards = Vec::new();
         let Some(list) = self.tiles.get(&tile) else { return cards };
         let luma = |c: Vec3| c.powf(2.2).dot(Vec3::new(0.2126, 0.7152, 0.0722));
@@ -332,13 +322,12 @@ impl Field {
             };
             for _ in 0..wanted as usize {
                 // Every card draws the same numbers whatever it becomes, so the sequence holds across tiles and shares.
-                let [a, b, keep, chance, turn, width, height, pick, lean, lean_turn] = [0; 10].map(|_| random.next());
+                let [a, b, _, chance, turn, width, height, pick, lean, lean_turn] = [0; 10].map(|_| random.next());
                 let (a, b) = if a + b > 1.0 { (1.0 - a, 1.0 - b) } else { (a, b) };
                 let at = p[0] * (1.0 - a - b) + p[1] * a + p[2] * b;
-                if tile_of(at) != tile || keep >= take {
+                if tile_of(at) != tile {
                     continue;
                 }
-                let grow = grow_of(keep, take, density);
                 let distance = self.line.distance(at.xz());
                 let near = 1.0 - (1.0 - FAR_SHARE) * smoothstep(FULL, BAND, distance);
                 let fade = 1.0 - smoothstep(BAND - 6.0, BAND, distance);
@@ -376,7 +365,6 @@ impl Field {
                     hue: [hue.x as u8, hue.y as u8, hue.z as u8],
                     picture: kind.picture(pick),
                     light: Light::blend(&corners, [1.0 - a - b, a, b]),
-                    grow,
                 };
                 // The other card across it, a little shorter, with another picture of its kind.
                 let crossed = Card {
@@ -468,73 +456,6 @@ fn tile_of(p: Vec3) -> (i32, i32) {
     ((p.x / TILE).floor() as i32, (p.z / TILE).floor() as i32)
 }
 
-/// The density of the grass drawn with its tile middle `distance` metres from the eye: full within [`FULL_DENSE`],
-/// halving every [`HALVING`] metres past it (as before to 34 m), then thinning on to nothing at [`REACH`].
-/// Continuous in the distance, so the shrinking cards ([`Card::grow`]) glide rather than pop. `THATCH_DENSE` in
-/// `shader.wgsl` is the same.
-fn density(distance: f32) -> f32 {
-    if distance <= FULL_DENSE {
-        1.0
-    } else {
-        0.5f32.powf((distance - FULL_DENSE) / HALVING) * (1.0 - smoothstep(REACH - 20.0, REACH, distance))
-    }
-}
-
-/// The share of a tile's cards its mesh holds for drawn density `density`: that and the [`GROW_MARGIN`] band past
-/// it, up to a whole tile, on the [`LADDER`] steps. Zero where nothing draws.
-fn take(density: f32) -> f32 {
-    if density <= 0.0 {
-        0.0
-    } else {
-        ((density * GROW_MARGIN * LADDER).ceil() / LADDER).min(1.0)
-    }
-}
-
-/// [`take`] as its [`LADDER`] step, 1 to 24 (0 draws nothing and is never held).
-fn step_of(density: f32) -> u32 {
-    (take(density) * LADDER).round() as u32
-}
-
-/// How grown the card of rank `keep` is at drawn density `density` and inclusion `take`: full size within the drawn
-/// density, shrinking smoothly to a point at the inclusion's edge (and full size everywhere at `take` 1).
-fn grow_of(keep: f32, take: f32, density: f32) -> f32 {
-    if take >= 1.0 || keep <= density {
-        1.0
-    } else {
-        let t = ((take - keep) / (take - density)).clamp(0.0, 1.0);
-        t * t * (3.0 - 2.0 * t)
-    }
-}
-
-/// How many cards a tile mesh for `share` of a tile's cards holds.
-fn slot_capacity(share: f32) -> usize {
-    (CAPACITY as f32 * share) as usize
-}
-
-/// Reserve a mesh of `slots` for (`tile`, `take`): the smallest that fits, from meshes holding nothing `wanted`
-/// (`spare_only`: only the wholly free ones, for the early tiles). `None` when already held or building, or when no
-/// mesh fits.
-fn reserve_slot(
-    slots: &mut [Slot],
-    in_flight: &std::collections::HashSet<Held>,
-    tile: (i32, i32),
-    take: u32,
-    spare_only: bool,
-    wanted: &dyn Fn(Option<Held>) -> bool,
-) -> Option<(usize, usize)> {
-    let held = Some((tile, take));
-    if slots.iter().any(|s| s.held == held) || in_flight.contains(&(tile, take)) {
-        return None;
-    }
-    let need = slot_capacity((take as f32 / LADDER).min(1.0));
-    let slot = slots
-        .iter_mut()
-        .filter(|s| s.capacity >= need && (spare_only && s.held.is_none() || !spare_only && !wanted(s.held)))
-        .min_by_key(|s| s.capacity)?;
-    slot.held = held;
-    Some((slot.mesh, slot.capacity))
-}
-
 /// An empty tile mesh of `capacity` cards' vertices, all zero (no area) until it is filled, and no bounds, so that the
 /// load's bakes over the stage's extent leave it out.
 fn slot_mesh(texture: TextureRef, capacity: usize) -> Mesh {
@@ -565,31 +486,23 @@ fn slot_mesh(texture: TextureRef, capacity: usize) -> Mesh {
     }
 }
 
-/// A tile and the inclusion of its cards a tile mesh holds: the tile and its [`take`] step ([`step_of`]).
-type Held = ((i32, i32), u32);
-
-/// A tile mesh's build job for the worker thread: the tile, its inclusion step and drawn density ([`density`]), and
-/// how many cards its mesh holds.
+/// A tile mesh's build job for the worker thread: the tile.
 struct Job {
     tile: (i32, i32),
-    take: u32,
-    density: f32,
-    capacity: usize,
 }
 
-/// A finished job: the tile's first vertices and their bounds.
+/// A finished tile: its cards' vertices and their bounds.
 struct Done {
     tile: (i32, i32),
-    take: u32,
     vertices: Vec<Vertex>,
     bounds: Bounds,
 }
 
-/// A tile mesh: its index in the renderer, how many cards it holds, and what it holds.
+/// A tile mesh: its index in the renderer, how many cards it holds, and the tile it holds.
 struct Slot {
     mesh: usize,
     capacity: usize,
-    held: Option<Held>,
+    held: Option<(i32, i32)>,
 }
 
 /// The tile meshes, and what each holds, filled about the eye ([`Ring::update`]). The cards are made on a worker
@@ -601,8 +514,10 @@ pub(crate) struct Ring {
     light: Arc<Vec<[Light; 3]>>,
     jobs: Option<std::sync::mpsc::SyncSender<Job>>,
     done: std::sync::mpsc::Receiver<Done>,
-    in_flight: std::collections::HashSet<Held>,
+    in_flight: HashSet<(i32, i32)>,
     ready: Vec<Done>,
+    /// The tiles built with no cards: no mesh holds them, and they are not built again while wanted.
+    bare: HashSet<(i32, i32)>,
     last_eye: Option<Vec3>,
     worker: Option<std::thread::JoinHandle<()>>,
 }
@@ -631,10 +546,8 @@ fn spawn_worker(
         .name("grass".into())
         .spawn(move || {
             while let Ok(job) = receive.recv() {
-                let take = (job.take as f32 / LADDER).min(1.0);
-                let cards = background.cards(job.tile, take, job.density, job.capacity, &worker_light);
-                let (vertices, bounds) = tile_vertices(&cards);
-                if send.send(Done { tile: job.tile, take: job.take, vertices, bounds }).is_err() {
+                let (vertices, bounds) = tile_vertices(&background.cards(job.tile, CAPACITY, &worker_light));
+                if send.send(Done { tile: job.tile, vertices, bounds }).is_err() {
                     break;
                 }
             }
@@ -655,8 +568,9 @@ impl Ring {
             light,
             jobs: Some(jobs),
             done,
-            in_flight: std::collections::HashSet::new(),
+            in_flight: HashSet::new(),
             ready: Vec::new(),
+            bare: HashSet::new(),
             last_eye: None,
             worker,
         }
@@ -664,19 +578,14 @@ impl Ring {
 
     /// The finished tiles to upload for the eye at `eye`: each tile mesh's index with its first vertices (the ones to
     /// draw: the rest still hold an earlier tile's) and bounds. The tiles with ground within [`REACH`] of the eye are
-    /// wanted nearest first, each with its [`density`] and inclusion ([`take`]); tiles about the eye a little ahead
-    /// along its motion are built early ([`PREFETCH`]). Missing tiles within [`SYNC_DISTANCE`] are built on the frame
-    /// itself, so the near field is steady run to run; the worker thread builds the rest, and uploads are capped a
-    /// frame ([`UPLOAD_TILES`], [`UPLOAD_BYTES`]).
+    /// wanted nearest first; tiles about the eye a little ahead along its motion are built early ([`PREFETCH`]).
+    /// Missing tiles within [`SYNC_DISTANCE`] are built on the frame itself, so the near field is steady run to run;
+    /// the worker thread builds the rest. A finished tile takes the smallest mesh that holds its cards, of those
+    /// holding no wanted tile (an early one only a free mesh), and uploads are capped a frame ([`UPLOAD_TILES`],
+    /// [`UPLOAD_BYTES`]); a tile with no mesh to fit waits for one.
     pub(crate) fn update(&mut self, eye: Vec3) -> Vec<(usize, Vec<Vertex>, Bounds)> {
-        // The worker dying loses its jobs: free their meshes and start another, so the frame only ever loses far
-        // tiles for a frame.
+        // The worker dying loses its jobs: start another, so the frame only ever loses far tiles for a frame.
         if self.worker.as_ref().is_some_and(|worker| worker.is_finished()) {
-            for slot in self.slots.iter_mut() {
-                if slot.held.is_some_and(|held| self.in_flight.contains(&held)) {
-                    slot.held = None;
-                }
-            }
             self.in_flight.clear();
             let (jobs, done, worker) = spawn_worker(&self.field, &self.light);
             self.jobs = Some(jobs);
@@ -696,105 +605,79 @@ impl Ring {
         };
         // The drawn tiles: ground within reach of the eye, nearest first.
         let reach = REACH + TILE;
-        let mut wanted: Vec<((i32, i32), f32, f32, u32)> = range(eye, reach)
+        let mut wanted: Vec<((i32, i32), f32)> = range(eye, reach)
             .filter(|tile| self.field.tiles.contains_key(tile))
             .map(|tile| (tile, centre(tile).distance(eye.xz())))
             .filter(|&(_, d)| d < reach)
-            .map(|(tile, d)| (tile, d, density(d)))
-            .filter(|&(_, _, d)| d > 0.0)
-            .map(|(tile, d, density)| (tile, d, density, step_of(density)))
             .collect();
         wanted.sort_by(|a, b| a.1.total_cmp(&b.1));
-        // Tiles past the draw reach the eye is heading for: built early, into spare meshes only.
-        let mut early: Vec<((i32, i32), f32, f32, u32)> = range(predicted, reach + PREFETCH)
+        // Tiles past the draw reach the eye is heading for: built early, into free meshes only.
+        let mut early: Vec<((i32, i32), f32)> = range(predicted, reach + PREFETCH)
             .filter(|tile| self.field.tiles.contains_key(tile))
-            .map(|tile| (tile, centre(tile).distance(eye.xz())))
-            .filter(|&(_, d)| d >= reach)
-            .map(|(tile, _)| (tile, centre(tile).distance(predicted.xz())))
-            .map(|(tile, d)| (tile, d, density(d)))
-            .filter(|&(_, _, d)| d > 0.0)
-            .map(|(tile, d, density)| (tile, d, density, step_of(density)))
+            .filter(|&tile| centre(tile).distance(eye.xz()) >= reach)
+            .map(|tile| (tile, centre(tile).distance(predicted.xz())))
             .collect();
         early.sort_by(|a, b| a.1.total_cmp(&b.1));
         early.truncate(8);
-        let is_wanted = |held: Option<Held>| {
-            wanted.iter().any(|&(t, _, _, k)| held == Some((t, k)))
-                || early.iter().any(|&(t, _, _, k)| held == Some((t, k)))
+        let drawn: HashSet<(i32, i32)> = wanted.iter().map(|&(t, _)| t).collect();
+        let ahead: HashSet<(i32, i32)> = early.iter().map(|&(t, _)| t).collect();
+        self.bare.retain(|t| drawn.contains(t) || ahead.contains(t));
+        self.ready.retain(|done| drawn.contains(&done.tile) || ahead.contains(&done.tile));
+        let built = |ring: &Ring, tile: (i32, i32)| {
+            ring.bare.contains(&tile)
+                || ring.in_flight.contains(&tile)
+                || ring.ready.iter().any(|done| done.tile == tile)
+                || ring.slots.iter().any(|s| s.held == Some(tile))
         };
-        // The drawn tiles first, nearest first; then the early ones into spare meshes.
-        for &(tile, dist, density, take) in &wanted {
-            if reserve_slot(&mut self.slots, &self.in_flight, tile, take, false, &is_wanted).is_none() {
+        // The drawn tiles first, nearest first, then the early ones.
+        for &(tile, dist) in wanted.iter().chain(&early) {
+            if built(self, tile) {
                 continue;
             }
-            let capacity = self.slots.iter().find(|s| s.held == Some((tile, take))).map(|s| s.capacity).unwrap_or(0);
-            if dist < SYNC_DISTANCE {
-                let cards = self.field.cards(tile, (take as f32 / LADDER).min(1.0), density, capacity, &self.light);
-                let (vertices, bounds) = tile_vertices(&cards);
-                self.ready.push(Done { tile, take, vertices, bounds });
-            } else if self
-                .jobs
-                .as_ref()
-                .is_some_and(|jobs| jobs.try_send(Job { tile, take, density, capacity }).is_ok())
-            {
-                self.in_flight.insert((tile, take));
+            if dist < SYNC_DISTANCE && drawn.contains(&tile) {
+                let (vertices, bounds) = tile_vertices(&self.field.cards(tile, CAPACITY, &self.light));
+                self.ready.push(Done { tile, vertices, bounds });
+            } else if self.jobs.as_ref().is_some_and(|jobs| jobs.try_send(Job { tile }).is_ok()) {
+                self.in_flight.insert(tile);
             } else {
-                // The worker is busy: leave the tile for a nearer frame.
-                if let Some(slot) = self.slots.iter_mut().find(|s| s.held == Some((tile, take))) {
-                    slot.held = None;
-                }
-                break;
-            }
-        }
-        for &(tile, _, density, take) in &early {
-            if reserve_slot(&mut self.slots, &self.in_flight, tile, take, true, &is_wanted).is_none() {
-                continue;
-            }
-            let capacity = self.slots.iter().find(|s| s.held == Some((tile, take))).map(|s| s.capacity).unwrap_or(0);
-            if self.jobs.as_ref().is_some_and(|jobs| jobs.try_send(Job { tile, take, density, capacity }).is_ok()) {
-                self.in_flight.insert((tile, take));
-            } else {
-                if let Some(slot) = self.slots.iter_mut().find(|s| s.held == Some((tile, take))) {
-                    slot.held = None;
-                }
+                // The worker is busy: leave the tile for a later frame.
                 break;
             }
         }
         for done in self.done.try_iter() {
-            self.in_flight.remove(&(done.tile, done.take));
-            if self.slots.iter().any(|s| s.held == Some((done.tile, done.take))) {
+            self.in_flight.remove(&done.tile);
+            if drawn.contains(&done.tile) || ahead.contains(&done.tile) {
                 self.ready.push(done);
             }
         }
         // Upload the finished tiles nearest first: the drawn ones, then the early ones with what is left.
         let distance = |tile: (i32, i32)| centre(tile).distance(eye.xz());
         let mut ready = std::mem::take(&mut self.ready);
-        ready.sort_by(|a, b| distance(a.tile).total_cmp(&distance(b.tile)));
-        let drawn: std::collections::HashMap<(i32, i32), u32> = wanted.iter().map(|&(t, _, _, k)| (t, k)).collect();
-        let ahead: std::collections::HashMap<(i32, i32), u32> = early.iter().map(|&(t, _, _, k)| (t, k)).collect();
+        ready.sort_by(|a, b| {
+            drawn.contains(&b.tile).cmp(&drawn.contains(&a.tile)).then(distance(a.tile).total_cmp(&distance(b.tile)))
+        });
         let mut filled = Vec::new();
         let mut bytes = 0;
-        // The drawn tiles nearest first, then the early ones with what is left.
-        let mut draw_waiting = false;
         for done in ready {
-            let mesh = self.slots.iter().find(|s| s.held == Some((done.tile, done.take))).map(|s| s.mesh);
-            let Some(mesh) = mesh else { continue };
-            let fits = filled.len() < UPLOAD_TILES && bytes + done.vertices.len() * size_of::<Vertex>() <= UPLOAD_BYTES;
-            if drawn.get(&done.tile) != Some(&done.take) {
-                // No longer drawn at this inclusion: an early tile still, or dropped.
-                if ahead.get(&done.tile) == Some(&done.take) && !draw_waiting && fits {
-                    bytes += done.vertices.len() * size_of::<Vertex>();
-                    filled.push((mesh, done.vertices, done.bounds));
-                } else if ahead.get(&done.tile) == Some(&done.take) {
-                    self.ready.push(done);
-                }
+            if done.vertices.is_empty() {
+                self.bare.insert(done.tile);
                 continue;
             }
-            if fits {
-                bytes += done.vertices.len() * size_of::<Vertex>();
-                filled.push((mesh, done.vertices, done.bounds));
-            } else {
-                draw_waiting = true;
-                self.ready.push(done);
+            let size = done.vertices.len() * size_of::<Vertex>();
+            let cards = done.vertices.len() / 4;
+            let early = !drawn.contains(&done.tile);
+            let slot = self
+                .slots
+                .iter_mut()
+                .filter(|s| s.capacity >= cards && s.held.is_none_or(|t| !early && !drawn.contains(&t) && !ahead.contains(&t)))
+                .min_by_key(|s| s.capacity);
+            match slot {
+                Some(slot) if filled.len() < UPLOAD_TILES && bytes + size <= UPLOAD_BYTES => {
+                    bytes += size;
+                    slot.held = Some(done.tile);
+                    filled.push((slot.mesh, done.vertices, done.bounds));
+                }
+                _ => self.ready.push(done),
             }
         }
         filled
@@ -819,8 +702,6 @@ fn tile_vertices(cards: &[Card]) -> (Vec<Vertex>, Bounds) {
             // On the ground's plane through the foot.
             let ground = -(n.x * x.x + n.z * x.y) / n.y;
             let position = card.at + Vec3::new(x.x, ground + if top { card.height } else { -SINK }, x.y);
-            // Shrunk in about the foot while growing ([`Card::grow`]): zero at the foot, no area.
-            let position = card.at + (position - card.at) * card.grow;
             (low, high) = (low.min(position), high.max(position));
             *vertex = Vertex {
                 position: position.to_array(),
@@ -1177,44 +1058,7 @@ mod tests {
     }
 
     #[test]
-    fn density_halves_every_ten_metres_and_fades_at_the_reach() {
-        assert_eq!(density(0.0), 1.0);
-        assert_eq!(density(FULL_DENSE), 1.0);
-        assert!((density(24.0) - 0.5).abs() < 1e-6, "{}", density(24.0));
-        assert!((density(34.0) - 0.25).abs() < 1e-6, "{}", density(34.0));
-        assert!((density(44.0) - 0.125).abs() < 1e-6, "{}", density(44.0));
-        assert!(density(70.0) < 0.025, "{}", density(70.0));
-        assert_eq!(density(REACH), 0.0);
-        assert!(density(REACH - 1.0) < 0.005, "{}", density(REACH - 1.0));
-        let mut last = 2.0;
-        for d in (0..=10000).map(|k| k as f32 * 0.01) {
-            assert!(density(d) <= last, "{d}");
-            last = density(d);
-        }
-    }
-
-    #[test]
-    fn grown_cards_glide_in_rather_than_pop() {
-        assert_eq!(grow_of(0.99, 1.0, 1.0), 1.0);
-        assert_eq!(grow_of(0.0, 0.5, 0.25), 1.0);
-        assert_eq!(grow_of(0.25, 0.5, 0.25), 1.0);
-        assert_eq!(grow_of(0.5, 0.5, 0.25), 0.0);
-        // Continuous across the band: no step bigger than a twenty-fifth of the height.
-        let (mut last, mut worst) = (1.0f32, 0.0f32);
-        for k in 0..=100 {
-            let g = grow_of(0.25 + k as f32 * 0.0025, 0.5, 0.25);
-            worst = worst.max((last - g).abs());
-            last = g;
-        }
-        assert!(worst < 0.04, "{worst}");
-    }
-
-    #[test]
-    fn near_tiles_hold_everything_full_size() {
-        assert_eq!(take(1.0), 1.0);
-        assert_eq!(step_of(1.0), LADDER as u32);
-        assert_eq!(take(0.0), 0.0);
-        assert!((take(0.5) - 0.75).abs() < 1e-6, "{}", take(0.5));
+    fn patches_stay_in_range() {
         for k in 0..500 {
             let p = Vec2::new(k as f32 * 0.37 - 90.0, k as f32 * 1.13 - 300.0);
             let (tall, dry) = patches(p);
@@ -1224,11 +1068,13 @@ mod tests {
 
     #[test]
     fn slots_fit_video_budget() {
-        // Vertices and indices of every tile mesh, and the grass texture with its mips: under 300 MB.
-        let cards: usize = SLOTS.iter().map(|&(count, share)| count * slot_capacity(share)).sum();
+        // The fullest tile has a mesh to fit, and the vertices and indices of every tile mesh, and the grass texture
+        // with its mips, are under 700 MB.
+        assert!(SLOTS.iter().any(|&(_, capacity)| capacity >= CAPACITY));
+        let cards: usize = SLOTS.iter().map(|&(count, capacity)| count * capacity).sum();
         let bytes = cards * 4 * size_of::<Vertex>()
             + cards * 6 * size_of::<u32>()
             + (PICTURE.0 * COLUMNS * PICTURE.1 * ROWS * 4) * 4 / 3;
-        assert!(bytes < 300_000_000, "{bytes}");
+        assert!(bytes < 700_000_000, "{bytes}");
     }
 }
