@@ -368,7 +368,7 @@ swaps the `Predicate = on/off` parts and restarts the flare fade.
   option's (`lights::with_headlight_points`, 2026-10-30): 9 of 108 installed cars had neither records nor points and lit
   nothing at night (GR Yaris Rally2, Fabia RS Rally2, Polo GTI R5, DS3 R5, Fiesta S2000 and R2, Grande Punto S2000,
   Kalina RC2, Mini WRC). The BMW M3 E36's option is named `Lights` (taken too; not rendered, its RSF pack is not
-  installed here). Still dark: the Fiesta Rally3 Evo (`light_on/` beside the model, no `carparts/`).
+  installed here). The Fiesta Rally3 Evo has no `carparts/`: its `light_on/` beside the model is taken.
 - Open: the writer of the lamp words on damage; `RenderLights`' second visibility test.
 - Ours: the headlights' shadow map (`sun::LAMP`, `lamps.wgsl`) shades the beams beyond the stage (2026-10-27): rain,
   snow, dust and mist (`lamps_at`), each step of the beams' march and the wet-road glints (`lamp_glint`). Only with
