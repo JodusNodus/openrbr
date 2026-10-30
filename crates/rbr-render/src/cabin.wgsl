@@ -253,8 +253,8 @@ fn cabin_window(seen: vec3<f32>, share: f32, tint: f32, range: vec2<f32>) -> vec
     let gathered = smoothstep(0.67, 0.95, length / max(share, 1e-3));
     let outside = cabin_outside(seen / length, mix(CABIN_LEVELS.x, CABIN_LEVELS.y, gathered));
     let luma = vec3<f32>(0.2126, 0.7152, 0.0722);
-    let overhead = dot(cabin_outside(vec3<f32>(0.0, 1.0, 0.0), CABIN_LEVELS.x), luma);
-    let ratio = outside / max(overhead, 1e-4);
+    let overhead = cabin_outside(vec3<f32>(0.0, 1.0, 0.0), CABIN_LEVELS.x);
+    let ratio = outside / max(overhead, vec3<f32>(1e-4));
     let grey = dot(ratio, luma);
     let tinted = mix(vec3<f32>(grey), ratio, tint);
     return tinted * clamp(grey, range.x, range.y) / max(grey, 1e-4);

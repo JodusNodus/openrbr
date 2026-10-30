@@ -721,6 +721,10 @@ light in shade. The first cascade at 5 x 5 points about the cabin now dims the w
 (weighed by where each face looks out) and scales the sun bounced inside; per vertex (the sun map is visible to the
 vertex stage), +0.05 ms at 4K (per pixel it was +0.6). Wythop 532 cockpit frames in shade darker, open and
 overcast frames unchanged.
+Window colour (2026-10-30, `cabin_window`): what lies outside the seen way is taken against the overhead per channel,
+as `open_sky_light` against the mean; against the overhead's luma the sky's blue came in twice (in `day_sky` and in the
+cube), and the Clio Rally3's white cage on Wythop 532 lit blue (blue minus red 78 to 33 of 255, the dash 40 to 18).
+Day Gabiria Escort, night Sardian Clio, fog Alpes GC8 cockpits unchanged (20 pixels past 8 of 255).
 
 Cabin bounce by the day's light (ours, 2026-10-30, `cabin_day_lit`): the constant inside floor and the sun's back share
 are gone. A closed room's interreflection gives the bounce: E = (1 - sky) x rho / (1 - rho) x the mean light the
