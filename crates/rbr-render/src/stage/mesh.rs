@@ -107,8 +107,9 @@ pub enum Lod {
 pub const LOD_DISTANCE: f32 = 600.0;
 /// Width of the band below [`LOD_DISTANCE`] where both versions draw, metres (0x10027590).
 pub const LOD_BAND: f32 = 50.0;
-/// How near the camera, metres, a [`Lod::Close`] draw's block's box centre must be to show (ours).
-pub const CLOSE_DISTANCE: f32 = 50.0;
+/// How near the camera, metres, a [`Lod::Close`] draw's block's box centre must be to show (ours: the grass,
+/// [`crate::grass::REACH`] a tile past it).
+pub const CLOSE_DISTANCE: f32 = 108.0;
 
 impl Lod {
     /// The level of a chunk's draw list (1 near, 3 far, anything else always).
