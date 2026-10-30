@@ -562,7 +562,9 @@ paved road takes the cut of its local mean with its own variation over it, reads
 edge (only frayed the shoulder's flattening). The local mean is the texture's mip itself, read 6 levels past the
 footprint: quads stretching the texture differently read different mips and 45's road showed light and dark blocks
 (gone; Gabiria 79.2 to 79.4, 45 and 417 within 0.4; the whole texture's mean also removed them but lightened
-Gabiria's road 79 to 91).
+Gabiria's road 79 to 91). Blur by distance (2026-10-30): the texture is read no finer than 4 cm a pixel
+(`ASPHALT_FINEST`, widened gradients) in place of the blur by magnification, which was decided per quad and left a
+blotchy band ahead of the car that snapped sharp (RSF Fintele 523); the road is even, a little blander mid-distance.
 
 Snow scan (2026-10-28; `SCAN_FLOOR`): Poly Haven Snow 02 on Komarov, Peklo, Pian and Sturec. Its dark marks read as
 dirt streaks on Peklo's banks, so the factor is held at 0.88 or brighter (0 for gravel and asphalt, which stay
@@ -642,6 +644,13 @@ Lighting, in pieces (all with `lighting`; each measured on its own before the me
   cascades reach in full (2026-10-26; the whole sun term, `own_sun_seen` apart from the car, under 0.03 ms); the same reordering for every opaque
   non-prepassed world draw (no gain); single shading terms (each 0.1 ms or less, 48-72 VGPRs, no spills); far layer
   to 2.5 km (2026-10-27; +0.1 ms, nothing more seen); contact shading at full size (+0.1 to 0.2 ms, edge pixels only).
+  Fewer casters (2026-10-30, `--profile` times each layer): the far layer is drawn again only after 50 m of travel
+  or a change of light or size (`sun::FarDrawn`); the grass's tiles (`Lod::Close`) go into no layer and no cube; the
+  backdrop's meshes are culled by each map's sides. 1080p Ultra, 580 chase: sun maps 7.36 to 3.92 ms, surroundings
+  cube 0.82 to 0.52, CPU drawn-only 15.4 to 12.2; Gabiria fly-by 3.83 to 1.64. What is left is cut-out fill at 4096
+  (cascades 0.5/1.5/1.7 ms; 0.2/0.3/0.3 without cut-outs). Frames differ only in the paint's cube (no grass) and the
+  asphalt. Tried and dropped: alpha from a coarser mip in `fs_sun` (-0.5 ms on cascade 3, changes coverage), cut-out
+  casters sorted front to back (no gain).
 - Clouds: the main view's clouds are volumetric (`renderer/cloud_volume.rs`, `cloud_volume.wgsl`; by night lit by the
   moon) and the game's cloud faces are not drawn (2026-10-25). The layer's kind by the cover: clear cumulus 1.2 km up
   under cirrus, partly 2.2 km thick, light stratocumulus 1.1 km up, overcast a closed deck 0.9 km up. A sunlit layer's
@@ -674,7 +683,12 @@ Shadow lookups skip only taps that cannot change the pixel (2026-10-20: cockpit 
 
 Cabin light: only the car's lit pipelines carry `CABIN`, and the open sky is a branch, not a `select` (2026-10-20:
 cockpit scene pass 13.6 to 11.5 ms at 2560x1440, frames equal but 2 pixels by 1). Tried and dropped: an RG11B10
-bloom chain.
+bloom chain. Shade about the car (2026-10-30, `cabin_shade`): the probes read a forest overhead about as bright as
+the open sky (1.1 to 1.27 of it on 450, 523, 532) and their sun reach stays 1 under most trees, so the cabin kept its
+light in shade. The first cascade at 5 x 5 points about the cabin now dims the window light to 0.7 where all is shade
+(weighed by where each face looks out) and scales the sun bounced inside; per vertex (the sun map is visible to the
+vertex stage), +0.05 ms at 4K (per pixel it was +0.6). Wythop 532 cockpit frames in shade darker, open and
+overcast frames unchanged.
 
 ## Mirrors
 

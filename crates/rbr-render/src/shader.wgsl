@@ -316,7 +316,8 @@ struct VertexOut {
     // The mean direction the vertex sees the sky in, as its octahedral pair (`sky_direction`; none at 0, 0), and z how
     // little of the sky it sees.
     @location(7) sky: vec3<f32>,
-    // The light it gets off the stage per unit of the sun's and of the sky's (`bounce_light`).
+    // The light it gets off the stage per unit of the sun's and of the sky's (`bounce_light`); a cabin vertex's
+    // `bounce_sun` is the stage's shade about the car (`cabin_shade`).
     @location(8) bounce_sun: vec3<f32>,
     @location(9) bounce_sky: vec3<f32>,
     // How much of the wet film the ground takes and how far the road's edge is (`stage::Vertex::wet`, `edge`; `wet_plus`).
@@ -411,6 +412,11 @@ fn vertex(input: VertexIn) -> VertexOut {
     out.bounce_sun = bounce_light(v.bounce.x);
     out.bounce_sky = bounce_light(v.bounce.y);
     out.wet = v.wet;
+    // The cabin's vertices carry the stage's shade about the car there instead (`cabin_shade`; the stage's bounce is
+    // not the car's): the same few points for every vertex, so not per pixel.
+    if (lit_class() == 1u && v.specular.y >= CABIN_INTERIOR && in_car()) {
+        out.bounce_sun = cabin_shade(cabin_seen(out));
+    }
     return out;
 }
 
