@@ -56,6 +56,10 @@ pub struct Enhance {
     /// collision surface is road, and the ground about them soaked ([`crate::puddles`]; `wet_plus` in `water.wgsl`;
     /// ours); in damp weather a drying road, a thinner film without puddles. Off, the wet stages keep 1.02's look.
     pub wet: bool,
+    /// The windscreen seen from inside as glass (ours): its Fresnel loss, a thin dust film and specks lit by the sun,
+    /// wiper scratches and dried water spots (`pane` in `glass.wgsl`), and the cabin reflected in it, a mirror pass of
+    /// its own every frame ([`Renderer::set_windscreen_mirror`](super::Renderer::set_windscreen_mirror)).
+    pub windscreen: bool,
     /// The cockpit's mirrors drawn as mirrors, and how often ([`crate::mirrors`]; ours, `viewer --mirrors`, not in
     /// [`Enhance::NAMES`]).
     pub mirrors: crate::mirrors::Rate,
@@ -167,7 +171,7 @@ impl AntiAliasing {
 }
 
 impl Enhance {
-    pub const NAMES: [&str; 14] = [
+    pub const NAMES: [&str; 15] = [
         "anisotropy",
         "asphalt",
         "cabin",
@@ -182,6 +186,7 @@ impl Enhance {
         "snow",
         "water",
         "wet",
+        "windscreen",
     ];
 
     /// A comma-separated list of [`Enhance::NAMES`], or `all` (every one but `grass`).
@@ -205,6 +210,7 @@ impl Enhance {
                         snow: true,
                         water: true,
                         wet: true,
+                        windscreen: true,
                         mirrors: enhance.mirrors,
                         anti_aliasing: enhance.anti_aliasing,
                         reflections: enhance.reflections,
@@ -225,6 +231,7 @@ impl Enhance {
                 "snow" => enhance.snow = true,
                 "water" => enhance.water = true,
                 "wet" => enhance.wet = true,
+                "windscreen" => enhance.windscreen = true,
                 _ => return None,
             }
         }

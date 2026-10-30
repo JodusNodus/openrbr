@@ -23,6 +23,8 @@ pub struct Graphics {
     pub cabin: bool,
     pub contact: bool,
     pub grass: bool,
+    /// The windscreen as glass from inside, and the dash reflected in it (`windscreen`).
+    pub windscreen: bool,
     /// Our tyre marks, which no preset changes: free, and off until reviewed in play.
     pub marks: bool,
     pub wet_roads: WetRoads,
@@ -110,6 +112,7 @@ impl Quality {
             cabin: true,
             contact: true,
             grass: true,
+            windscreen: true,
             marks,
             wet_roads: WetRoads::High,
             detail: Detail::High,
@@ -123,13 +126,19 @@ impl Quality {
                 cabin: false,
                 contact: false,
                 grass: false,
+                windscreen: false,
                 wet_roads: WetRoads::Off,
                 mirrors: Rate::Off,
                 ..high
             },
-            Quality::Medium => {
-                Graphics { lighting: false, grass: false, wet_roads: WetRoads::Medium, mirrors: Rate::Every(3), ..high }
-            }
+            Quality::Medium => Graphics {
+                lighting: false,
+                grass: false,
+                windscreen: false,
+                wet_roads: WetRoads::Medium,
+                mirrors: Rate::Every(3),
+                ..high
+            },
             Quality::High => high,
             Quality::Ultra => Graphics { detail: Detail::Ultra, ..high },
         }
@@ -467,8 +476,8 @@ impl Form {
         ui.add_space(4.0);
         let g = &mut self.graphics;
         fields(ui, "quality", |ui| {
-            let tip = "Sets the choices below. Low: the game's look. Medium: all but Lighting, the costliest, and Dense \
-                       grass, which needs it. High: all but Ultra detail. Ultra: all. The render scale, anti-aliasing and tyre \
+            let tip = "Sets the choices below. Low: the game's look. Medium: all but Lighting, the costliest, Dense \
+                       grass, which needs it, and Windscreen. High: all but Ultra detail. Ultra: all. The render scale, anti-aliasing and tyre \
                        marks stay as they are";
             ui.label("Preset").on_hover_text(tip);
             ComboBox::from_id_salt("preset")
@@ -528,6 +537,13 @@ impl Form {
                        other, darker footwells and corners, a sheen on the dash, and the headlights' glow at night";
             ui.label("Cabin light").on_hover_text(tip);
             ui.checkbox(&mut g.cabin, "in the cockpit").on_hover_text(tip);
+            ui.end_row();
+
+            let tip = "In the cockpit: the windscreen as real glass, a faint dust film and specks the sun lights up, \
+                       wiper scratches and dried water spots, and the dash reflected in it. About 1.5 to 2 ms a frame \
+                       (the reflection draws the cabin and the stage behind it once more)";
+            ui.label("Windscreen").on_hover_text(tip);
+            ui.checkbox(&mut g.windscreen, "glass effects").on_hover_text(tip);
             ui.end_row();
 
             let tip = "The car's own shape as a soft shadow on the ground and fences under it, in place of the game's \

@@ -19,7 +19,8 @@ pub(super) const SHADOW_SIZE: u32 = 2048;
 const SHADOW_MARGIN: f32 = 0.5;
 pub(super) const SHADOW_SCALE: f32 = 1.75;
 pub(super) const SHADOW_MOST: f32 = 0.45;
-/// The width of one step of the shadow's 4x4 filter, metres: a soft edge about 15 cm wide.
+/// The reach of the shadow's filter each side, metres, over 1.5: the widest penumbra (`car_shadow`), and the range's
+/// reach.
 pub(super) const SHADOW_PENUMBRA: f32 = 0.04;
 /// The car's contact shadow (ours, [`Enhance::contact`](super::Enhance::contact), in place of the game's shadow decal,
 /// `crate::car_shadow`): a second layer of the map, the same draws seen from straight above. The ground the car is

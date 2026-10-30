@@ -475,6 +475,18 @@ not ported.
   additions off too (user-approved); cockpit heavy 13.1 ms before and after.
 - Side windows (ours): each side window its own glass (drops, trails, film, mud; no wipers, no bugs), drawn on its
   exterior pane; 0.3 of the windscreen's rain and 0.1 of its spray, landing low.
+- The pane itself from inside (ours, 2026-10-30, with `windscreen`; kind 6, `pane` in `glass.wgsl`): a cell per film
+  cell, drawn under the drops: Schlick loss through both faces, a patchy dust film scattering the sun (forward and broad
+  lobes, the stage's shade from sun cascade 0) and the sky, thinner in the wipers' sweep, specks, dried water spots, and
+  arc scratches that glint where `dot(t, sun - view) = 0`; side windows half the dust. Dropped: dust in arcs along the
+  blade (noise stretched along the arc read as even concentric rings). The cabin reflected in it (2026-10-30): the
+  windscreen's mean plane is a mirror pass of its own (`set_windscreen_mirror`, the mirrors' last image layer, drawn as
+  the centre mirror's, every frame), weighed by `F (1 + (1 - F)^2)` for the inner face and the outer seen through it; it
+  shows over dark backgrounds and the tinted band, barely over the lit road. +1.7 ms at 1080p (208 cockpit: mirrors span
+  1.2 to 2.9 ms), most of it the stage to 300 m behind the rear window. Tried and dropped: a screen-space march over the
+  frame's depth (the dash under the glass, what the glass mostly reflects, is hidden from the eye behind the dash's
+  crest). Normal: the chart's mean plane (the grid's stepped heights striped per cell). Outside views byte-identical.
+  Cars without `i_window_f` (RSF M3 E30) have no glass at all.
 
 ## Skid marks
 
@@ -518,7 +530,8 @@ game draws it. The launcher's Quality section (`graphics_page::Graphics`, user d
 preset (Low, Medium, High by default, Ultra) or one by one: `anisotropy`, `decals` and `water` always on (free), the
 four scans as one "Surfaces" switch, `wet` with `--reflections` as "Wet roads" (off; low: no screen-space rays;
 medium; high), `grass` as "Dense grass" on High and Ultra (user decision 2026-10-30: a half-density, shorter
-field cost more frame time than the full one at 4K, so no middle setting). Removed: `lens`; `ao`, `msaa`, `taa`,
+field cost more frame time than the full one at 4K, so no middle setting), `windscreen` as "Windscreen" on High and
+Ultra (user decision 2026-10-30: one switch for the pane and its reflection). Removed: `lens`; `ao`, `msaa`, `taa`,
 `wind` (user decision 2026-10-19); `hdr` (2026-10-26: float targets, bloom, exposure and AgX are always on). Older settings and names are
 not read (user decision). The launcher's render scale is 100 % by default. The default frame was
 byte-identical before and after (chase, cockpit, heavy rain, 1920x1080).
@@ -539,6 +552,7 @@ byte-identical before and after (chase, cockpit, heavy rain, 1920x1080).
 | `ground` | the off-road ground (`puddles::mark_ground`, `Vertex::edge` -1) takes a scanned grass-and-earth ground (Poly Haven Grass Ground, CC0, 1024 packed, layers 3 and 4 of the road scans; `ground_scan` in `shader.wgsl`) triplanar at 1.7 m and a 5.1 m tiling turned 30 degrees; bright grey ground takes only brightness, no darker than 0.88. Round 2 (2026-10-29): `ground_patches` adds earth and grass in patches 2 to 6 m across and stones of 0.3 and 0.9 m cells. Launcher "Surfaces", default on |
 | `grass` | not in `all` (launcher "Dense grass", default off; the reference shots take it): crossed cards of drawn grass blades over the green and straw ground within 20 m of the driveline (`grass.rs`), streamed by 8 m tile about the eye into 560 fixed tile meshes in 5 pools, drawn within 108 m (`Lod::Close`), full within 14 m then halving every 10 m to nothing at 100 m; each tile holds 1.5x its density on 24 steps with the outer cards shrunk to a point, so the field glides instead of popping; swayed by the wind in the vertex shader (`grass_sway`). Tiles are made on a worker thread (the near 24 m on the frame itself, uploads capped; tiles ahead of the motion built early). Lit as a dense canopy (`GRASS_*` in `shader.wgsl`): tighter wrap, sky and sun shut out down the blades, a low sun more; the ground's computed sky occlusion, sky direction and bounce read back once at load (`Renderer::grass_light`). 580 chase 1080p scene 5.05 to 5.14 ms (+39k triangles), Gabiria fly-by 3.76 to 3.62 ms (-77k triangles); ~280 MB video memory (2026-10-30). Look (2026-10-30): cards 0.07 to 0.14 m (were 0.1 to 0.2), their foot lighter (`GRASS_BASE` 0.6, `GRASS_SUN_BASE` 0.4 to 0.6), so the field reads as a low meadow, not dark fur; the retail tufts toned to sit with it: green leaves at most 0.15 linear (`TUFT_GREEN_MOST`; 580's lime ferns read as lit card), `TUFT_TRANSMIT` 0.35, `TUFT_TIP` 1.12, `TUFT_DARK_LIFT` 1.2. Snow shots unchanged (RMSE under 0.005). Tried and dropped: lighting our blades as upright on banks (no visible change; 580's dark bank is the hill's own shadow) |
 | `water` | water flowing by its scroll (`water.wgsl`), fading into banks |
+| `windscreen` | the windscreen seen from inside as glass: the pane (Fresnel loss, dust, specks, wiper scratches, water spots) and the cabin reflected in it, a mirror pass of its own every frame whatever `--mirrors` says ("Windscreen and wipers" above). Off: the frame as before |
 | `wet` | the wet road, in wet and damp weather: a film and puddles over the ground whose `.col` surface takes them (tarmac 1, gravel and dirt 0.5), retail and RSF alike (user decision 2026-10-25; `puddles.rs`). Screen-space reflections on the wet roads: +12 to 17 ms at 1080p; film alone +0.9 to 1.7 ms; load +0.2 s. Wet film (2026-10-28): the rays missed the car, so the film halves back to any crossing and `reach` judges it (`film` in `trace`); the far road takes the sky, the near road stays dark. 41O chase screen reflections 1.32 to 1.50 ms at 1080p. Loose roads (2026-10-28): the half-film road's film was a pale even sheet; its reflection now falls with the film's share, so the stones show through and puddles stand out (tarmac and dry byte-identical; 52O/21O chase screen reflections 1.46/1.67 to 1.14/1.37 ms). The rings were never on the film: they were in the puddles. Damp is a drying road: no puddles, rings or screen-space reflections, the film 0.4 of the wet one's, the ground soaked by half (41M dry 101, damp 68, wet 59 at 13:00; 460M 147 to 131; 45O 140 to 118). 41M +0.9 ms, 45O within noise; wet and additions off unchanged byte for byte (2026-10-26). Wet road edge (2026-10-28): the reflection and glint fade over the outer 0.1 to 0.8 m, frayed by noise (puddles and the road's darkness stay); mean distance 1.2 m on 41M, 0.3 m on RSF Gabiria; damp and dry byte-identical. By texture (2026-10-28): a film triangle takes the share most film triangles of its texture have (RSF Bois de Bie tags stretches of tarmac as gravel: 46000 `Gravel_Fine_Shallow_Wet` against 139000 `Tarmac_Coarse_Clean_Wet`); retail Fraizer Wells byte for byte, damp Gabiria RMSE 0.0003. Wet road look (2026-10-28, tarmac first): the film alone is darker and its reflection takes the asphalt's grain, its normal tilted by microrelief and rain's impacts, fading to the mean between 4 and 25 m. Tried and dropped: a 0.12 tilt (white sky blobs over the near road). Gravel nearly unchanged; dry, snow, night byte-identical. Flyby 1080p scene 1.72 to 1.80 ms, screen reflections 1.58 to 1.85 ms; cockpit within noise. Tarmac's even film (2026-10-28, user decision): where the film share is 1 there are no random puddles and only the hollows hold water, so the bumper and plate read in the road near the car. Rain rings on tarmac only in the hollows' water; the film shows fine splash specks instead. Round 2 roughens the normal at the grain in place of the 5 and 2 cm waves. The near road's olive cast is the green bank's reflection, kept. Gravel and dirt keep the film and puddles (52O chase RMSE 0.0000022); dry, damp, snow and night-dry byte-identical; Luceram fly-by within compiler noise (RMSE 0.00015). Puddles at the edge (2026-10-28): puddles now end 0.05 to 0.2 m from the edge, frayed as the film is; 52O chase RMSE 0.017, dry byte-identical. Wheel tracks (2026-10-28, loose roads only): the water lies in two tracks 1.5 m in from the road's edge, rims frayed by 7 cm stone noise; damp keeps its old spray. 52O chase scene 2.54 to 2.65 ms, screen reflections 1.69 to 1.74 ms; dry, damp, snow, night byte-identical, Luceram within compiler noise (RMSE 0.00015) |
 
 Gravel scan (2026-10-28): procedural stones read as cobbles or coins, so a scanned surface's detail over the
@@ -691,6 +705,15 @@ light in shade. The first cascade at 5 x 5 points about the cabin now dims the w
 (weighed by where each face looks out) and scales the sun bounced inside; per vertex (the sun map is visible to the
 vertex stage), +0.05 ms at 4K (per pixel it was +0.6). Wythop 532 cockpit frames in shade darker, open and
 overcast frames unchanged.
+
+Exposure in the cockpit (user's call, 2026-10-30): the cabin meters at 2/5 of the outside (`CABIN_WEIGHT`), between an
+eye on the road (1/5, the cabin dark) and a camera's full weight (cabin readable, outside washed out); 208 cockpit frame
+mean 46 / 60 / 80 for 1, 2, 5.
+
+The car's sun shadow (2026-10-30, `car_shadow`): a penumbra by the sun's disc and the casters' mean distance (3x3
+search, PCSS as the cascades), taps a texel apart, at most 9 a side and the range's reach. The fixed 4x4 taps 4 cm
+apart over 3 mm texels drew a 1 cm grid of steps where the sun came through the glass (208 binnacle, 19:30). 580 208
+chase RMSE under 1 %; cost not measured.
 
 ## Mirrors
 

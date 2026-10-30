@@ -2823,8 +2823,9 @@ fn vs_shadow(v: VertexIn) -> @builtin(position) vec4<f32> {
     return frame.shadow_matrix * vec4<f32>(placed(v).position, 1.0);
 }
 
-// 0 in the sun to 1 in the car's shadow: a 4x4 filter over the shadow map. Points past the map's far side (the
-// ground beyond the car) compare at its far plane, so they are shadowed wherever the car is in the map.
+// 0 in the sun to 1 in the car's shadow: a filter over the shadow map as wide as the sun's penumbra. Points past the
+// map's far side (the ground beyond the car) compare at its far plane, so they are shadowed wherever the car is in the
+// map.
 fn car_shadow(world: vec3<f32>) -> f32 {
     if (frame.shadow.y == 0.0) {
         return 0.0;
@@ -2847,17 +2848,39 @@ fn car_shadow(world: vec3<f32>) -> f32 {
     if (reference > range.y) {
         return 1.0;
     }
+    // The sun's disc blurs the shadow by its casters' distance (PCSS as `soft_filter`): their mean depth from a 3x3
+    // search over the filter's reach. The map's depth and uv both span its width, so the penumbra's radius in uv is
+    // `SUN_RADIUS` times the depth between. At least a texel, at most the reach the range holds; taps a texel apart, at
+    // most `CAR_SOFT_TAPS` a side (a fixed 4x4 four centimetres apart showed as steps in the cabin).
+    let size = vec2<f32>(textureDimensions(shadow_map));
+    let reach = 1.5 * frame.shadow.z;
+    var sum = 0.0;
+    var casters = 0.0;
+    for (var row = 0; row < 3; row++) {
+        for (var column = 0; column < 3; column++) {
+            let at = uv + (vec2<f32>(f32(column), f32(row)) - 1.0) * reach;
+            let d = textureLoad(shadow_map, clamp(vec2<i32>(at * size), vec2<i32>(0), vec2<i32>(size) - 1), 0, 0);
+            if (d < reference) {
+                sum += d;
+                casters += 1.0;
+            }
+        }
+    }
+    let between = select(0.0, reference - sum / max(casters, 1.0), casters > 0.0);
+    let radius = clamp(between * SUN_RADIUS, 1.0 / size.x, reach);
+    let taps = min(i32(ceil(2.0 * radius * size.x)) + 1, CAR_SOFT_TAPS);
+    let half = 0.5 * f32(taps - 1);
     var sunlit = 0.0;
-    for (var row = 0; row < 4; row++) {
-        for (var column = 0; column < 4; column++) {
-            let x = f32(column) - 1.5;
-            let y = f32(row) - 1.5;
-            let at = uv + vec2<f32>(x, y) * frame.shadow.z;
+    for (var row = 0; row < taps; row++) {
+        for (var column = 0; column < taps; column++) {
+            let at = uv + (vec2<f32>(f32(column), f32(row)) - half) / half * radius;
             sunlit += textureSampleCompareLevel(shadow_map, shadow_sampler, at, 0, reference);
         }
     }
-    return 1.0 - sunlit / 16.0;
+    return 1.0 - sunlit / f32(taps * taps);
 }
+
+const CAR_SOFT_TAPS: i32 = 9;
 
 // The least and greatest depth of the car's shadow map's `layer` over every texel its filter centred at `uv` reads
 // (`shadow_ranges`, `renderer::shadows::ShadowRange`): a compare at or before the least passes on every tap, past the

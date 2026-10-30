@@ -9,8 +9,8 @@ use wgpu::util::DeviceExt;
 use crate::atmosphere::Atmosphere;
 
 /// One drop, flake or bug on the glass: its centre and half axes in stage space, its kind (0 water, 1 snow, 2 bug,
-/// 3 mud, 4 a cell of the wet film, 5 mud seen from inside), a seed for its ragged edge (the film's streak length),
-/// its opacity and its colour (snow, bugs and mud; the film's corners).
+/// 3 mud, 4 a cell of the wet film, 5 mud seen from inside, 6 a cell of the pane itself seen from inside), a seed for its ragged edge (the film's streak length),
+/// its opacity and its colour (snow, bugs and mud; the film's corners), and the pane's outward normal (kind 6).
 #[derive(Debug, Clone, Copy, PartialEq, Pod, Zeroable)]
 #[repr(C)]
 pub struct Drop {
@@ -21,10 +21,11 @@ pub struct Drop {
     pub axis_v: [f32; 3],
     pub alpha: f32,
     pub color: [f32; 4],
+    pub normal: [f32; 4],
 }
 
 pub(crate) const SHADER: &str = include_str!("glass.wgsl");
-const INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 7] = [
+const INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 8] = [
     wgpu::VertexAttribute { format: wgpu::VertexFormat::Float32x3, offset: 0, shader_location: 0 },
     wgpu::VertexAttribute { format: wgpu::VertexFormat::Float32, offset: 12, shader_location: 1 },
     wgpu::VertexAttribute { format: wgpu::VertexFormat::Float32x3, offset: 16, shader_location: 2 },
@@ -32,6 +33,7 @@ const INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 7] = [
     wgpu::VertexAttribute { format: wgpu::VertexFormat::Float32x3, offset: 32, shader_location: 4 },
     wgpu::VertexAttribute { format: wgpu::VertexFormat::Float32, offset: 44, shader_location: 5 },
     wgpu::VertexAttribute { format: wgpu::VertexFormat::Float32x4, offset: 48, shader_location: 6 },
+    wgpu::VertexAttribute { format: wgpu::VertexFormat::Float32x4, offset: 64, shader_location: 7 },
 ];
 
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -44,6 +46,16 @@ struct FrameUniform {
     night: [f32; 4],
     /// Seen from outside (ours): x 1, the wet layer of the film (`glass.wgsl`); 0 inside.
     outside: [f32; 4],
+    /// The eye, stage space.
+    eye: [f32; 4],
+    /// The way to the sun, stage space, w 1 by day; and its light on the glass, rgb.
+    sun: [f32; 4],
+    sun_light: [f32; 4],
+    /// The windscreen's wipers for the pane (kind 6): [`Pass::set_wipers`].
+    wipers: [[f32; 4]; 4],
+    /// The sun's first cascade (`sun::Cascades`), and x 1 when there are cascades.
+    sun_matrix: [[f32; 4]; 4],
+    shadow: [f32; 4],
 }
 
 /// Ours: the glass takes the stage's ambient light and this much of its diffuse.
@@ -57,16 +69,25 @@ pub struct Pass {
     pipeline: wgpu::RenderPipeline,
     layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
+    /// The sun's cascades (`sun::SunShadow::view`, or a placeholder) and their comparison sampler.
+    sun_map: wgpu::TextureView,
+    sun_sampler: wgpu::Sampler,
     uniform: wgpu::Buffer,
     instances: wgpu::Buffer,
     capacity: usize,
     count: u32,
     scene: Option<((u32, u32), wgpu::TextureView)>,
+    wipers: [[f32; 4]; 4],
 }
 
 impl Pass {
-    /// The pass for colour targets of `format` and a `depth` attachment.
-    pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat, depth: wgpu::TextureFormat) -> Pass {
+    /// The pass for colour targets of `format` and a `depth` attachment, reading the sun's cascades `sun_map`.
+    pub fn new(
+        device: &wgpu::Device,
+        format: wgpu::TextureFormat,
+        depth: wgpu::TextureFormat,
+        sun_map: &wgpu::TextureView,
+    ) -> Pass {
         let entry = |binding, visibility, ty| wgpu::BindGroupLayoutEntry { binding, visibility, ty, count: None };
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("glass"),
@@ -90,12 +111,51 @@ impl Pass {
                     },
                 ),
                 entry(2, wgpu::ShaderStages::FRAGMENT, wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering)),
+                entry(
+                    3,
+                    wgpu::ShaderStages::FRAGMENT,
+                    wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Depth,
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        multisampled: false,
+                    },
+                ),
+                entry(
+                    4,
+                    wgpu::ShaderStages::FRAGMENT,
+                    wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
+                ),
+                entry(
+                    5,
+                    wgpu::ShaderStages::FRAGMENT,
+                    wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        multisampled: false,
+                    },
+                ),
+                entry(
+                    6,
+                    wgpu::ShaderStages::FRAGMENT,
+                    wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                ),
             ],
         });
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("glass scene"),
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
+        let sun_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("glass sun"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            compare: Some(wgpu::CompareFunction::LessEqual),
             ..Default::default()
         });
         let uniform = device.create_buffer(&wgpu::BufferDescriptor {
@@ -158,7 +218,19 @@ impl Pass {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        Pass { pipeline, layout, sampler, uniform, instances, capacity: FIRST_CAPACITY, count: 0, scene: None }
+        Pass {
+            pipeline,
+            layout,
+            sampler,
+            sun_map: sun_map.clone(),
+            sun_sampler,
+            uniform,
+            instances,
+            capacity: FIRST_CAPACITY,
+            count: 0,
+            scene: None,
+            wipers: [[0.0; 4]; 4],
+        }
     }
 
     /// The drops to draw.
@@ -178,19 +250,26 @@ impl Pass {
         self.count = drops.len() as u32;
     }
 
+    /// The windscreen's wipers for the pane seen from inside (`glass.wgsl` kind 6), at most two, each two rows: its
+    /// pivot in the chart (metres) and its reach, then its park angle, its signed sweep and 1 (0: no wiper).
+    pub fn set_wipers(&mut self, wipers: [[f32; 4]; 4]) {
+        self.wipers = wipers;
+    }
+
     /// Whether there is anything to draw.
     pub fn active(&self) -> bool {
         self.count > 0
     }
 
     /// The frame's camera, size and light.
-    pub fn prepare(
+    pub(crate) fn prepare(
         &self,
         queue: &wgpu::Queue,
         view_projection: Mat4,
         (width, height): (u32, u32),
         a: &Atmosphere,
         outside: bool,
+        cascades: Option<&crate::sun::Cascades>,
     ) {
         let (w, h) = (width.max(1) as f32, height.max(1) as f32);
         let light = (a.ambient + a.diffuse * DIFFUSE_SHARE).min(glam::Vec3::splat(1.2));
@@ -200,6 +279,12 @@ impl Pass {
             light: light.extend(1.0).to_array(),
             night: if a.night { [NIGHT_GLOW[0], NIGHT_GLOW[1], NIGHT_GLOW[2], 1.0] } else { [0.0; 4] },
             outside: [f32::from(u8::from(outside)), 0.0, 0.0, 0.0],
+            eye: crate::camera::eye(view_projection).extend(1.0).to_array(),
+            sun: (-a.sun_direction.normalize_or_zero()).extend(if a.night { 0.0 } else { 1.0 }).to_array(),
+            sun_light: a.diffuse.extend(1.0).to_array(),
+            wipers: self.wipers,
+            sun_matrix: cascades.map_or(Mat4::IDENTITY, |c| c.matrices[0]).to_cols_array_2d(),
+            shadow: [f32::from(u8::from(cascades.is_some())), 0.0, 0.0, 0.0],
         };
         queue.write_buffer(&self.uniform, 0, bytemuck::bytes_of(&uniform));
     }
@@ -235,8 +320,15 @@ impl Pass {
         self.scene.as_ref().map(|(_, view)| view)
     }
 
-    /// Draws the drops into `pass`, reading the resolved frame `scene`.
-    pub fn draw(&self, device: &wgpu::Device, pass: &mut wgpu::RenderPass<'_>, scene: &wgpu::TextureView) {
+    /// Draws the drops into `pass`, reading the resolved frame `scene` and the mirrors' images and views `mirrors`
+    /// (the windscreen's reflection, `renderer::mirrors`).
+    pub fn draw(
+        &self,
+        device: &wgpu::Device,
+        pass: &mut wgpu::RenderPass<'_>,
+        scene: &wgpu::TextureView,
+        (images, views): (&wgpu::TextureView, &wgpu::Buffer),
+    ) {
         if self.count == 0 {
             return;
         }
@@ -247,6 +339,10 @@ impl Pass {
                 wgpu::BindGroupEntry { binding: 0, resource: self.uniform.as_entire_binding() },
                 wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(scene) },
                 wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&self.sampler) },
+                wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&self.sun_map) },
+                wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::Sampler(&self.sun_sampler) },
+                wgpu::BindGroupEntry { binding: 5, resource: wgpu::BindingResource::TextureView(images) },
+                wgpu::BindGroupEntry { binding: 6, resource: views.as_entire_binding() },
             ],
         });
         pass.set_pipeline(&self.pipeline);

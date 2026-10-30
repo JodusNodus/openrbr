@@ -97,7 +97,7 @@ impl Renderer {
             self.draw_effects(&mut pass);
         }
         if let Some(glass) = &self.glass {
-            glass.draw(&self.device, &mut pass, &ssr.scene);
+            glass.draw(&self.device, &mut pass, &ssr.scene, (&self.mirrors.view, &self.mirrors.uniform));
         }
     }
 

@@ -113,7 +113,7 @@ impl Renderer {
             particles.prepare(&self.queue, effects_view, &lit);
         }
         if let Some(glass) = &self.glass {
-            glass.prepare(&self.queue, drawn[0], size, &lit, self.outside_view);
+            glass.prepare(&self.queue, drawn[0], size, &lit, self.outside_view, self.cascades.as_ref());
         }
         let day = self.day_light();
         if let Some(effects) = &mut self.effects {
@@ -378,7 +378,7 @@ impl Renderer {
             self.draw_effects(&mut pass);
         }
         if let Some(glass) = &self.glass {
-            glass.draw(&self.device, &mut pass, scene);
+            glass.draw(&self.device, &mut pass, scene, (&self.mirrors.view, &self.mirrors.uniform));
         }
     }
 

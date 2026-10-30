@@ -14,6 +14,11 @@ use std::cell::{Cell, RefCell};
 /// How far the mirrors draw the stage, metres (ours: the brief's "far level of detail, capped at about 300 m").
 pub(super) const REACH: f32 = 300.0;
 
+/// The image layers: the mirrors', then the windscreen's (the cabin reflected in it, which the windscreen's pane
+/// samples: `glass.wgsl`).
+const LAYERS: usize = MOST_MIRRORS + 1;
+const WINDSCREEN: usize = MOST_MIRRORS;
+
 /// One mirror's view in `mirrors.wgsl`'s `MirrorViews`.
 #[derive(Debug, Clone, Copy, Default, Pod, Zeroable)]
 #[repr(C)]
@@ -45,23 +50,27 @@ struct Target {
 /// The mirrors' images, their views for the glass, and what each pass needs.
 pub(super) struct Mirrors {
     rate: Rate,
-    /// [`MOST_MIRRORS`] layers of [`MOST`] (one texel without mirrors), and their view.
+    /// Whether the windscreen's image is drawn ([`Enhance::windscreen`](super::Enhance::windscreen)), every frame.
+    windscreen_on: bool,
+    /// [`LAYERS`] layers of [`MOST`] (one texel without mirrors), and their view.
     images: wgpu::Texture,
     pub(super) view: wgpu::TextureView,
     /// `MirrorViews`.
     pub(super) uniform: wgpu::Buffer,
     /// The glass this frame ([`Renderer::set_mirrors`]); none outside the cockpit.
     placed: Vec<Placed>,
+    /// The windscreen's mean plane this frame ([`Renderer::set_windscreen_mirror`]).
+    windscreen: Option<Placed>,
     targets: RefCell<Vec<Option<Target>>>,
-    held: RefCell<[Option<Held>; MOST_MIRRORS]>,
+    held: RefCell<[Option<Held>; LAYERS]>,
     frame: Cell<u64>,
 }
 
 impl Mirrors {
-    pub(super) fn new(device: &wgpu::Device, format: wgpu::TextureFormat, rate: Rate) -> Mirrors {
-        let (size, layers) = match rate {
-            Rate::Off => ((1, 1), 1),
-            Rate::Every(_) => (MOST, MOST_MIRRORS as u32),
+    pub(super) fn new(device: &wgpu::Device, format: wgpu::TextureFormat, rate: Rate, windscreen_on: bool) -> Mirrors {
+        let (size, layers) = match (rate, windscreen_on) {
+            (Rate::Off, false) => ((1, 1), 1),
+            _ => (MOST, LAYERS as u32),
         };
         let images = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("mirror images"),
@@ -79,20 +88,34 @@ impl Mirrors {
         });
         let uniform = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("mirror views"),
-            size: std::mem::size_of::<[ViewUniform; MOST_MIRRORS]>() as u64,
+            size: std::mem::size_of::<[ViewUniform; LAYERS]>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         Mirrors {
             rate,
+            windscreen_on,
             images,
             view,
             uniform,
             placed: Vec::new(),
-            targets: RefCell::new((0..MOST_MIRRORS).map(|_| None).collect()),
-            held: RefCell::new([None; MOST_MIRRORS]),
+            windscreen: None,
+            targets: RefCell::new((0..LAYERS).map(|_| None).collect()),
+            held: RefCell::new([None; LAYERS]),
             frame: Cell::new(0),
         }
+    }
+}
+
+impl Mirrors {
+    /// The glass drawn this frame with its image layer: the mirrors', then the windscreen's.
+    fn layers(&self) -> impl Iterator<Item = (usize, Placed)> + '_ {
+        self.placed.iter().copied().enumerate().chain(self.windscreen.map(|placed| (WINDSCREEN, placed)))
+    }
+
+    /// Whether layer `k`'s image is drawn on frame `frame`: the mirrors' at their rate, the windscreen's every frame.
+    fn due(&self, k: usize, frame: u64) -> bool {
+        k == WINDSCREEN || self.rate.due(k, frame)
     }
 }
 
@@ -106,7 +129,21 @@ impl Renderer {
         }
         mirrors.placed = placed.iter().take(MOST_MIRRORS).copied().collect();
         if mirrors.placed.is_empty() {
-            *mirrors.held.borrow_mut() = [None; MOST_MIRRORS];
+            mirrors.held.borrow_mut()[..MOST_MIRRORS].fill(None);
+        }
+    }
+
+    /// The windscreen's pane seen from inside this frame, its mean plane facing the eye (none: no pass). Drawn as the
+    /// centre mirror's is, the cabin and the stage behind it, every frame; only with
+    /// [`Enhance::windscreen`](super::Enhance::windscreen).
+    pub(crate) fn set_windscreen_mirror(&mut self, placed: Option<Placed>) {
+        let mirrors = &mut self.mirrors;
+        if !mirrors.windscreen_on {
+            return;
+        }
+        mirrors.windscreen = placed;
+        if placed.is_none() {
+            mirrors.held.borrow_mut()[WINDSCREEN] = None;
         }
     }
 
@@ -114,7 +151,7 @@ impl Renderer {
     pub(super) fn mirrors_due(&self) -> bool {
         let m = &self.mirrors;
         let held = m.held.borrow();
-        (0..m.placed.len()).any(|k| held[k].is_none() || m.rate.due(k, m.frame.get()))
+        m.layers().any(|(k, _)| held[k].is_none() || m.due(k, m.frame.get()))
     }
 
     /// Draws the due mirrors' passes from the main view's `[view_projection, sky_view_projection]`, each in
@@ -126,7 +163,7 @@ impl Renderer {
         [view_projection, sky_view_projection]: [Mat4; 2],
     ) {
         let m = &self.mirrors;
-        if m.rate == Rate::Off {
+        if m.rate == Rate::Off && !m.windscreen_on {
             return;
         }
         let frame = m.frame.get();
@@ -136,12 +173,12 @@ impl Renderer {
         let mut drawn = false;
         // One span for the frame's passes, also when none is due (the rates' mean cost per frame).
         let mut encoder = self.device.create_command_encoder(&Default::default());
-        let t = (!m.placed.is_empty()).then(|| mark(profiler, &mut encoder));
-        for (k, placed) in m.placed.iter().enumerate() {
-            if held[k].is_some() && !m.rate.due(k, frame) {
+        let t = m.layers().next().is_some().then(|| mark(profiler, &mut encoder));
+        for (k, placed) in m.layers() {
+            if held[k].is_some() && !m.due(k, frame) {
                 continue;
             }
-            let Some(view) = mirrors::view(view_projection, sky_view_projection, self.depth_size, placed) else {
+            let Some(view) = mirrors::view(view_projection, sky_view_projection, self.depth_size, &placed) else {
                 continue;
             };
             let mut targets = m.targets.borrow_mut();
@@ -203,9 +240,9 @@ impl Renderer {
             particles.prepare(&self.queue, view_projection, &self.game_light().0);
         }
         // Each image's view moved with the car since it was drawn, so that the glass holds it still.
-        let mut views = [ViewUniform::default(); MOST_MIRRORS];
-        for (k, held) in held.iter().enumerate().take(m.placed.len()) {
-            if let Some(held) = held {
+        let mut views = [ViewUniform::default(); LAYERS];
+        for (k, _) in m.layers() {
+            if let Some(held) = &held[k] {
                 views[k] = ViewUniform {
                     view_projection: (held.view_projection * held.body * body.inverse()).to_cols_array_2d(),
                     scale: [held.size.0 as f32 / MOST.0 as f32, held.size.1 as f32 / MOST.1 as f32, 1.0, 0.0],

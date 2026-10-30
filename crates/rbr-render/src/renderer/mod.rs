@@ -246,7 +246,7 @@ impl Renderer {
             mipmap_filter: wgpu::MipmapFilterMode::Linear,
             ..Default::default()
         });
-        let mirrors = mirrors::Mirrors::new(&device, format, enhance.mirrors);
+        let mirrors = mirrors::Mirrors::new(&device, format, enhance.mirrors, enhance.windscreen);
         let ground_light = bounce::Ground::new(&device, stage, enhance.lighting);
         let world_box = (stage.meshes.iter().filter(|m| m.anchor == Anchor::World).flat_map(|m| &m.vertices))
             .map(|v| Vec3::from(v.position))
@@ -769,9 +769,13 @@ impl Renderer {
     }
 
     /// The windscreen's drops of the next frames (the pass is made on the first call).
-    pub fn set_glass(&mut self, drops: &[glass::gpu::Drop]) {
-        let pass = self.glass.get_or_insert_with(|| glass::gpu::Pass::new(&self.device, SCENE_FORMAT, DEPTH_FORMAT));
+    pub fn set_glass(&mut self, drops: &[glass::gpu::Drop], wipers: [[f32; 4]; 4]) {
+        let pass = self.glass.get_or_insert_with(|| {
+            let sun_map = self.sun.as_ref().map_or_else(|| sun::placeholder(&self.device), |sun| sun.view.clone());
+            glass::gpu::Pass::new(&self.device, SCENE_FORMAT, DEPTH_FORMAT, &sun_map)
+        });
         pass.set(&self.device, &self.queue, drops);
+        pass.set_wipers(wipers);
     }
 
     /// Lays the car's shadow decal ([`crate::car_shadow::decal`]) on `probe`'s ground for the car's body frame `frame`

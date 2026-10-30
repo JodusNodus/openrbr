@@ -50,15 +50,16 @@ const LEVELS: f32 = 6.0;
 // The metering (`cs_histogram`, `cs_meter`): the scene's luminance (cd/m2, its light over the pre-exposure) on a grid
 // of `METER_GRID` points binned by its log2 in `BINS` bins from `EV_LOW` over `EV_SPAN` stops (starlit ground to the
 // sunlit sky); the mean of the bins between the `PERCENTILES` (the darkest shadows and the
-// brightest highlights dropped) is the frame's light. In the in-car view the cabin counts `CABIN_WEIGHT` of the
-// outside, so the exposure follows what is seen through the glass and a dark cabin lifts it only a little.
+// brightest highlights dropped) is the frame's light. In the in-car view the cabin counts `CABIN_WEIGHT` against the
+// outside's `WEIGHT`, between an eye on the road (the cabin at a fifth: the cabin dark) and a camera's whole frame (the
+// cabin readable, the outside washed out).
 const METER_GRID: vec2<u32> = vec2<u32>(128u, 64u);
 const BINS: u32 = 128u;
 const EV_LOW: f32 = -14.0;
 const EV_SPAN: f32 = 32.0;
 const PERCENTILES: vec2<f32> = vec2<f32>(0.1, 0.9);
 const WEIGHT: u32 = 5u;
-const CABIN_WEIGHT: u32 = 1u;
+const CABIN_WEIGHT: u32 = 2u;
 // The exposure, as Unreal's and BeamNG's auto exposure: the metered light, back in luminance (over the pre-exposure),
 // as EV100 (ISO 100, the calibration constant `CALIBRATION`), held within `EV100_RANGE`, is exposed to `KEY`, middle
 // grey (18 percent before `AGX_SCALE`), shifted by the exposure compensation curve (`compensation`). The curve is Krawczyk, Myszkowski and Seidel's (2005) key value

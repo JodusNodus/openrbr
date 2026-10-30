@@ -84,6 +84,7 @@ pub fn enhance_list(graphics: &Graphics) -> String {
         "cabin" => graphics.cabin,
         "contact" => graphics.contact,
         "grass" => graphics.grass,
+        "windscreen" => graphics.windscreen,
         "lighting" => graphics.lighting,
         "marks" => graphics.marks,
         "particles" => graphics.particles,
@@ -1127,7 +1128,7 @@ mod tests {
         assert_eq!(enhance_list(&Quality::Low.graphics(false)), "anisotropy,decals,water");
         assert_eq!(
             enhance_list(&DEFAULT_GRAPHICS),
-            "anisotropy,asphalt,cabin,contact,decals,grass,gravel,ground,lighting,particles,snow,water,wet"
+            "anisotropy,asphalt,cabin,contact,decals,grass,gravel,ground,lighting,particles,snow,water,wet,windscreen"
         );
         // Ultra with the tyre marks is every addition.
         assert_eq!(Enhance::parse(&enhance_list(&Quality::Ultra.graphics(true))), Enhance::parse("all,grass"));

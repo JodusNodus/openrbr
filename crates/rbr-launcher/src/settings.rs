@@ -252,6 +252,7 @@ pub struct Settings {
     pub cabin: Option<bool>,
     pub contact: Option<bool>,
     pub grass: Option<bool>,
+    pub windscreen: Option<bool>,
     pub marks: Option<bool>,
     /// One of [`RENDER_SCALES`].
     pub render_scale: Option<u32>,
@@ -494,6 +495,7 @@ impl Settings {
             cabin: on_off(get("cabin")),
             contact: on_off(get("contact")),
             grass: on_off(get("grass")),
+            windscreen: on_off(get("windscreen")),
             marks: on_off(get("marks")),
             render_scale: get("render_scale").and_then(|v| v.parse().ok()).filter(|v| RENDER_SCALES.contains(v)),
             anti_aliasing: get("anti_aliasing").as_deref().and_then(AntiAliasing::parse),
@@ -616,6 +618,7 @@ impl Settings {
             ("cabin", on_off_text(self.cabin)),
             ("contact", on_off_text(self.contact)),
             ("grass", on_off_text(self.grass)),
+            ("windscreen", on_off_text(self.windscreen)),
             ("marks", on_off_text(self.marks)),
         ] {
             if let Some(v) = value {
@@ -832,6 +835,7 @@ impl Form {
                 cabin: settings.cabin.unwrap_or(DEFAULT_GRAPHICS.cabin),
                 contact: settings.contact.unwrap_or(DEFAULT_GRAPHICS.contact),
                 grass: settings.grass.unwrap_or(DEFAULT_GRAPHICS.grass),
+                windscreen: settings.windscreen.unwrap_or(DEFAULT_GRAPHICS.windscreen),
                 marks: settings.marks.unwrap_or(DEFAULT_GRAPHICS.marks),
                 wet_roads: settings.wet_roads.unwrap_or(DEFAULT_GRAPHICS.wet_roads),
                 detail: settings.detail.unwrap_or(DEFAULT_GRAPHICS.detail),
@@ -926,6 +930,7 @@ impl Form {
             cabin: Some(self.graphics.cabin),
             contact: Some(self.graphics.contact),
             grass: Some(self.graphics.grass),
+            windscreen: Some(self.graphics.windscreen),
             marks: Some(self.graphics.marks),
             wet_roads: Some(self.graphics.wet_roads),
             detail: Some(self.graphics.detail),
@@ -1026,6 +1031,7 @@ mod tests {
             cabin: Some(false),
             contact: Some(false),
             grass: Some(true),
+            windscreen: None,
             marks: None,
             render_scale: Some(75),
             anti_aliasing: Some(AntiAliasing::Off),

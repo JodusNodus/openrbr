@@ -151,6 +151,18 @@ impl Windscreen {
         self.point(lo + (hi - lo) * f.clamp(Vec2::ZERO, Vec2::ONE), 0.0)
     }
 
+    /// The chart's mean plane over its bounds, by model space to stage space `to_stage`, facing the cabin: the
+    /// windscreen as a mirror (`renderer::mirrors`).
+    pub fn mirror(&self, to_stage: Mat4) -> crate::mirrors::Placed {
+        let [lo, hi] = self.bounds;
+        let corner = |x: f32, y: f32| to_stage.transform_point3(self.origin + self.axes[0] * x + self.axes[1] * y);
+        crate::mirrors::Placed {
+            corners: [corner(lo.x, lo.y), corner(hi.x, lo.y), corner(hi.x, hi.y), corner(lo.x, hi.y)],
+            normal: -to_stage.transform_vector3(self.axes[2]).normalize(),
+            side: false,
+        }
+    }
+
     /// The chart's width over its height.
     pub fn ratio(&self) -> f32 {
         let [lo, hi] = self.bounds;
@@ -412,17 +424,28 @@ impl Drawn {
             turn(outside, wipers, &self.exterior_parts, playback);
         }
         let lit = renderer.enhance().cabin;
+        let effects = renderer.enhance().windscreen;
         let drops = match (interior, &self.car.exterior) {
-            (true, _) => self.drops(playback, None, lit),
-            (false, Some((outside, _))) => self.drops(playback, Some(outside), lit),
+            (true, _) => self.drops(playback, None, lit, effects),
+            (false, Some((outside, _))) => self.drops(playback, Some(outside), lit, effects),
             (false, None) => Vec::new(),
         };
-        renderer.set_glass(&drops);
+        // The pane's wipers (kind 6), the windscreen's seen from inside.
+        let mut wipers = [[0.0; 4]; 4];
+        for ((w, _), rows) in self.car.wipers.iter().zip(wipers.chunks_exact_mut(2)) {
+            rows[0] = [w.pivot.x, w.pivot.y, w.reach[0], w.reach[1]];
+            rows[1] = [w.park, w.turn * w.sweep, 1.0, 0.0];
+        }
+        renderer.set_glass(&drops, wipers);
+        // The cabin reflected in the windscreen's pane.
+        let to_stage = coords::physics_to_stage() * playback.model_to_physics(playback.sample());
+        renderer.set_windscreen_mirror((interior && effects).then(|| self.car.windscreen.mirror(to_stage)));
     }
 
     /// The drops at the current frame, stage space, on the windscreen inside, or on `outside` (the outside one) at the
-    /// points over the inside one's. `lit` with [`Enhance::cabin`](crate::renderer::Enhance::cabin) (`pane_drops`).
-    fn drops(&self, playback: &Playback, outside: Option<&Windscreen>, lit: bool) -> Vec<gpu::Drop> {
+    /// points over the inside one's. `lit` with [`Enhance::cabin`](crate::renderer::Enhance::cabin) (`pane_drops`), the
+    /// panes themselves seen from inside with [`Enhance::windscreen`](crate::renderer::Enhance::windscreen) (`effects`).
+    fn drops(&self, playback: &Playback, outside: Option<&Windscreen>, lit: bool, effects: bool) -> Vec<gpu::Drop> {
         let to_stage = coords::physics_to_stage() * playback.model_to_physics(playback.sample());
         let w = &self.car.windscreen;
         let place = |at: Vec2, lift: f32| match outside {
@@ -432,7 +455,15 @@ impl Drawn {
         // The film's streaks along the airflow, longer with speed: up the windscreen, back along the side windows.
         let streak = 1.0 + (Vec3::from(playback.sample().car.velocity).length() / FILM_STREAK_SPEED).min(2.0);
         let [across, up, _] = outside.unwrap_or(w).axes.map(|a| to_stage.transform_vector3(a));
-        let mut drops = pane_drops(&self.glass, w, outside, to_stage, streak, lit);
+        // The panes themselves seen from inside, under all else on them.
+        let mut drops = Vec::new();
+        if outside.is_none() && effects {
+            drops.extend(pane_cells(&self.glass, w, to_stage, 0.0));
+            for (side, glass) in self.car.sides.iter().zip(&self.sides) {
+                drops.extend(pane_cells(glass, &side.inside, to_stage, 1.0));
+            }
+        }
+        drops.extend(pane_drops(&self.glass, w, outside, to_stage, streak, lit));
         for (side, glass) in self.car.sides.iter().zip(&self.sides) {
             // Outside, on the exterior pane over it, when the car has one.
             let on = match outside {
@@ -462,6 +493,7 @@ impl Drawn {
                     axis_v: (up * radius).to_array(),
                     alpha: 1.0,
                     color: [0.95, 0.96, 1.0, 1.0],
+                    normal: [0.0; 4],
                 });
             }
         }
@@ -525,6 +557,7 @@ fn pane_drops(
             // The cell, for its beads' places (`glass.wgsl`).
             alpha: index as f32,
             color,
+            normal: [0.0; 4],
         });
     }
     drops.extend(glass.drops.iter().map(|d| {
@@ -565,9 +598,40 @@ fn pane_drops(
             axis_v: v.to_array(),
             alpha,
             color,
+            normal: [0.0; 4],
         }
     }));
     drops
+}
+
+/// The cells of one pane's chart `w` (its `glass`'s film cells) on the glass, stage space, for the pane seen from
+/// inside (kind 6, `glass.wgsl`): each with its middle and size in the chart, metres, in `color`, and which of its
+/// corners are on the glass in `alpha` (bits low, right, top, far); `seed` 0 the windscreen, 1 a side window.
+fn pane_cells(glass: &Glass, w: &Windscreen, to_stage: Mat4, seed: f32) -> Vec<gpu::Drop> {
+    let corners = [Vec2::new(-0.5, -0.5), Vec2::new(0.5, -0.5), Vec2::new(-0.5, 0.5), Vec2::new(0.5, 0.5)];
+    // The chart's mean plane's: the grid's heights step from cell to cell.
+    let out = to_stage.transform_vector3(w.axes[2]).normalize();
+    (0..glass.film.len())
+        .filter_map(|index| {
+            let (at, size) = glass.film_cell(index);
+            let on =
+                corners.iter().enumerate().filter(|(_, &c)| w.inside(at + size * c)).map(|(k, _)| 1 << k).sum::<u32>();
+            if on == 0 {
+                return None;
+            }
+            let [low, right, top, far] = corners.map(|c| to_stage.transform_point3(w.point(at + size * c, 0.0)));
+            Some(gpu::Drop {
+                centre: ((low + right + top + far) * 0.25).to_array(),
+                kind: 6.0,
+                axis_u: ((right + far - low - top) * 0.25).to_array(),
+                seed,
+                axis_v: ((top + far - low - right) * 0.25).to_array(),
+                alpha: on as f32,
+                color: [at.x, at.y, size.x, size.y],
+                normal: out.extend(0.0).to_array(),
+            })
+        })
+        .collect()
 }
 
 /// The film below this is not drawn.
