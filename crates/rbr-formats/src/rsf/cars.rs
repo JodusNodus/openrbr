@@ -376,16 +376,16 @@ pub fn selected_skin(root: &Path, folder: &str) -> Option<(String, PathBuf)> {
 }
 
 /// The car-parts option of model folder `model` that switches the headlights on: the first by folder name of
-/// `carparts/<option>/` whose `metadata.ini` names it `Headlights` in `[rsf_info]` with an `on` word in its `state`
-/// (`on`, `on+`, `All on`, `On, inner off`). RSF's picker copies the chosen option's files over the model's; we only
-/// read this one's, for the headlights' colour (`notes/formats.md` "RSF cars").
+/// `carparts/<option>/` whose `metadata.ini` names it `Headlights` (`Lights` on the BMW M3 E36) in `[rsf_info]` with
+/// an `on` word in its `state` (`on`, `on+`, `All on`, `On, inner off`). RSF's picker copies the chosen option's files
+/// over the model's; we only read this one's, for the headlights' colour and points (`notes/formats.md` "RSF cars").
 pub fn headlights_on(model: &Path) -> Option<PathBuf> {
     let mut options: Vec<PathBuf> =
         std::fs::read_dir(cars::resolve(model, "carparts")?).ok()?.filter_map(|e| Some(e.ok()?.path())).collect();
     options.sort();
     options.into_iter().find(|option| {
         option_info(option).is_some_and(|(name, state)| {
-            name.eq_ignore_ascii_case("Headlights")
+            ["Headlights", "Lights"].iter().any(|n| name.eq_ignore_ascii_case(n))
                 && state.split(|c: char| !c.is_ascii_alphabetic()).any(|word| word.eq_ignore_ascii_case("on"))
         })
     })
@@ -642,6 +642,7 @@ mod tests {
             ("ESCORT_COSWORTH_GRA", "lights_on"),
             ("bmw_m3_e30", "Lights_On"),
             ("evo_IX", "light_on"),
+            ("bmw_m3_e36", "lights_on"),
         ] {
             let found = headlights_on(&cars::resolve(&cars, model).unwrap()).unwrap();
             assert_eq!(found.file_name().unwrap(), on, "{model}");
