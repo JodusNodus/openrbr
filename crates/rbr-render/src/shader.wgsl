@@ -555,9 +555,9 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             if (second_draw()) {
                 paved_mean = mix(paved_mean, terrain_even(texture1, v.uv1, 0.0, ASPHALT_MEAN).rgb, second.a * v.color.a);
             }
-            var probe = terrain_even(texture0, v.uv0, levels.x, ASPHALT_BLUR).rgb;
+            var probe = terrain_even(texture0, v.uv0, 0.0, ASPHALT_BLUR).rgb;
             if (second_draw()) {
-                probe = mix(probe, terrain_even(texture1, v.uv1, levels.y, ASPHALT_BLUR).rgb, second.a * v.color.a);
+                probe = mix(probe, terrain_even(texture1, v.uv1, 0.0, ASPHALT_BLUR).rgb, second.a * v.color.a);
             }
             let top = max(probe.r, max(probe.g, probe.b));
             paved_grey = 1.0 - smoothstep(ASPHALT_GREY.x, ASPHALT_GREY.y, (top - min(probe.r, min(probe.g, probe.b))) / max(top, 1e-3));
@@ -2353,7 +2353,9 @@ const GROUND_HUE: f32 = 0.3;
 const GROUND_BLUR: f32 = 0.75;
 const GROUND_MAGNIFIED: vec2<f32> = vec2<f32>(0.4, 1.0);
 const GROUND_KEEP: f32 = 0.7;
-// The levels past the footprint the paved road's grey test reads its texture at (`paved_grey`).
+// The mip the paved road's grey test reads its texture at (`paved_grey`), whatever the footprint: read that many levels
+// past it, the far road read a mip where the verge painted beside it in the texture blends in, failed the test and took
+// the ground scan as a shoulder, green and pink patches swimming ahead of the car (RSF Helette 580).
 const ASPHALT_BLUR: f32 = 3.0;
 // The finest the paved road's own texture is read, metres a pixel: the asphalt scan carries the grain under it, and the
 // texture's flecks magnified read as scratches. Its gradients are widened to it (`paved_reach` in `shade_stage`), so the
