@@ -65,7 +65,7 @@ struct Instance {
     @location(6) color: vec4<f32>,
     @location(7) normal: vec4<f32>,
     @location(8) far: vec3<f32>,
-    @location(9) tint: vec4<f32>,
+    @location(9) tint: vec4<u32>,
     @location(10) edge: vec4<f32>,
 };
 
@@ -85,8 +85,9 @@ struct Out {
     @location(8) @interpolate(flat) axis_u: vec3<f32>,
     @location(9) @interpolate(flat) axis_v: vec3<f32>,
     @location(10) @interpolate(flat) normal: vec3<f32>,
-    // What a pane cell's glass lets through of the light outside (its texture's sun strip), across the cell.
-    @location(11) tint: f32,
+    // What a pane cell's glass lets through of the light outside (its texture's sun strip), across the cell
+    // (`pane_tint`).
+    @location(11) @interpolate(flat) tint: vec4<u32>,
     // How far a pane cell's corners lie inside the glass's outline, over `PANE_EDGE` (low, right, top, far).
     @location(12) @interpolate(flat) edge: vec4<f32>,
 };
@@ -127,7 +128,7 @@ fn vs_main(@builtin(vertex_index) corner: u32, instance: Instance) -> Out {
     out.axis_u = normalize(instance.axis_u);
     out.axis_v = normalize(instance.axis_v);
     out.normal = instance.normal.xyz;
-    out.tint = select(1.0, instance.tint[corner & 3u], abs(instance.kind - 6.0) < 0.5);
+    out.tint = instance.tint;
     out.edge = instance.edge;
     return out;
 }
@@ -391,7 +392,7 @@ const PANE_EDGE: f32 = 0.05;
 const DUST: f32 = 0.006;
 const DUST_G: f32 = 0.8;
 const DUST_BROAD: f32 = 0.1;
-const DUST_SKY: f32 = 0.0032;
+const DUST_SKY: f32 = 0.001;
 const DUST_PATCH: f32 = 0.12;
 const DUST_SWEPT: f32 = 0.55;
 // The side windows' dust against the windscreen's, and the most the slant lengthens the light's way through it.
@@ -486,6 +487,24 @@ fn sun_reach(world: vec3<f32>) -> f32 {
     return lit / 9.0;
 }
 
+// A pane cell's `tint` (`glass::gpu::Drop`) at `t` across the cell (0 to 1): its `PANE_TINTS` + 1 samples a side, 4
+// bits each, bilinearly.
+const PANE_TINTS: u32 = 4u;
+
+fn pane_tint(tint: vec4<u32>, t: vec2<f32>) -> f32 {
+    let p = clamp(t, vec2<f32>(0.0), vec2<f32>(1.0)) * f32(PANE_TINTS);
+    let i = min(vec2<u32>(p), vec2<u32>(PANE_TINTS - 1u));
+    let f = p - vec2<f32>(i);
+    let k = i.y * (PANE_TINTS + 1u) + i.x;
+    let row = PANE_TINTS + 1u;
+    return mix(mix(tint_sample(tint, k), tint_sample(tint, k + 1u), f.x),
+        mix(tint_sample(tint, k + row), tint_sample(tint, k + row + 1u), f.x), f.y);
+}
+
+fn tint_sample(tint: vec4<u32>, k: u32) -> f32 {
+    return f32((tint[k / 8u] >> (4u * (k % 8u))) & 15u) / 15.0;
+}
+
 fn pane(in: Out, per_pixel: mat2x2<f32>) -> vec4<f32> {
     let at = in.color.xy + in.local * in.color.zw * 0.5;
     // A pixel's size on the glass, metres.
@@ -505,9 +524,10 @@ fn pane(in: Out, per_pixel: mat2x2<f32>) -> vec4<f32> {
     var through = (1.0 - fresnel) * (1.0 - fresnel);
     let sun = frame.sun.xyz;
     // The outside's light on the pane, behind what its texture lets through (a sun strip keeps it off the dust).
-    let sun_on = max(dot(sun, n), 0.0) * frame.sun.w * sun_reach(in.world + n * 0.05) * in.tint;
+    let tint = pane_tint(in.tint, t);
+    let sun_on = max(dot(sun, n), 0.0) * frame.sun.w * sun_reach(in.world + n * 0.05) * tint;
     let sun_light = linear(frame.sun_light.rgb) * sun_on;
-    let sky = linear(frame.light.rgb) * in.tint;
+    let sky = linear(frame.light.rgb) * tint;
     let cos_t = dot(sun, view);
 
     // The wipers' areas: cleaner, and scratched.
@@ -578,9 +598,10 @@ fn pane(in: Out, per_pixel: mat2x2<f32>) -> vec4<f32> {
         light += sun_light * henyey_greenstein(cos_t, 0.7) * SPOT_LIGHT * residue + sky * 0.02 * residue;
         through *= 1.0 - 0.08 * residue;
     }
-    // The cabin reflected in the inner face, and in the outer seen through it.
+    // The cabin reflected in the inner face, and in the outer seen through it and its texture twice (a sun strip
+    // keeps only the inner face's).
     if (in.seed == 0.0) {
-        light += fresnel * (1.0 + through) * reflected(in.world);
+        light += fresnel * (1.0 + through * tint * tint) * reflected(in.world);
     }
     return vec4<f32>(light, 1.0 - through) * glass;
 }

@@ -497,8 +497,10 @@ not ported.
   to it (`Windscreen::edge`, `Drop::edge` over `PANE_EDGE` 5 cm): kept or dropped by corner, the film ran up to half a
   2 cm cell past the glass in 50 px stairs (Clio Rally3 A-pillar fringe; the Escort's pillar edge). The outside's
   light on the pane (its dust, specks, spots and scratches) is weighed by what the
-  window part's texture lets through at each film corner, `1 - alpha` of its blended faces (`glass::Tints`, read at
-  load from the interior set's window parts, `MeshDamage::window`): the Clio Rally3's printed sun strip glowed brown
+  window part's texture lets through, `1 - alpha` of its blended faces (`glass::Tints`, read at load from the
+  interior set's window parts, `MeshDamage::window`), at 4 steps across each cell (`gpu::PANE_TINTS`, 5 x 5 samples
+  of 4 bits a cell; at the corners alone the sky's light lay on the strip's lower 2 cm, a pale band over the black,
+  Clio Rally3 (42, 43, 35) against the strip's (9, 17, 8), now the strip's): the Clio Rally3's printed sun strip glowed brown
   (0.37 against 0.05 with `windscreen` off) and now only shows the cabin reflected in it. Dust 0.4% (was 1%: the view
   went milky toward a low sun; dark trees +0.15 in display value, now +0.08). Against onboard footage and matched
   frames (2026-10-30; M3 E30 621 13:00 heavy cloud, Fiesta Rally2 Luceram 08:30): the glass hazes toward a low sun and
@@ -506,7 +508,12 @@ not ported.
   tenth (was 0.4% and 0.3); scratches a third as strong, half as many, each a run of its arc (`SCRATCH_RUN`, about
   0.3 of it: whole rings read as a regular pattern of arcs); specks a quarter as many and at most 0.4 mm (orange flecks
   on the side windows); dried spots only as the glass has been wet (`Renderer::wetness` or the precipitation, so none on
-  a dry stage), 0.8 to 2.5 mm with a soft wavering rim (drawn rings). The bulkhead (`glass::bulkhead`, with
+  a dry stage), 0.8 to 2.5 mm with a soft wavering rim (drawn rings). The dust's sky light a third (`DUST_SKY`
+  0.001, was 0.0032: an even milky veil away from the sun, the golden Clio's view's deviation 34 against 46 without
+  it, now 40), and the cabin reflected in the outer face weighed by the texture twice (the strip keeps only the inner
+  face's: the Clio Rally3's switch panel over its strip 56 to 35 of 255). Left: the display reflected at the strip's
+  edge (lit texels at the Fresnel of 60 degrees, physical; a viewing cone on the backlight changed nothing, its
+  display is not backlit at 18:30). The bulkhead (`glass::bulkhead`, with
   `windscreen`): a dark strip hanging 0.6 m from the glass's foot in the interior set, drawn as its first opaque lit
   face, added after the cabin light's bake (seeing no sky) and drawn only in the in-car mirrors' passes, casting no
   shadow (`Renderer::set_reflected_only`). The sets leave gaps between the dash and the glass that the driver never

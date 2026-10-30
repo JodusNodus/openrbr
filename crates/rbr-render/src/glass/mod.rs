@@ -415,22 +415,34 @@ impl Tints {
             .unwrap_or(1.0)
     }
 
-    /// The film corners of `glass` on window part `part`'s chart `w`, row by row.
-    fn film_corners(&self, part: &str, glass: &Glass, w: &Windscreen) -> Vec<Corner> {
-        let [columns, rows] = model::FILM_CELLS;
+    /// What part `part`'s glass lets through over `glass`'s film, [`gpu::PANE_TINTS`] steps a cell, row by row.
+    fn film_tints(&self, part: &str, glass: &Glass, w: &Windscreen) -> Vec<f32> {
+        let [columns, rows] = model::FILM_CELLS.map(|n| n * gpu::PANE_TINTS);
+        let (lo, hi) = (glass.film_corner(0, 0), glass.film_corner(model::FILM_CELLS[0], model::FILM_CELLS[1]));
         (0..=rows)
-            .flat_map(|row| (0..=columns).map(move |column| glass.film_corner(column, row)))
-            .map(|at| Corner { point: w.point_near(at), through: self.through(part, w, at), edge: w.edge(at) })
+            .flat_map(|row| (0..=columns).map(move |column| (column, row)))
+            .map(|(column, row)| {
+                let at = lo + (hi - lo) * Vec2::new(column as f32 / columns as f32, row as f32 / rows as f32);
+                self.through(part, w, at)
+            })
             .collect()
     }
 }
 
-/// A film corner of a pane seen from inside (`pane_cells`): its model-space point, what its glass lets through
-/// ([`Tints`]) and how far inside the glass's outline it lies ([`Windscreen::edge`]).
+/// The film corners of `glass` on its chart `w`, row by row.
+fn film_corners(glass: &Glass, w: &Windscreen) -> Vec<Corner> {
+    let [columns, rows] = model::FILM_CELLS;
+    (0..=rows)
+        .flat_map(|row| (0..=columns).map(move |column| glass.film_corner(column, row)))
+        .map(|at| Corner { point: w.point_near(at), edge: w.edge(at) })
+        .collect()
+}
+
+/// A film corner of a pane seen from inside (`pane_cells`): its model-space point and how far inside the glass's
+/// outline it lies ([`Windscreen::edge`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Corner {
     point: Vec3,
-    through: f32,
     edge: f32,
 }
 
@@ -499,8 +511,9 @@ pub fn bulkhead(meshes: &[Mesh], damage: &[MeshDamage]) -> Option<Mesh> {
 pub struct Drawn {
     car: CarGlass,
     glass: Glass,
-    /// The windscreen's, then each side window's film corners ([`Tints::film_corners`]).
-    corners: Vec<Vec<Corner>>,
+    /// The windscreen's, then each side window's film corners and what its glass lets through
+    /// ([`film_corners`], [`Tints::film_tints`]).
+    corners: Vec<(Vec<Corner>, Vec<f32>)>,
     precipitation: Option<Precipitation>,
     /// The wiper switch, and the schedule it gives (changed only while the blades are parked).
     pub switch: Switch,
@@ -541,8 +554,10 @@ impl Drawn {
                 Glass::side(w.bounds, w.area, back, 0x6c_a55 + k)
             })
             .collect::<Vec<_>>();
-        let corners = std::iter::once(tints.film_corners(WINDSCREEN, &glass, &car.windscreen))
-            .chain(car.sides.iter().zip(&sides).map(|(side, g)| tints.film_corners(side.part, g, &side.inside)))
+        let pane =
+            |part: &str, glass: &Glass, w: &Windscreen| (film_corners(glass, w), tints.film_tints(part, glass, w));
+        let corners = std::iter::once(pane(WINDSCREEN, &glass, &car.windscreen))
+            .chain(car.sides.iter().zip(&sides).map(|(side, g)| pane(side.part, g, &side.inside)))
             .collect();
         let parts: Vec<Vec<usize>> = car.wipers.iter().map(|(_, centre)| playback.parts_at(*centre, true)).collect();
         let exterior_parts: Vec<Vec<usize>> = car
@@ -825,10 +840,19 @@ fn pane_drops(
 
 /// The cells of one pane's chart `w` (its `glass`'s film cells) on the glass, stage space, for the pane seen from
 /// inside (kind 6, `glass.wgsl`): each with its middle and size in the chart, metres, in `color`, and from its film
-/// `corners` ([`Corner`]) what they let through in `tint` and how far inside the outline they lie in `edge` (over
-/// [`gpu::PANE_EDGE`]); `seed` 0 the windscreen, 1 a side window. Its corners as [`gpu::Drop`] says, exact: the
-/// glass's corners need not lie in a plane. Only the cells with a corner on the glass.
-fn pane_cells(glass: &Glass, w: &Windscreen, to_stage: Mat4, seed: f32, corners: &[Corner]) -> Vec<gpu::Drop> {
+/// `corners` ([`Corner`]) how far inside the outline they lie in `edge` (over [`gpu::PANE_EDGE`]), and `tints`
+/// ([`Tints::film_tints`]) what the glass lets through across each in `tint`; `seed` 0 the windscreen, 1 a side window.
+/// Its corners as [`gpu::Drop`] says, exact: the glass's corners need not lie in a plane. Only the cells with a corner
+/// on the glass.
+fn pane_cells(
+    glass: &Glass,
+    w: &Windscreen,
+    to_stage: Mat4,
+    seed: f32,
+    (corners, tints): &(Vec<Corner>, Vec<f32>),
+) -> Vec<gpu::Drop> {
+    let steps = gpu::PANE_TINTS;
+    let across = model::FILM_CELLS[0] * steps + 1;
     // The chart's mean plane's: the grid's heights step from cell to cell.
     let out = to_stage.transform_vector3(w.axes[2]).normalize();
     (0..glass.film.len())
@@ -852,7 +876,11 @@ fn pane_cells(glass: &Glass, w: &Windscreen, to_stage: Mat4, seed: f32, corners:
                 color: [at.x, at.y, size.x, size.y],
                 normal: out.extend(0.0).to_array(),
                 far: (far - low).to_array(),
-                tint: cell.map(|c| (c.through.clamp(0.0, 1.0) * 255.0).round() as u8),
+                tint: (0..(steps + 1) * (steps + 1)).fold([0; 4], |mut tint, k| {
+                    let through = tints[(row * steps + k / (steps + 1)) * across + column * steps + k % (steps + 1)];
+                    tint[k / 8] |= ((through.clamp(0.0, 1.0) * 15.0).round() as u32) << (4 * (k % 8));
+                    tint
+                }),
                 edge: cell.map(|c| ((c.edge / gpu::PANE_EDGE).clamp(-1.0, 1.0) * 127.0).round() as i8),
             })
         })
@@ -969,6 +997,24 @@ mod tests {
         assert!((tints.through(WINDSCREEN, &w, on(0.3)) - 0.88).abs() < 0.01, "the clear glass");
         assert_eq!(tints.through(WINDSCREEN, &w, Vec2::new(0.0, 5.0)), 1.0, "off the glass");
         assert_eq!(tints.through("i_window_lf", &w, on(0.9)), 1.0, "another window's faces");
+        // The pane's samples find the strip's edge (three quarters up the glass) to a quarter of a cell.
+        let glass = Glass::new(w.bounds, w.area, Vec::new(), 1);
+        let samples = tints.film_tints(WINDSCREEN, &glass, &w);
+        let [columns, rows] = model::FILM_CELLS.map(|n| n * gpu::PANE_TINTS);
+        let [lo, hi] = w.bounds;
+        let step = (hi.y - lo.y) / rows as f32;
+        let strip: Vec<f32> = (0..=rows)
+            .filter(|row| samples[row * (columns + 1) + columns / 2] < 0.5)
+            .map(|row| lo.y + step * row as f32)
+            .collect();
+        let edge = on(0.75).y;
+        let nearest = strip.iter().map(|y| (y - edge).abs()).fold(f32::MAX, f32::min);
+        assert!(!strip.is_empty() && nearest <= step * 1.01, "{nearest} m from the edge, a step {step} m");
+        // Packed 4 bits each, a cell's samples row by row from its low corner.
+        let pane = (film_corners(&glass, &w), samples);
+        let cells = pane_cells(&glass, &w, Mat4::IDENTITY, 0.0, &pane);
+        let packed = |d: &gpu::Drop| (0..25).map(|k| (d.tint[k / 8] >> (4 * (k % 8))) & 15).collect::<Vec<_>>();
+        assert!(cells.iter().map(packed).any(|s| s.contains(&1) && s.contains(&13)), "strip 1/15, clear 13/15");
     }
 
     #[test]
