@@ -65,6 +65,7 @@ struct Instance {
     @location(7) normal: vec4<f32>,
     @location(8) far: vec3<f32>,
     @location(9) tint: vec4<f32>,
+    @location(10) edge: vec4<f32>,
 };
 
 struct Out {
@@ -85,6 +86,8 @@ struct Out {
     @location(10) @interpolate(flat) normal: vec3<f32>,
     // What a pane cell's glass lets through of the light outside (its texture's sun strip), across the cell.
     @location(11) tint: f32,
+    // How far a pane cell's corners lie inside the glass's outline, over `PANE_EDGE` (low, right, top, far).
+    @location(12) @interpolate(flat) edge: vec4<f32>,
 };
 
 fn to_screen(clip: vec4<f32>) -> vec2<f32> {
@@ -124,6 +127,7 @@ fn vs_main(@builtin(vertex_index) corner: u32, instance: Instance) -> Out {
     out.axis_v = normalize(instance.axis_v);
     out.normal = instance.normal.xyz;
     out.tint = select(1.0, instance.tint[corner & 3u], abs(instance.kind - 6.0) < 0.5);
+    out.edge = instance.edge;
     return out;
 }
 
@@ -362,8 +366,9 @@ fn mud_inside(in: Out, rim: f32, soft: f32) -> vec4<f32> {
 }
 
 // The pane seen from inside (kind 6, ours). A cell of the glass in `color` (its middle and size in the chart, metres),
-// `alpha` (which corners are on the glass, faded between) and `seed` (0 the windscreen, 1 a side window). What it adds to the frame behind it and what it lets through, as
-// premultiplied light over it (alpha the loss):
+// `edge` (how far inside the glass's outline its corners lie, cut at the outline over a pixel) and `seed` (0 the
+// windscreen, 1 a side window). What it adds to the frame behind it and what it lets through, as premultiplied light
+// over it (alpha the loss):
 // - the light the two faces reflect away, by Schlick's Fresnel, so a steep pane passes less of the view;
 // - a fine dust film that scatters the sunlight falling on the pane toward the eye, mostly forward (Henyey-Greenstein,
 //   `DUST_G`), a veil about the sun when the car faces it, and the sky's light a little; patchy, thinner where the
@@ -375,6 +380,8 @@ fn mud_inside(in: Out, rim: f32, soft: f32) -> vec4<f32> {
 //   it, reaches the eye (the cone `dot(t, sun - view) = 0` about its tangent `t`), so the lit arcs line up through the
 //   pivot toward the sun.
 const PANE_F0: f32 = 0.04;
+// A pane cell's `edge` at 1, metres (`glass::gpu::PANE_EDGE`).
+const PANE_EDGE: f32 = 0.05;
 // The dust: the share of the sun's light on the pane it scatters toward the eye (a forward lobe, `DUST_G`, and a broad
 // one, `DUST_BROAD` of it), and of the sky's; patches `DUST_PATCH` across, the swept areas at `DUST_SWEPT` of it. A
 // light film: at 1% the whole view went milky driving toward a low sun.
@@ -466,14 +473,15 @@ fn sun_reach(world: vec3<f32>) -> f32 {
 
 fn pane(in: Out, per_pixel: mat2x2<f32>) -> vec4<f32> {
     let at = in.color.xy + in.local * in.color.zw * 0.5;
-    let on = vec4<f32>(vec4<u32>(u32(in.alpha)) & vec4<u32>(1u, 2u, 4u, 8u)) / vec4<f32>(1.0, 2.0, 4.0, 8.0);
+    // A pixel's size on the glass, metres.
+    let pixel = max(length(per_pixel[0] * in.color.zw * 0.5), length(per_pixel[1] * in.color.zw * 0.5));
+    // Up to the glass's outline, over a pixel.
     let t = in.local * 0.5 + 0.5;
-    let glass = smoothstep(0.6, 1.0, mix(mix(on.x, on.y, t.x), mix(on.z, on.w, t.x), t.y));
+    let inside = mix(mix(in.edge.x, in.edge.y, t.x), mix(in.edge.z, in.edge.w, t.x), t.y) * PANE_EDGE;
+    let glass = clamp(inside / max(pixel, 1e-5) + 0.5, 0.0, 1.0);
     if (glass <= 0.0) {
         discard;
     }
-    // A pixel's size on the glass, metres.
-    let pixel = max(length(per_pixel[0] * in.color.zw * 0.5), length(per_pixel[1] * in.color.zw * 0.5));
     var n = in.normal;
     let view = normalize(in.world - frame.eye.xyz);
     n = select(n, -n, dot(n, view) < 0.0);

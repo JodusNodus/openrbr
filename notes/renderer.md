@@ -489,7 +489,12 @@ not ported.
   exactly (the low one and the others' offsets, `Drop::far`), each from its integer film corner: drawn as a centre and
   two axes the non-planar cells cracked into dark lines along every third cell edge (where the 48 x 24 film corners
   meet the 64 x 32 height grid's edges) and pinholes; a hair of overlap instead showed a bright grid (Clio Rally3
-  Wythop, 2026-10-30). The outside's light on the pane (its dust, specks, spots and scratches) is weighed by what the
+  Wythop, 2026-10-30). The film corners lie on the glass's triangles (off the glass at the nearest point's height;
+  the grid's stepped heights cut the film in stairs where it meets the door trim, and the nearest triangle's plane
+  threw cells off the glass), and each cell is cut at the glass's outline over a pixel by its corners' signed distance
+  to it (`Windscreen::edge`, `Drop::edge` over `PANE_EDGE` 5 cm): kept or dropped by corner, the film ran up to half a
+  2 cm cell past the glass in 50 px stairs (Clio Rally3 A-pillar fringe; the Escort's pillar edge). The outside's
+  light on the pane (its dust, specks, spots and scratches) is weighed by what the
   window part's texture lets through at each film corner, `1 - alpha` of its blended faces (`glass::Tints`, read at
   load from the interior set's window parts, `MeshDamage::window`): the Clio Rally3's printed sun strip glowed brown
   (0.37 against 0.05 with `windscreen` off) and now only shows the cabin reflected in it. Dust 0.4% (was 1%: the view

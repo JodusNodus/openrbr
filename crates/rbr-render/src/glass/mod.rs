@@ -71,8 +71,8 @@ const MUD_INSIDE: f32 = 0.2;
 /// Ours: thrown snow lets the light through, so seen from inside it keeps more of its colour.
 const SNOW_INSIDE: f32 = 0.75;
 
-/// The windscreen's chart: its mean plane (`origin`, `axes` across, up and out) and the glass's height over it on a
-/// grid (`None` off the glass).
+/// The windscreen's chart: its mean plane (`origin`, `axes` across, up and out), the glass's height over it on a
+/// grid (`None` off the glass), and its triangles (the chart's x and y, the height in z) and outline in the chart.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Windscreen {
     origin: Vec3,
@@ -80,6 +80,8 @@ pub struct Windscreen {
     bounds: [Vec2; 2],
     heights: Vec<Option<f32>>,
     area: f32,
+    faces: Vec<[Vec3; 3]>,
+    outline: Vec<[Vec2; 2]>,
 }
 
 impl Windscreen {
@@ -126,7 +128,51 @@ impl Windscreen {
                 Some(t.iter().zip(w).map(|(p, w)| (*p - origin).dot(out) * w).sum())
             });
         }
-        Some(Windscreen { origin, axes, bounds: [lo, hi], heights, area })
+        let faces: Vec<[Vec3; 3]> =
+            triangles.iter().map(|t| t.map(|p| chart(p).extend((p - origin).dot(out)))).collect();
+        let on =
+            |p: Vec2| faces.iter().any(|t| barycentric(p, t[0].truncate(), t[1].truncate(), t[2].truncate()).is_some());
+        // An edge is on the outline when the glass does not go on past it.
+        let outline = faces
+            .iter()
+            .map(|t| t.map(Vec3::truncate))
+            .flat_map(|[a, b, c]| [[a, b, c], [b, c, a], [c, a, b]])
+            .filter_map(|[a, b, c]| {
+                let across = (b - a).perp().normalize_or_zero();
+                let away = if across.dot(c - a) > 0.0 { -across } else { across };
+                (across != Vec2::ZERO && !on((a + b) * 0.5 + away * OUTLINE_PROBE)).then_some([a, b])
+            })
+            .collect();
+        Some(Windscreen { origin, axes, bounds: [lo, hi], heights, area, faces, outline })
+    }
+
+    /// How far chart point `at` lies inside the glass's outline, metres; negative off the glass.
+    pub fn edge(&self, at: Vec2) -> f32 {
+        let distance = self.outline.iter().map(|&[a, b]| at.distance(closest(at, a, b))).fold(f32::MAX, f32::min);
+        match self.faces.iter().any(|t| barycentric(at, t[0].truncate(), t[1].truncate(), t[2].truncate()).is_some()) {
+            true => distance,
+            false => -distance,
+        }
+    }
+
+    /// The model-space point of the glass at chart point `at`, on its triangles (the grid's heights step from cell to
+    /// cell); off the glass at the height of the nearest point on it, so that a cell over the outline lies along it.
+    fn point_near(&self, at: Vec2) -> Vec3 {
+        // Each triangle's nearest point (`at` itself on it), how far, and its height there.
+        let nearest = |t: &[Vec3; 3]| {
+            let [a, b, c] = t.map(Vec3::truncate);
+            let near = match barycentric(at, a, b, c) {
+                Some(_) => at,
+                None => [(a, b), (b, c), (c, a)]
+                    .map(|(p, q)| closest(at, p, q))
+                    .into_iter()
+                    .min_by(|p, q| p.distance_squared(at).total_cmp(&q.distance_squared(at)))?,
+            };
+            let w = weights(near, a, b, c)?.map(|w| w.clamp(0.0, 1.0));
+            Some((near.distance_squared(at), t[0].z * w[0] + t[1].z * w[1] + t[2].z * w[2]))
+        };
+        let h = self.faces.iter().filter_map(nearest).min_by(|a, b| a.0.total_cmp(&b.0)).map_or(0.0, |n| n.1);
+        self.origin + self.axes[0] * at.x + self.axes[1] * at.y + self.axes[2] * h
     }
 
     /// A model-space point in the chart.
@@ -186,8 +232,22 @@ fn cell_centre([lo, hi]: [Vec2; 2], i: usize) -> Vec2 {
     lo + (hi - lo) * Vec2::new((x as f32 + 0.5) / GRID[0] as f32, (y as f32 + 0.5) / GRID[1] as f32)
 }
 
+/// How far past an edge [`Windscreen::new`] looks for more glass, metres.
+const OUTLINE_PROBE: f32 = 0.001;
+
+/// The point of the segment `a b` nearest `p`.
+fn closest(p: Vec2, a: Vec2, b: Vec2) -> Vec2 {
+    let ab = b - a;
+    a + ab * ((p - a).dot(ab) / ab.length_squared().max(1e-12)).clamp(0.0, 1.0)
+}
+
 /// The barycentric weights of `p` in the triangle `a b c`, or `None` outside it.
 fn barycentric(p: Vec2, a: Vec2, b: Vec2, c: Vec2) -> Option<[f32; 3]> {
+    weights(p, a, b, c).filter(|w| w.iter().all(|&w| w >= -1e-4))
+}
+
+/// The barycentric weights of `p` over the triangle `a b c`, inside it or not; `None` for a degenerate one.
+fn weights(p: Vec2, a: Vec2, b: Vec2, c: Vec2) -> Option<[f32; 3]> {
     let (v0, v1, v2) = (b - a, c - a, p - a);
     let d = v0.perp_dot(v1);
     if d.abs() < 1e-12 {
@@ -195,8 +255,7 @@ fn barycentric(p: Vec2, a: Vec2, b: Vec2, c: Vec2) -> Option<[f32; 3]> {
     }
     let v = v2.perp_dot(v1) / d;
     let w = v0.perp_dot(v2) / d;
-    let u = 1.0 - v - w;
-    (u >= -1e-4 && v >= -1e-4 && w >= -1e-4).then_some([u, v, w])
+    Some([1.0 - v - w, v, w])
 }
 
 /// A wiper from its mesh's model-space vertices: the pivot is the vertex group at the end of the parked wiper that
@@ -356,14 +415,23 @@ impl Tints {
             .unwrap_or(1.0)
     }
 
-    /// What window part `part` lets through at each film corner of `glass` on its chart `w`, row by row.
-    fn film_corners(&self, part: &str, glass: &Glass, w: &Windscreen) -> Vec<f32> {
+    /// The film corners of `glass` on window part `part`'s chart `w`, row by row.
+    fn film_corners(&self, part: &str, glass: &Glass, w: &Windscreen) -> Vec<Corner> {
         let [columns, rows] = model::FILM_CELLS;
         (0..=rows)
-            .flat_map(|row| (0..=columns).map(move |column| (column, row)))
-            .map(|(column, row)| self.through(part, w, glass.film_corner(column, row)))
+            .flat_map(|row| (0..=columns).map(move |column| glass.film_corner(column, row)))
+            .map(|at| Corner { point: w.point_near(at), through: self.through(part, w, at), edge: w.edge(at) })
             .collect()
     }
+}
+
+/// A film corner of a pane seen from inside (`pane_cells`): its model-space point, what its glass lets through
+/// ([`Tints`]) and how far inside the glass's outline it lies ([`Windscreen::edge`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Corner {
+    point: Vec3,
+    through: f32,
+    edge: f32,
 }
 
 /// How far the bulkhead ([`bulkhead`]) hangs below the windscreen's foot, metres.
@@ -431,8 +499,8 @@ pub fn bulkhead(meshes: &[Mesh], damage: &[MeshDamage]) -> Option<Mesh> {
 pub struct Drawn {
     car: CarGlass,
     glass: Glass,
-    /// What the windscreen, then each side window, lets through at each film corner ([`Tints::film_corners`]).
-    through: Vec<Vec<f32>>,
+    /// The windscreen's, then each side window's film corners ([`Tints::film_corners`]).
+    corners: Vec<Vec<Corner>>,
     precipitation: Option<Precipitation>,
     /// The wiper switch, and the schedule it gives (changed only while the blades are parked).
     pub switch: Switch,
@@ -473,7 +541,7 @@ impl Drawn {
                 Glass::side(w.bounds, w.area, back, 0x6c_a55 + k)
             })
             .collect::<Vec<_>>();
-        let through = std::iter::once(tints.film_corners(WINDSCREEN, &glass, &car.windscreen))
+        let corners = std::iter::once(tints.film_corners(WINDSCREEN, &glass, &car.windscreen))
             .chain(car.sides.iter().zip(&sides).map(|(side, g)| tints.film_corners(side.part, g, &side.inside)))
             .collect();
         let parts: Vec<Vec<usize>> = car.wipers.iter().map(|(_, centre)| playback.parts_at(*centre, true)).collect();
@@ -496,7 +564,7 @@ impl Drawn {
             switch.name(),
             wiping
         );
-        Some(Drawn { car, glass, through, precipitation, switch, wiping, parts, exterior_parts, sides, last: None })
+        Some(Drawn { car, glass, corners, precipitation, switch, wiping, parts, exterior_parts, sides, last: None })
     }
 
     /// Follows the drive to its current frame (each frame one physics step, with its tyre `spray`), turns the wiper
@@ -600,9 +668,9 @@ impl Drawn {
         // The panes themselves seen from inside, under all else on them.
         let mut drops = Vec::new();
         if outside.is_none() && effects {
-            drops.extend(pane_cells(&self.glass, w, to_stage, 0.0, &self.through[0]));
-            for ((side, glass), through) in self.car.sides.iter().zip(&self.sides).zip(&self.through[1..]) {
-                drops.extend(pane_cells(glass, &side.inside, to_stage, 1.0, through));
+            drops.extend(pane_cells(&self.glass, w, to_stage, 0.0, &self.corners[0]));
+            for ((side, glass), corners) in self.car.sides.iter().zip(&self.sides).zip(&self.corners[1..]) {
+                drops.extend(pane_cells(glass, &side.inside, to_stage, 1.0, corners));
             }
         }
         drops.extend(pane_drops(&self.glass, w, outside, to_stage, streak, lit));
@@ -638,6 +706,7 @@ impl Drawn {
                     normal: [0.0; 4],
                     far: [0.0; 3],
                     tint: [0; 4],
+                    edge: [0; 4],
                 });
             }
         }
@@ -704,6 +773,7 @@ fn pane_drops(
             normal: [0.0; 4],
             far: [0.0; 3],
             tint: [0; 4],
+            edge: [0; 4],
         });
     }
     drops.extend(glass.drops.iter().map(|d| {
@@ -747,17 +817,18 @@ fn pane_drops(
             normal: [0.0; 4],
             far: [0.0; 3],
             tint: [0; 4],
+            edge: [0; 4],
         }
     }));
     drops
 }
 
 /// The cells of one pane's chart `w` (its `glass`'s film cells) on the glass, stage space, for the pane seen from
-/// inside (kind 6, `glass.wgsl`): each with its middle and size in the chart, metres, in `color`, and which of its
-/// corners are on the glass in `alpha` (bits low, right, top, far), and what they let through (`through` per film
-/// corner, [`Tints::film_corners`]) in `tint`; `seed` 0 the windscreen, 1 a side window. Its corners as
-/// [`gpu::Drop`] says, exact: the glass's corners need not lie in a plane.
-fn pane_cells(glass: &Glass, w: &Windscreen, to_stage: Mat4, seed: f32, through: &[f32]) -> Vec<gpu::Drop> {
+/// inside (kind 6, `glass.wgsl`): each with its middle and size in the chart, metres, in `color`, and from its film
+/// `corners` ([`Corner`]) what they let through in `tint` and how far inside the outline they lie in `edge` (over
+/// [`gpu::PANE_EDGE`]); `seed` 0 the windscreen, 1 a side window. Its corners as [`gpu::Drop`] says, exact: the
+/// glass's corners need not lie in a plane. Only the cells with a corner on the glass.
+fn pane_cells(glass: &Glass, w: &Windscreen, to_stage: Mat4, seed: f32, corners: &[Corner]) -> Vec<gpu::Drop> {
     // The chart's mean plane's: the grid's heights step from cell to cell.
     let out = to_stage.transform_vector3(w.axes[2]).normalize();
     (0..glass.film.len())
@@ -765,28 +836,24 @@ fn pane_cells(glass: &Glass, w: &Windscreen, to_stage: Mat4, seed: f32, through:
             let (at, size) = glass.film_cell(index);
             // Neighbours take a shared corner's point, so its height, from the same sum.
             let (column, row) = (index % model::FILM_CELLS[0], index / model::FILM_CELLS[0]);
-            let offsets = [(0, 0), (1, 0), (0, 1), (1, 1)];
-            let corners = offsets.map(|(i, j)| glass.film_corner(column + i, row + j));
-            let tint = offsets.map(|(i, j)| {
-                let t = through.get((row + j) * (model::FILM_CELLS[0] + 1) + column + i).copied().unwrap_or(1.0);
-                (t.clamp(0.0, 1.0) * 255.0).round() as u8
-            });
-            let on = corners.iter().enumerate().filter(|(_, &c)| w.inside(c)).map(|(k, _)| 1 << k).sum::<u32>();
-            if on == 0 {
+            let cell = [(0, 0), (1, 0), (0, 1), (1, 1)]
+                .map(|(i, j)| corners[(row + j) * (model::FILM_CELLS[0] + 1) + column + i]);
+            if cell.iter().all(|c| c.edge <= 0.0) {
                 return None;
             }
-            let [low, right, top, far] = corners.map(|c| to_stage.transform_point3(w.point(c, 0.0)));
+            let [low, right, top, far] = cell.map(|c| to_stage.transform_point3(c.point));
             Some(gpu::Drop {
                 centre: low.to_array(),
                 kind: 6.0,
                 axis_u: (right - low).to_array(),
                 seed,
                 axis_v: (top - low).to_array(),
-                alpha: on as f32,
+                alpha: 1.0,
                 color: [at.x, at.y, size.x, size.y],
                 normal: out.extend(0.0).to_array(),
                 far: (far - low).to_array(),
-                tint,
+                tint: cell.map(|c| (c.through.clamp(0.0, 1.0) * 255.0).round() as u8),
+                edge: cell.map(|c| ((c.edge / gpu::PANE_EDGE).clamp(-1.0, 1.0) * 127.0).round() as i8),
             })
         })
         .collect()
@@ -843,6 +910,19 @@ mod tests {
         assert!(w.inside(at));
         assert!(w.point(at, 0.0).distance(p) < 1e-4);
         assert!(!w.inside(Vec2::new(0.0, 5.0)));
+    }
+
+    #[test]
+    fn the_outline_is_the_glass_s_rim_not_the_edges_its_triangles_share() {
+        let w = flat();
+        assert_eq!(w.outline.len(), 4, "the diagonal is not on it");
+        let [lo, hi] = w.bounds;
+        let middle = (lo + hi) * 0.5;
+        assert!((w.edge(middle) - 0.4).abs() < 1e-3, "half the 0.8 m height in from the top and the foot");
+        assert!((w.edge(Vec2::new(middle.x, lo.y - 0.1)) + 0.1).abs() < 1e-3, "off the glass, negative");
+        // Off the glass a point lies at the height of the nearest point on it: here, in the glass's plane.
+        let off = w.point_near(Vec2::new(hi.x + 0.2, middle.y));
+        assert!((off - w.origin).dot(w.axes[2]).abs() < 1e-4);
     }
 
     #[test]
