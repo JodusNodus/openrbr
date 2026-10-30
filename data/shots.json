@@ -24,6 +24,25 @@
   "at": 6500
  },
  {
+  "name": "day-621-m3-cockpit",
+  "stage": 621,
+  "car": "BMW M3 E30 GrpA",
+  "view": "cockpit-clean",
+  "clock": "13:00",
+  "settings": {
+   "clouds": "heavy"
+  },
+  "at": 3000
+ },
+ {
+  "name": "day-luceram-fiesta-cockpit",
+  "stage": 417,
+  "car": "Ford Fiesta Rally2",
+  "view": "cockpit-clean",
+  "clock": "08:30",
+  "at": 5700
+ },
+ {
   "name": "fog-532-208-flyby",
   "stage": 532,
   "car": "Peugeot 208 Rally4",

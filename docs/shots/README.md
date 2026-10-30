@@ -1,6 +1,6 @@
 # Reference shots
 
-JPEGs of the 32 shots of [`data/shots.json`](../../data/shots.json), made by
+JPEGs of the 34 shots of [`data/shots.json`](../../data/shots.json), made by
 `scripts/render-shots.py` (every enhancement on, the autopilot driving). Regenerate them with
 `scripts/render-shots.py --previews docs/shots --gallery docs/shots/README.md`; the graphics workflow is in
 [development.md](../development.md#reference-shots).
@@ -24,6 +24,18 @@ BMW M3 E30 GrpA, Gabiria Legazpi (RSF 450), flyby view, 11:00
 Renault Clio Rally3, Sipirkakim (retail 52), flyby view, 13:00
 
 ![day-sipirkakim-clio-flyby](day-sipirkakim-clio-flyby.jpg)
+
+### day-621-m3-cockpit
+
+BMW M3 E30 GrpA, Comb I (RSF 621), cockpit view, 13:00
+
+![day-621-m3-cockpit](day-621-m3-cockpit.jpg)
+
+### day-luceram-fiesta-cockpit
+
+Ford Fiesta Rally2, Luceram Col Saint Roch (RSF 417), cockpit view, 08:30
+
+![day-luceram-fiesta-cockpit](day-luceram-fiesta-cockpit.jpg)
 
 ## Golden hour
 
