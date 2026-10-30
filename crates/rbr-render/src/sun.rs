@@ -27,6 +27,9 @@ pub(crate) const FAR_RADIUS: f32 = 1000.0;
 const FAR_BACK: f32 = 1500.0;
 /// How far from the eye the far layer's shadows reach, fading out over the last fifth (`sun_reach`).
 pub(crate) const FAR_REACH: f32 = 0.9 * FAR_RADIUS;
+/// How far the eye goes, metres, before the far layer is drawn again ([`FarDrawn::kept`]): the sun stands still over a
+/// drive, and the layer reaches past the shadows it gives ([`FAR_REACH`]) by twice that.
+pub(crate) const FAR_MOVE: f32 = 50.0;
 /// The far layer's index in the array, the car's headlights' (`Renderer::lamp_shadow_matrix`) and the world's
 /// ([`world`]).
 pub(crate) const FAR: usize = 3;
@@ -291,6 +294,29 @@ pub(crate) fn cascades(view_projection: Mat4, sun: Vec3, quality: Quality) -> Ca
     }
     let (far, far_texel) = self::far(eye, sun, quality.size);
     Cascades { matrices, texels, far, far_texel }
+}
+
+/// What the far layer was last drawn with: its clip matrix and texel, the eye, the light's direction and the maps' size.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct FarDrawn {
+    pub(crate) matrix: Mat4,
+    pub(crate) texel: f32,
+    eye: Vec3,
+    light: Vec3,
+    size: u32,
+}
+
+impl FarDrawn {
+    /// The far layer of `cascades`, made for the eye at `eye`, light travelling along `sun` and `quality`.
+    pub(crate) fn new(cascades: &Cascades, eye: Vec3, sun: Vec3, quality: Quality) -> FarDrawn {
+        FarDrawn { matrix: cascades.far, texel: cascades.far_texel, eye, light: sun, size: quality.size }
+    }
+
+    /// Whether the layer drawn so still serves the eye at `eye` under the same light and `quality`: within
+    /// [`FAR_MOVE`] of where it was drawn.
+    pub(crate) fn kept(&self, eye: Vec3, sun: Vec3, quality: Quality) -> bool {
+        self.light == sun && self.size == quality.size && self.eye.distance(eye) <= FAR_MOVE
+    }
 }
 
 /// The far layer's clip matrix and texel (metres) for the eye at `eye` and light travelling along `sun`: a square

@@ -160,6 +160,8 @@ pub struct Renderer {
     world_box: Option<(Vec3, Vec3)>,
     world: Option<(Mat4, f32)>,
     world_drawn: Option<Mat4>,
+    /// What the cascades' far layer holds ([`sun::FarDrawn`]), drawn again only when it no longer serves the eye.
+    far_drawn: Option<sun::FarDrawn>,
     /// The skid marks ([`crate::skidmarks_pass`]), made by the first [`Renderer::set_skid_marks`] or
     /// [`Renderer::set_tyre_marks`].
     skid_marks: Option<crate::skidmarks_pass::SkidPass>,
@@ -531,6 +533,7 @@ impl Renderer {
                         in_car: None,
                         car: false,
                         sky_dome: false,
+                        backdrop_bounds: None,
                     });
                 }
                 continue;
@@ -606,6 +609,9 @@ impl Renderer {
                 in_car: None,
                 car: false,
                 sky_dome,
+                backdrop_bounds: mesh_bounds(&mesh.vertices)
+                    .filter(|_| backdrop && mesh.bounds.is_none())
+                    .map(|b| (b.center, b.half_extent)),
             });
         }
 
@@ -689,6 +695,7 @@ impl Renderer {
             world_box,
             world: None,
             world_drawn: None,
+            far_drawn: None,
             time: 0.0,
             air_frame: 0,
             lamps: [LampUniform::default(); MAX_LAMPS],

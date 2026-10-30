@@ -454,7 +454,12 @@ pub(super) fn layouts(device: &wgpu::Device) -> [wgpu::BindGroupLayout; 3] {
                     multisampled: false,
                 },
             ),
-            texture_entry(2, wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison)),
+            // The comparison sampler and the sun's cascades are read by the vertex stage too (the cabin's shade,
+            // `cabin_shade` in `cabin.wgsl`).
+            wgpu::BindGroupLayoutEntry {
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ..texture_entry(2, wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison))
+            },
             texture_entry(
                 3,
                 wgpu::BindingType::Texture {
@@ -464,14 +469,17 @@ pub(super) fn layouts(device: &wgpu::Device) -> [wgpu::BindGroupLayout; 3] {
                 },
             ),
             texture_entry(4, wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering)),
-            texture_entry(
-                5,
-                wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Depth,
-                    view_dimension: wgpu::TextureViewDimension::D2Array,
-                    multisampled: false,
-                },
-            ),
+            wgpu::BindGroupLayoutEntry {
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ..texture_entry(
+                    5,
+                    wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Depth,
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        multisampled: false,
+                    },
+                )
+            },
             // The physically based sky's tables (`sky_lut.wgsl`): the sky view, the aerial table, the sky cube and the
             // sky's light.
             texture_entry(6, TEXTURE),
