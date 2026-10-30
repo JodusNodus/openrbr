@@ -258,11 +258,10 @@ pub fn load_ghost(data: &Data, name: &str, placement: Mat4) -> Result<Car, Error
     load_set(data, name, placement, ghost_part_for, false)
 }
 
-/// The `_settings.ini` (`settings_file`'s name) of the "lights on" car-parts option of the model at `model_path`
-/// ([`rbr_formats::rsf::headlights_on`]), when it ships one.
-fn headlights_on(model_path: &Path, settings_file: &str) -> Option<Vec<Section>> {
-    let option = rbr_formats::rsf::headlights_on(model_path.parent()?)?;
-    let path = cars::resolve(&option, settings_file.rsplit(['\\', '/']).next()?)?;
+/// The file of `dos_path`'s name in the "lights on" car-parts option `option` ([`rbr_formats::rsf::headlights_on`]),
+/// when it ships one.
+fn option_ini(option: &Path, dos_path: &str) -> Option<Vec<Section>> {
+    let path = cars::resolve(option, dos_path.rsplit(['\\', '/']).next()?)?;
     rbr_formats::ini::parse(&String::from_utf8_lossy(&std::fs::read(path).ok()?)).ok()
 }
 
@@ -401,8 +400,10 @@ fn load_set(
     let flares = if exterior {
         let settings_file = entry.ini_file.replace(".ini", "_settings.ini");
         let settings = read_ini(data, &settings_file)?;
-        let beam = headlights_on(&model_path, &settings_file)
-            .map_or(lights::RETAIL_HEADLIGHT, |on| lights::headlight_colour(&on));
+        let on = model_path.parent().and_then(rbr_formats::rsf::headlights_on);
+        let on_ini = |file: &str| on.as_deref().and_then(|on| option_ini(on, file)).unwrap_or_default();
+        let beam = lights::headlight_colour(&on_ini(&settings_file));
+        let parts = lights::with_headlight_points(&parts, &on_ini(&entry.ini_file));
         lights::flares(&settings, &parts, beam, |file| textures.key(&format!("{}{file}", entry.texture_path)))
     } else {
         Vec::new()

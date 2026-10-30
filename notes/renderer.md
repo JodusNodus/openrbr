@@ -363,7 +363,11 @@ swaps the `Predicate = on/off` parts and restarts the flare fade.
   moonlight is physical.
 - Ours: a car with no kind 1 record (an RSF car installed with headlights off) gets a beam per
   `Point_light_lf`/`rf` for the night light, no flare, in the colour of its "on" option's headlight record
-  (`rsf::headlights_on`), else the retail 255, 255, 233.
+  (`rsf::headlights_on`), else the retail 255, 255, 233. Points the car's `<car>.ini` lacks come from the "on"
+  option's (`lights::with_headlight_points`, 2026-10-30): 9 of 108 installed cars had neither records nor points and lit
+  nothing at night (GR Yaris Rally2, Fabia RS Rally2, Polo GTI R5, DS3 R5, Fiesta S2000 and R2, Grande Punto S2000,
+  Kalina RC2, Mini WRC). Still dark: the BMW M3 E36 (its option is named `Lights`, not `Headlights`) and the Fiesta
+  Rally3 Evo (`light_on/` beside the model, no `carparts/`).
 - Open: the writer of the lamp words on damage; `RenderLights`' second visibility test.
 - Ours: the headlights' shadow map (`sun::LAMP`, `lamps.wgsl`) shades the beams beyond the stage (2026-10-27): rain,
   snow, dust and mist (`lamps_at`), each step of the beams' march and the wet-road glints (`lamp_glint`). Only with

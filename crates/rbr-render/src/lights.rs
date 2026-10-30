@@ -282,7 +282,7 @@ pub fn flares(
         })
         .collect();
     if lights.iter().all(|light| light.kind != Kind::Front) {
-        lights.extend(["Point_light_lf", "Point_light_rf"].into_iter().zip(0..).map(|(part, lamp)| Light {
+        lights.extend(HEADLIGHT_POINTS.into_iter().zip(0..).map(|(part, lamp)| Light {
             kind: Kind::Front,
             lamp,
             part: part.to_owned(),
@@ -305,6 +305,17 @@ pub fn flares(
             Some(Flare { light, position, normal, mesh })
         })
         .collect()
+}
+
+/// The headlights' parts in `<car>.ini`, lamps 0 and 1.
+const HEADLIGHT_POINTS: [&str; 2] = ["Point_light_lf", "Point_light_rf"];
+
+/// `parts` (a `<car>.ini`) with the headlights' points it lacks taken from `on`, its "lights on" option's (ours): a car
+/// installed with its lights off can lack them as well as its headlight records, and then lit nothing at night (the
+/// GR Yaris Rally2).
+pub fn with_headlight_points(parts: &[Section], on: &[Section]) -> Vec<Section> {
+    let lacking = HEADLIGHT_POINTS.into_iter().filter(|point| car_parts::section(parts, point).is_none());
+    parts.iter().chain(lacking.filter_map(|point| car_parts::section(on, point))).cloned().collect()
 }
 
 /// The headlights' colour of every retail car's records (`Red`, `Green`, `Blue` 255, 255, 233).
@@ -647,6 +658,21 @@ mod tests {
         );
         let lens = Lens { eye: Vec3::new(0.0, 0.0, -10.0), forward: Vec3::Z, up: Vec3::Y, fov: 1.0, near: 0.1 };
         assert!(sprite(&flares[1].light, Vec3::ZERO, Vec3::NEG_Z, &lens, 1.0).is_none(), "no flare, facing the eye");
+    }
+
+    #[test]
+    fn a_car_without_headlight_points_takes_them_from_its_lights_on_option() {
+        // As the RSF GR Yaris Rally2 as installed: no headlight records and no headlight points, which its "lights on"
+        // option's `<car>.ini` has.
+        let parts = sections("[Point_light_rf]\r\nPos = 1 0 0\r\nNormal = 0 0 -1\r\n");
+        let on = sections(
+            "[Point_light_rf]\r\nPos = 5 0 0\r\nNormal = 0 0 -1\r\n[Point_light_lf]\r\nPos = -1 0 0\r\nNormal = 0 0 -1\r\n",
+        );
+        let parts = with_headlight_points(&parts, &on);
+        let flares = flares(&[], &parts, RETAIL_HEADLIGHT, |_| TextureRef { set: TextureSet::Car, index: 0 });
+        let beams: Vec<(Kind, u32, Vec3)> = flares.iter().map(|f| (f.light.kind, f.light.lamp, f.position)).collect();
+        assert_eq!(beams, [(Kind::Front, 0, Vec3::new(-1.0, 0.0, 0.0)), (Kind::Front, 1, Vec3::X)]);
+        assert_eq!(with_headlight_points(&parts, &[]), parts, "nothing to take");
     }
 
     #[test]
