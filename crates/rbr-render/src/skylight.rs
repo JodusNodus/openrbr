@@ -468,7 +468,7 @@ mod tests {
         assert_eq!(near_haze, haze);
         assert!(far_haze[2] > far_haze[0]);
         // `crisp` keeps a thinner haze layer than `hazy`.
-        let hazy = Atmosphere { section: Some("54E_hazy_clear".into()), ..clear.clone() };
+        let hazy = Atmosphere { section: Some("54E_hazy_clear".into()), ..clear };
         assert!(sky_uniform(&hazy).unwrap().haze[3] > far_haze[3]);
     }
 

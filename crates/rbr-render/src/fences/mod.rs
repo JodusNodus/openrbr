@@ -435,7 +435,7 @@ mod tests {
         assert_eq!((rod[0].normal, rod[0].specular), ([1.0, 0.0, 0.0], [FENCE, 0.0, 0.0]));
         assert!(is_fence(&mesh));
         // The vertex count stays when the line is built (the renderer writes into a fixed buffer).
-        let mut built = line.clone();
+        let mut built = line;
         built.built = true;
         assert_eq!(vertices(&built).len(), mesh.vertices.len());
     }

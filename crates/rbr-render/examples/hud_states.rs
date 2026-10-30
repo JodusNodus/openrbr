@@ -159,7 +159,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let car = CarStatus { systems: [3, 0, 1, 0, 0, 2], suspension: [0, 4, 0, 0], tyres: [0, 0, 2, 0] };
     let lamps = Some([Lamp::On, Lamp::Off, Lamp::Flashing, Lamp::Off, Lamp::Off]);
     let state = HudView { car: Some(car), lamps, flash_on: true, water: Some(124.0), ..HudView::default() };
-    shoot(&Readout { state, ..base.clone() }, None, &out.join("car-status.png"))?;
+    shoot(&Readout { state, ..base }, None, &out.join("car-status.png"))?;
     Ok(())
 }
 

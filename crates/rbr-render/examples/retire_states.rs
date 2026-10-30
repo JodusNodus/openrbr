@@ -122,7 +122,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         ),
         (
             "failed-page.png",
-            HudView { end_page: Some(0x18), service_next: true, ..view.clone() },
+            HudView { end_page: Some(0x18), service_next: true, ..view },
             Some(Splits { finished: true, over: true, race_time: 251.7, elapsed: 251.7, ..Splits::default() }),
         ),
     ];

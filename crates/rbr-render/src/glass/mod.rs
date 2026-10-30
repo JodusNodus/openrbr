@@ -1057,7 +1057,7 @@ mod tests {
         let glass = mesh(&[[a, b, b + up], [a, b + up, a + up]], true, Some(Shade { glass: true, ..Shade::default() }));
         let dash = mesh(&[[Vec3::ZERO, Vec3::X, Vec3::Z]], false, Some(Shade::default()));
         let windscreen = MeshDamage { window: damage::window_slot(WINDSCREEN), ..MeshDamage::default() };
-        let hung = bulkhead(&[glass.clone(), dash], &[windscreen.clone(), MeshDamage::default()]).unwrap();
+        let hung = bulkhead(&[glass.clone(), dash], &[windscreen, MeshDamage::default()]).unwrap();
         let (top, bottom) = (hung.vertices[0].position, hung.vertices[1].position);
         assert!((top[1] - 0.72).abs() < 0.03 && (top[2] + 2.13).abs() < 0.05, "at the foot: {top:?}");
         assert!((bottom[1] - (top[1] - BULKHEAD_DEPTH)).abs() < 1e-5 && bottom[2] == top[2], "straight down");

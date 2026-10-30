@@ -444,7 +444,7 @@ impl Car {
         let Some(first) = self.meshes.iter().position(|mesh| mesh.draws.iter().any(glass)) else {
             return;
         };
-        let inner: Vec<(Mesh, MeshDamage)> = (self.meshes.iter().zip(&self.damage))
+        let (meshes, damage): (Vec<Mesh>, Vec<MeshDamage>) = (self.meshes.iter().zip(&self.damage))
             .filter(|(mesh, effect)| effect.crack.is_none() && mesh.draws.iter().any(glass))
             .map(|(mesh, effect)| {
                 let mut indices = Vec::new();
@@ -459,8 +459,7 @@ impl Car {
                 let vertices = mesh.vertices.iter().map(|v| Vertex { normal: v.normal.map(|n| -n), ..*v }).collect();
                 (Mesh { vertices, indices, draws, ..mesh.clone() }, effect.clone())
             })
-            .collect();
-        let (meshes, damage): (Vec<_>, Vec<_>) = inner.into_iter().unzip();
+            .unzip();
         self.meshes.splice(first..first, meshes);
         self.damage.splice(first..first, damage);
     }

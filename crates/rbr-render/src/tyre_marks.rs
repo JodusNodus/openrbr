@@ -457,8 +457,7 @@ mod tests {
         marks.step(&[], true);
         marks.step(&[at(7, GRAVEL)], true);
         // Trails at 0-1, 3-4 and 6-7 (a step without a payload keeps it) have one quad each.
-        let long: Vec<Quad> = marks.quads().into_iter().filter(|q| q.v1 > q.v0).collect();
-        assert_eq!(long.len(), 3);
+        assert_eq!(marks.quads().into_iter().filter(|q| q.v1 > q.v0).count(), 3);
         // A jump breaks it too.
         let mut marks = TyreMarks::new();
         marks.step(&[at(0, GRAVEL)], true);
