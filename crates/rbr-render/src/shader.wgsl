@@ -226,6 +226,8 @@ override ASPHALT: bool = false;
 override SNOW: bool = false;
 // The off-road ground takes the ground scan and eases the stage's baked tint (`renderer::Enhance::ground`; `ground_scan`).
 override GROUND: bool = false;
+// The stage has our grass field (`renderer::Enhance::grass`, `grass.rs`): the ground under it is thatched (`thatch`).
+override GRASS: bool = false;
 // The main view's draws after the depth prepass read the sun's shadow from its mask (`sun_mask.wgsl`), at the pixel
 // `fs_main` or `fs_clouded` shades (`renderer::sun_mask`).
 override SUN_MASK: bool = false;
@@ -737,6 +739,9 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
                 colour = colour * mix(1.0, road_scan(2, snow_uv, snow_dx, snow_dy, seen, 1.0), snowy);
             }
         }
+        if (GRASS && mode.cutout == 0u) {
+            colour = thatch(colour, v, cross(dpdx(v.world), dpdy(v.world)));
+        }
         // The ground around the roads is soaked too, a little less (`GROUND_SOAK` of the road's, by the wetness).
         if (wet && !wet_road) {
             colour = soak(colour, GROUND_SOAK * frame.wetness.x);
@@ -1129,10 +1134,14 @@ fn relit(v: VertexOut) -> vec3<f32> {
 // The bounce's strength (`bounce.rs`): 1 is a Lambertian ground's, its linear albedo times its light.
 const BOUNCE: f32 = 1.0;
 
-fn own_light(v: VertexOut, sun_seen: f32, under_cloud: f32) -> vec3<f32> {
-    let c = v.color.rgb;
+// The bake's hue of vertex colour `c`, as `own_light` takes it.
+fn baked_hue(c: vec3<f32>) -> vec3<f32> {
     let most = max(c.r, max(c.g, c.b));
-    var hue = mix(vec3<f32>(1.0), c / max(most, 1e-3), smoothstep(0.02, 0.08, most));
+    return mix(vec3<f32>(1.0), c / max(most, 1e-3), smoothstep(0.02, 0.08, most));
+}
+
+fn own_light(v: VertexOut, sun_seen: f32, under_cloud: f32) -> vec3<f32> {
+    var hue = baked_hue(v.color.rgb);
     if (GROUND) {
         hue = mix(hue, mix(vec3<f32>(1.0), hue, GROUND_HUE), select(0.0, 1.0, detail_draw()));
     }
@@ -2375,6 +2384,47 @@ const ASPHALT_KEEP: f32 = 0.0;
 // The paved road's texel at `uv` of `t`, its gradients `dx` and `dy` (taken in uniform control flow) widened by `reach`.
 fn asphalt_texel(t: texture_2d<f32>, uv: vec2<f32>, dx: vec2<f32>, dy: vec2<f32>, reach: f32) -> vec3<f32> {
     return textureSampleGrad(t, texture_sampler, uv, dx * reach, dy * reach).rgb;
+}
+
+// Under our grass (`grass.rs`) the ground between the blades is the sward's thatch in their shade: darker and fuller in
+// colour (`THATCH`: brightness, saturation) by how much grass grows there. That is the grass's own test (`grass::green`,
+// `THATCH_GRASSY` its ranges off the road and on the road mesh) on the ground's colour as it takes it: the texture's mip
+// about 45 texels wide (`THATCH_MIP` levels under its width: the test's 256-texel level blurred over 7) in `GROUND_HUE`
+// of the vertex tint; on faces no steeper than it grows on (`THATCH_UP`, about `grass::LEVEL`), at its density by the
+// distance from the eye (`grass::density`: full to `THATCH_DENSE.x` metres, halving every `.y`, gone between `.z` and
+// `.w`). Not the band along the driveline it keeps to: the near ground past it is thatched too. `face` is the face's
+// normal, any length.
+const THATCH: vec2<f32> = vec2<f32>(0.82, 1.1);
+const THATCH_GRASSY: array<vec2<f32>, 2> = array<vec2<f32>, 2>(vec2<f32>(0.02, 0.07), vec2<f32>(0.05, 0.11));
+const THATCH_MIP: f32 = 5.5;
+const THATCH_UP: vec2<f32> = vec2<f32>(0.4, 0.5);
+const THATCH_DENSE: vec4<f32> = vec4<f32>(14.0, 10.0, 80.0, 100.0);
+
+fn thatch(colour: vec3<f32>, v: VertexOut, face: vec3<f32>) -> vec3<f32> {
+    let road = v.wet.x > 0.0;
+    let candidate = select(ground_share(v), 1.0, road);
+    if (candidate == 0.0) {
+        return colour;
+    }
+    var ground = thatch_texel(texture0, v.uv0).rgb;
+    if (second_draw()) {
+        let second = thatch_texel(texture1, v.uv1);
+        ground = mix(ground, second.rgb, second.a * v.color.a);
+    }
+    let c = ground * mix(vec3<f32>(1.0), baked_hue(v.color.rgb), GROUND_HUE);
+    let g = c / max(c.r + c.g + c.b, 1e-3);
+    let range = THATCH_GRASSY[u32(road)];
+    let green = smoothstep(range.x, range.y, g.g - g.b - 2.0 * max(g.r - g.g - 0.02, 0.0));
+    let up = smoothstep(THATCH_UP.x, THATCH_UP.y, abs(face.y) * inverseSqrt(max(dot(face, face), 1e-12)));
+    let d = distance(v.world, frame.eye.xyz);
+    let dense = min(exp2((THATCH_DENSE.x - d) / THATCH_DENSE.y), 1.0) * (1.0 - smoothstep(THATCH_DENSE.z, THATCH_DENSE.w, d));
+    let grey = dot(colour, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let thatched = max(mix(vec3<f32>(grey), colour, THATCH.y), vec3<f32>(0.0)) * THATCH.x;
+    return mix(colour, thatched, candidate * green * up * dense);
+}
+
+fn thatch_texel(t: texture_2d<f32>, uv: vec2<f32>) -> vec4<f32> {
+    return textureSampleLevel(t, texture_sampler, uv, max(log2(f32(textureDimensions(t).x)) - THATCH_MIP, 0.0));
 }
 
 // How much of the pixel is the off-road ground: the vertices' mark against the road's share.
