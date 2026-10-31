@@ -469,15 +469,9 @@ pub const MOST: (u32, u32) = (1024, 512);
 const STEP: u32 = 32;
 
 /// The view of the glass `placed`, from the main view `view_projection` (and its camera-anchored
-/// `sky_view_projection`) drawn at `screen` pixels, its image at most `most` pixels ([`MOST`] for a mirror): `None`
-/// when the glass is behind the eye, turned away, or off screen.
-pub fn view(
-    view_projection: Mat4,
-    sky_view_projection: Mat4,
-    screen: (u32, u32),
-    placed: &Placed,
-    most: (u32, u32),
-) -> Option<View> {
+/// `sky_view_projection`) drawn at `screen` pixels: `None` when the glass is behind the eye, turned away, or off
+/// screen.
+pub fn view(view_projection: Mat4, sky_view_projection: Mat4, screen: (u32, u32), placed: &Placed) -> Option<View> {
     let Placed { corners, normal, .. } = *placed;
     let eye = crate::camera::eye(view_projection);
     let centre = corners.iter().sum::<Vec3>() / 4.0;
@@ -498,12 +492,12 @@ pub fn view(
     if low.cmpge(high).any() {
         return None;
     }
-    // Its size in pixels, up to a step and at most `most`, and the box grown to it (the image keeps the screen's
+    // Its size in pixels, up to a step and at most [`MOST`], and the box grown to it (the image keeps the screen's
     // texel aspect).
     let pixels = (high - low) * 0.5 * Vec2::new(screen.0 as f32, screen.1 as f32);
-    let scale = (most.0 as f32 / pixels.x).min(most.1 as f32 / pixels.y).min(1.0);
+    let scale = (MOST.0 as f32 / pixels.x).min(MOST.1 as f32 / pixels.y).min(1.0);
     let side = |p: f32, most: u32| ((p * scale / STEP as f32).ceil() as u32 * STEP).clamp(STEP, most);
-    let size = (side(pixels.x, most.0), side(pixels.y, most.1));
+    let size = (side(pixels.x, MOST.0), side(pixels.y, MOST.1));
     let half = Vec2::new(size.0 as f32, size.1 as f32) / scale / Vec2::new(screen.0 as f32, screen.1 as f32);
     let middle = (low + high) * 0.5;
     // Clip x and y of the box to -1..1, x mirrored: x' = -(x - m w) / h.
