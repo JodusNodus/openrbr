@@ -449,26 +449,32 @@ impl Mounts {
 /// and [`BONNET_CLEARANCE`] above the sides there ([`BONNET_MIDDLE_CLEARANCE`] above [`BONNET_MIDDLE`]), looking the way
 /// `place` does, tilted down by [`BONNET_EDGE_BELOW`]'s rule. `place` as it is when nothing is under it. Ours.
 pub fn bonnet_mount(place: Mount, exterior: &[Mesh]) -> Mount {
-    let top = |z: f32, across: &[f32]| {
-        let highest = across
+    // The exterior triangles that a ray down at model `x` may hit: those across it.
+    let column = |x: f32| {
+        let across = |t: &[Vec3; 3]| t.iter().any(|p| p.x <= x + 0.01) && t.iter().any(|p| p.x >= x - 0.01);
+        let triangles = exterior.iter().flat_map(|mesh| {
+            mesh.indices
+                .chunks_exact(3)
+                .map(|t| [t[0], t[1], t[2]].map(|i| Vec3::from(mesh.vertices[i as usize].position)))
+        });
+        (x, triangles.filter(across).collect::<Vec<_>>())
+    };
+    let top = |z: f32, columns: &[(f32, Vec<[Vec3; 3]>)]| {
+        let highest = columns
             .iter()
-            .flat_map(|&x| {
-                let from = Vec3::new(x, place.eye.y + 2.0, z);
-                exterior.iter().flat_map(move |mesh| {
-                    mesh.indices.chunks_exact(3).filter_map(move |t| {
-                        let at = |k: usize| Vec3::from(mesh.vertices[t[k] as usize].position);
-                        ray_hit(from, Vec3::NEG_Y, [at(0), at(1), at(2)]).map(|d| from.y - d)
-                    })
-                })
+            .flat_map(|(x, triangles)| {
+                let from = Vec3::new(*x, place.eye.y + 2.0, z);
+                triangles.iter().filter_map(move |&t| ray_hit(from, Vec3::NEG_Y, t).map(|d| from.y - d))
             })
             .fold(f32::NEG_INFINITY, f32::max);
         highest.is_finite().then_some(highest)
     };
+    let sides = BONNET_SIDES.map(column);
     // From [`BONNET_START`] in front of `place`, at the first step with the body under it.
     let start = place.eye.z - BONNET_START;
     let steps: Vec<usize> = (0..=(BONNET_SEARCH / BONNET_STEP) as usize).collect();
-    // Every step's top at once (each casts its rays at every exterior triangle).
-    let tops = in_parallel(&steps, |&i| top(start + i as f32 * BONNET_STEP, &BONNET_SIDES));
+    // Every step's top at once (each casts its rays at the triangles of both sides' columns).
+    let tops = in_parallel(&steps, |&i| top(start + i as f32 * BONNET_STEP, &sides));
     let Some(first) = tops.iter().position(Option::is_some) else {
         return place;
     };
@@ -482,7 +488,7 @@ pub fn bonnet_mount(place: Mount, exterior: &[Mesh]) -> Mount {
     // A seam or a cowl just behind the bonnet is lower than its rear.
     let height = profile[rear.saturating_sub(2)..=rear].iter().copied().fold(f32::NEG_INFINITY, f32::max);
     let z = z_at(rear);
-    let middle = top(z, &BONNET_MIDDLE).map_or(f32::NEG_INFINITY, |m| m + BONNET_MIDDLE_CLEARANCE);
+    let middle = top(z, &BONNET_MIDDLE.map(column)).map_or(f32::NEG_INFINITY, |m| m + BONNET_MIDDLE_CLEARANCE);
     let eye = Vec3::new(place.eye.x, (height + BONNET_CLEARANCE).max(middle), z);
     let front = profile.iter().position(|&h| h >= height - BONNET_FRONT_DROP).unwrap_or(0);
     let look = place.target - place.eye;
