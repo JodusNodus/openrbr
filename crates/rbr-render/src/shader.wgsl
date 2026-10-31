@@ -614,6 +614,23 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             even = mix(even, surface, paved_line);
         }
         surface = even;
+        // On the steep banks the top-down texture stretches down the fall line: a triplanar sampling of the draw's
+        // own window takes its place (`terrain_bank`), weighted by the steepness alone. The flat reads 0 steepness,
+        // the crisp and the paved road keep theirs bit for bit (the branch is skipped).
+        let bank_weight = steep * (1.0 - paved_share);
+        let bank_dx = dpdx(v.world);
+        let bank_dy = dpdy(v.world);
+        let bank_ax = dpdx(v.uv0);
+        let bank_ay = dpdy(v.uv0);
+        let bank_bx = dpdx(v.uv1);
+        let bank_by = dpdy(v.uv1);
+        if (bank_weight > 0.0) {
+            surface = mix(
+                surface,
+                terrain_bank(v, second.a * v.color.a, bank_dx, bank_dy, bank_ax, bank_ay, bank_bx, bank_by),
+                bank_weight
+            );
+        }
         if (GROUND) {
             var mean = terrain_even(texture0, v.uv0, levels.x, GROUND_MEAN).rgb;
             if (second_draw()) {
