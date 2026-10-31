@@ -44,26 +44,30 @@ pub(crate) fn data_f32(ctx: &Ctx, addr: u32) -> f32 {
     ctx.mem.f32(at(addr).expect("hooked only with NGP"))
 }
 
+const fn bind(addr: u32, name: &'static str, run: crate::BindingFn) -> Binding {
+    crate::bind("ngp", addr, name, run)
+}
+
 pub static BINDINGS: [Binding; 21] = [
-    crate::bind("ngp", 0x1001_5fc0, "NGP drive line sampler (SampleBig)", drive_line_sample),
-    crate::bind("ngp", STARTER, "NGP starter (M6C90)", starter_binding),
-    crate::bind("ngp", 0x1004_b5a0, "NGP atmosphere", atmosphere_update),
-    crate::bind("ngp", 0x1004_7040, "NGP downforce", downforce_update),
-    crate::bind("ngp", 0x1006_0230, "NGP DamperSolve (pressure limit)", damper_solve),
-    crate::bind("ngp", 0x1004_d2f0, "NGP DamperStep1", damper_step1),
-    crate::bind("ngp", 0x1004_d3c0, "NGP DamperStep1 (scratch factor)", damper_step1_scratch),
-    crate::bind("ngp", 0x1004_d380, "NGP DamperStep2", damper_step2),
-    crate::bind("ngp", 0x1005_b4a0, "NGP ComputeOutputs wrapper", compute_outputs),
-    crate::bind("ngp", 0x1004_7300, "NGP CDrive::M93A0", crate::engine_driveline::clutch_torque),
-    crate::bind("ngp", 0x1005_e8a0, "NGP E51Wheel::M3D230", tag_blend),
-    crate::bind("ngp", 0x1004_58c0, "NGP CDrive::M5FE0", wheel_slip_value),
-    crate::bind("ngp", 0x1004_5b80, "NGP CDrive::M6260", wheel_latch),
-    crate::bind("ngp", 0x1004_df40, "NGP E44MatTable slot lookup", sample_slot),
-    crate::bind("ngp", 0x1004_8d50, "NGP CDrive::M9BC0 wrapper (diffs)", drive_wrapper),
-    crate::bind("ngp", 0x1004_87f0, "NGP axle worker (drive types 4 and 5)", axle_worker),
-    crate::bind("ngp", 0x1004_d410, "NGP tyre convection (RelaxStep's DamperStep1)", convection),
-    crate::bind("ngp", CURVE_TERM, "NGP E39_Hook4160 rewrite (curve term and heat)", curve_term_binding),
-    crate::bind("ngp", ENGINE_WRAPPER, "NGP engine wrapper (Fwd18E20's jmp)", engine_wrapper),
-    crate::bind("ngp", 0x1005_b660, "NGP CScratch::Step wrapper", step_wrapper),
-    crate::bind("ngp", 0x1005_9f70, "NGP CSpringDamper::Step wrapper (bump stop)", spring_step),
+    bind(0x1001_5fc0, "NGP drive line sampler (SampleBig)", drive_line_sample),
+    bind(STARTER, "NGP starter (M6C90)", starter_binding),
+    bind(0x1004_b5a0, "NGP atmosphere", atmosphere_update),
+    bind(0x1004_7040, "NGP downforce", downforce_update),
+    bind(0x1006_0230, "NGP DamperSolve (pressure limit)", damper_solve),
+    bind(0x1004_d2f0, "NGP DamperStep1", damper_step1),
+    bind(0x1004_d3c0, "NGP DamperStep1 (scratch factor)", damper_step1_scratch),
+    bind(0x1004_d380, "NGP DamperStep2", damper_step2),
+    bind(0x1005_b4a0, "NGP ComputeOutputs wrapper", compute_outputs),
+    bind(0x1004_7300, "NGP CDrive::M93A0", crate::engine_driveline::clutch_torque),
+    bind(0x1005_e8a0, "NGP E51Wheel::M3D230", tag_blend),
+    bind(0x1004_58c0, "NGP CDrive::M5FE0", wheel_slip_value),
+    bind(0x1004_5b80, "NGP CDrive::M6260", wheel_latch),
+    bind(0x1004_df40, "NGP E44MatTable slot lookup", sample_slot),
+    bind(0x1004_8d50, "NGP CDrive::M9BC0 wrapper (diffs)", drive_wrapper),
+    bind(0x1004_87f0, "NGP axle worker (drive types 4 and 5)", axle_worker),
+    bind(0x1004_d410, "NGP tyre convection (RelaxStep's DamperStep1)", convection),
+    bind(CURVE_TERM, "NGP E39_Hook4160 rewrite (curve term and heat)", curve_term_binding),
+    bind(ENGINE_WRAPPER, "NGP engine wrapper (Fwd18E20's jmp)", engine_wrapper),
+    bind(0x1005_b660, "NGP CScratch::Step wrapper", step_wrapper),
+    bind(0x1005_9f70, "NGP CSpringDamper::Step wrapper (bump stop)", spring_step),
 ];

@@ -24,12 +24,16 @@ const CONTROL_EMIT: u32 = 0x48cd90;
 /// The signal manager (`[0x893600]`) and the checkpoint signal's offset in it.
 const CHECKPOINT_SIGNAL: u32 = 0xc900;
 
+const fn bind(addr: u32, name: &'static str, run: crate::BindingFn) -> Binding {
+    crate::bind("timing", addr, name, run)
+}
+
 pub static BINDINGS: [Binding; 5] = [
-    crate::bind("timing", 0x4a0540, "NRegulation::CTimeKeeper::Record", record),
-    crate::bind("timing", 0x4a0320, "NRegulation::CTimeKeeper::Update", update),
+    bind(0x4a0540, "NRegulation::CTimeKeeper::Record", record),
+    bind(0x4a0320, "NRegulation::CTimeKeeper::Update", update),
     crate::bind("timekeeper", 0x4a0290, "CTimeKeeper::Diff", diff),
-    crate::bind("timing", EMIT, "CMultiSignal1<CSigCheckPointTime>::Emit", emit_at::<EMIT>),
-    crate::bind("timing", CONTROL_EMIT, "CMultiSignal1<CSigCarControl>::Emit", emit_at::<CONTROL_EMIT>),
+    bind(EMIT, "CMultiSignal1<CSigCheckPointTime>::Emit", emit_at::<EMIT>),
+    bind(CONTROL_EMIT, "CMultiSignal1<CSigCarControl>::Emit", emit_at::<CONTROL_EMIT>),
 ];
 
 /// thiscall `(payload*)`, `ret 4`: the `CMultiSignal1::Emit` instance `EMIT` (0x4a0390 or 0x48cd90), the physics core's

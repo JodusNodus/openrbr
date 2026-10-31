@@ -8,29 +8,33 @@ use rbr_physics::spring_damper::{self as sd, layout};
 use crate::engine_driveline::SIGNALS;
 use crate::{Binding, Ctx, Decline, Regs, Return};
 
+const fn bind(addr: u32, name: &'static str, run: crate::BindingFn) -> Binding {
+    crate::bind("spring_damper", addr, name, run)
+}
+
 pub static BINDINGS: [Binding; 22] = [
-    crate::bind("spring_damper", 0x52dd70, "CSpringDamper::UpdateForces", update_forces),
-    crate::bind("spring_damper", 0x52e010, "CSpringDamper::ResetOutputs", reset_outputs),
-    crate::bind("spring_damper", 0x52e060, "CSpringDamper::UpdateAndReset", update_and_reset),
-    crate::bind("spring_damper", 0x52e090, "CSpringDamper::Step", step),
-    crate::bind("spring_damper", 0x52e350, "DamperStep1", heat_flow),
-    crate::bind("spring_damper", 0x52e370, "DamperStep2", conduction),
-    crate::bind("spring_damper", 0x52e390, "DamperBiasSub", kelvin_to_celsius),
-    crate::bind("spring_damper", 0x52e3a0, "DamperAccumA", accumulate_heat),
-    crate::bind("spring_damper", 0x52e3d0, "DamperAccumB", accumulate_heat_scaled),
-    crate::bind("spring_damper", 0x52e400, "DamperClamp", clamp),
-    crate::bind("spring_damper", 0x52e460, "DamperMerge", merge),
-    crate::bind("spring_damper", 0x52e4c0, "DamperUpdateA", solve_response),
-    crate::bind("spring_damper", 0x52e4f0, "DamperUpdateB", solve_scale),
-    crate::bind("spring_damper", 0x52e530, "DamperUpdateC", solve_numerator),
-    crate::bind("spring_damper", 0x52e590, "DamperScale", scale),
-    crate::bind("spring_damper", 0x52e5a0, "DamperSqrt4", sqrt4),
-    crate::bind("spring_damper", 0x52e5e0, "DamperCurve", curve),
-    crate::bind("spring_damper", 0x52e630, "DamperCombine", combine),
-    crate::bind("spring_damper", 0x52e6d0, "DamperRelax", relax),
-    crate::bind("spring_damper", 0x52e760, "DamperSolve", solve),
-    crate::bind("spring_damper", 0x52e8a0, "DamperForce", force),
-    crate::bind("spring_damper", 0x52dbd0, "CSpringDamper::CopyStateToDef", copy_state_to_def),
+    bind(0x52dd70, "CSpringDamper::UpdateForces", update_forces),
+    bind(0x52e010, "CSpringDamper::ResetOutputs", reset_outputs),
+    bind(0x52e060, "CSpringDamper::UpdateAndReset", update_and_reset),
+    bind(0x52e090, "CSpringDamper::Step", step),
+    bind(0x52e350, "DamperStep1", heat_flow),
+    bind(0x52e370, "DamperStep2", conduction),
+    bind(0x52e390, "DamperBiasSub", kelvin_to_celsius),
+    bind(0x52e3a0, "DamperAccumA", accumulate_heat),
+    bind(0x52e3d0, "DamperAccumB", accumulate_heat_scaled),
+    bind(0x52e400, "DamperClamp", clamp),
+    bind(0x52e460, "DamperMerge", merge),
+    bind(0x52e4c0, "DamperUpdateA", solve_response),
+    bind(0x52e4f0, "DamperUpdateB", solve_scale),
+    bind(0x52e530, "DamperUpdateC", solve_numerator),
+    bind(0x52e590, "DamperScale", scale),
+    bind(0x52e5a0, "DamperSqrt4", sqrt4),
+    bind(0x52e5e0, "DamperCurve", curve),
+    bind(0x52e630, "DamperCombine", combine),
+    bind(0x52e6d0, "DamperRelax", relax),
+    bind(0x52e760, "DamperSolve", solve),
+    bind(0x52e8a0, "DamperForce", force),
+    bind(0x52dbd0, "CSpringDamper::CopyStateToDef", copy_state_to_def),
 ];
 
 fn f(bits: u32) -> f32 {
