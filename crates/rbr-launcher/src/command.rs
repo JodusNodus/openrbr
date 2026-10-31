@@ -687,14 +687,21 @@ impl Form {
             })
     }
     /// Runs the viewer with `args`; whether it started.
-    fn spawn(&mut self, args: Vec<String>) -> bool {
-        eprintln!("launcher: {} {}", self.paths.viewer.display(), args.join(" "));
+    /// The viewer as a child process with `args`: the game and the RSF install in its environment, without
+    /// `RBR_PATCH` when the install folder is the game.
+    pub(crate) fn viewer_command(&self, args: &[String]) -> Command {
         let mut command = Command::new(&self.paths.viewer);
-        command.args(&args).envs(self.child_env());
+        command.args(args).envs(self.child_env());
         if self.paths.patch.is_none() {
             command.env_remove("RBR_PATCH");
         }
-        match command.spawn() {
+        command
+    }
+
+    /// Runs the viewer with `args`; whether it started.
+    fn spawn(&mut self, args: Vec<String>) -> bool {
+        eprintln!("launcher: {} {}", self.paths.viewer.display(), args.join(" "));
+        match self.viewer_command(&args).spawn() {
             Ok(child) => {
                 self.status = format!("viewer running (pid {})", child.id());
                 self.child = Some(child);

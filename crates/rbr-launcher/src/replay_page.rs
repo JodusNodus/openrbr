@@ -3,7 +3,7 @@
 use std::fs::{self, File};
 use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use egui::RichText;
@@ -415,11 +415,8 @@ impl Form {
                 self.replays.view,
                 video.as_deref().map(|p| (p, self.replays.size, self.replays.fps)),
             );
-            let mut command = Command::new(&self.paths.viewer);
-            command.args(args).envs(self.child_env()).stdout(Stdio::null()).stderr(stderr);
-            if self.paths.patch.is_none() {
-                command.env_remove("RBR_PATCH");
-            }
+            let mut command = self.viewer_command(&args);
+            command.stdout(Stdio::null()).stderr(stderr);
             let child = command.spawn().map_err(|e| format!("Cannot start replay: {e}"))?;
             Ok::<_, String>((child, log))
         })();
