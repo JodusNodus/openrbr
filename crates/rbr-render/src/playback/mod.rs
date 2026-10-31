@@ -186,6 +186,8 @@ pub struct Playback {
     /// The interior steering-wheel meshes ([`MeshDamage::steering`]) turn by this matrix, in model space (the
     /// wheel, `characters::incar::Crew::wheel_turn`).
     pub turn: Option<Mat4>,
+    /// The room the steering wheel's meshes turn in ([`Playback::set_wheel_node`]).
+    wheel: Option<crate::taa::Wheel>,
     /// The steering wheel's meshes ([`MeshDamage::steering`]) are not drawn (ours, `viewer --hide-wheel`).
     pub hide_wheel: bool,
     /// The game's chase camera, moved by [`Playback::follow_game_chase`].
@@ -251,6 +253,7 @@ impl Playback {
             headlights: lights::Headlights::Main,
             detached: [None; detach::PARTS.len()],
             turn: None,
+            wheel: None,
             hide_wheel: false,
             game_chase: Follow::new(crate::game_camera::Settings::default()),
             probe: None,
@@ -284,6 +287,14 @@ impl Playback {
         }
         self.cracks = Cracks::new(self.windows());
         Ok(())
+    }
+
+    /// The steering wheel's meshes ([`Playback::add_interior`]) turn about `node`
+    /// (`characters::incar::Crew::wheel_node`): the TAA carries what they cover by [`Playback::turn`].
+    pub fn set_wheel_node(&mut self, node: Mat4) {
+        let steering = self.parts.iter().filter(|part| part.interior && part.effect.steering);
+        self.wheel =
+            crate::taa::Wheel::new(node, steering.flat_map(|part| part.rest.iter().map(|v| Vec3::from(v.position))));
     }
 
     /// Adds the car's flares (`car::Car::flares`, whose meshes are in `stage`), drawn as the lamps switch.
@@ -657,6 +668,7 @@ impl Playback {
         }
         renderer.set_lamps(&lamps);
         renderer.set_car_body(body);
+        renderer.set_car_wheel(self.wheel.zip(self.turn).filter(|_| self.interior && !self.hide_wheel));
         let mirrors: Vec<_> = self.mirrors.iter().filter(|_| self.interior).map(|glass| glass.placed(body)).collect();
         renderer.set_mirrors(&mirrors);
         if let (Some(texture), Some(probe)) = (&self.shadow, &self.probe) {

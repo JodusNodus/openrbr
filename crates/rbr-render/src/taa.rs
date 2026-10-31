@@ -6,7 +6,8 @@
 //! the mirrors, the reflection cubes and the sun's cascades keep the unjittered view. The frame is drawn into
 //! [`Taa::raw`]; the resolve (`taa.wgsl`) blends it into a history of the previous ones, carried by each pixel's
 //! motion: the camera's (the point from the depth, seen by the previous frame's unjittered view-projection) or, inside
-//! the car's box, the car's (its previous pose, [`Renderer::set_car_body`](crate::renderer::Renderer::set_car_body)).
+//! the car's box, the car's (its previous pose, [`Renderer::set_car_body`](crate::renderer::Renderer::set_car_body)),
+//! and inside that the steering wheel's turn since the last frame ([`Wheel`]).
 //! The history is clipped to the current neighbourhood's colour so that what was uncovered or changed does not ghost.
 //! The result goes to the post pass's scene and is kept as the next frame's history.
 //!
@@ -30,6 +31,10 @@ const CLIP_SIGMAS: f32 = 1.25;
 const CUT: f32 = 8.0;
 /// How far the car's box reaches past its body parts' bounds, metres.
 const CAR_MARGIN: f32 = 0.1;
+/// The steering wheel's bands of distance from its column ([`Wheel`]; `WHEEL_BANDS` in `taa.wgsl`).
+const WHEEL_BANDS: usize = 8;
+/// How far the steering wheel's room reaches past its meshes, metres: out from the column and along it.
+const WHEEL_MARGIN: (f32, f32) = (0.01, 0.015);
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -40,8 +45,46 @@ struct Uniform {
     car_low: [f32; 4],
     car_high: [f32; 4],
     car_rect: [f32; 4],
+    car_to_wheel: [f32; 16],
+    wheel_turn: [f32; 16],
+    wheel: [f32; 4],
+    wheel_depth: [[f32; 4]; WHEEL_BANDS / 2],
     size: [f32; 4],
     params: [f32; 4],
+}
+
+/// The room the steering wheel turns in (ours), for the motion of what it covers: car model space to the frame of its
+/// node (the hub at the origin, the column along `z`, `characters::incar::Crew::wheel_turn`), its radius, and per band
+/// of distance from the column, the depth along it its meshes fill. The turn spins the room on itself.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Wheel {
+    to_node: Mat4,
+    radius: f32,
+    depth: [[f32; 2]; WHEEL_BANDS],
+}
+
+impl Wheel {
+    /// The wheel whose meshes' model-space `points` turn about `node`; `None` without any.
+    pub(crate) fn new(node: Mat4, points: impl IntoIterator<Item = Vec3>) -> Option<Wheel> {
+        let to_node = node.inverse();
+        let points: Vec<Vec3> = points.into_iter().map(|p| to_node.transform_point3(p)).collect();
+        let radius = points.iter().map(|p| p.truncate().length()).reduce(f32::max)? + WHEEL_MARGIN.0;
+        let band = |p: Vec3| ((p.truncate().length() / radius * WHEEL_BANDS as f32) as usize).min(WHEEL_BANDS - 1);
+        let mut found = [None; WHEEL_BANDS];
+        for p in points {
+            let slot = &mut found[band(p)];
+            *slot = Some(slot.map_or([p.z, p.z], |d| union(d, [p.z, p.z])));
+        }
+        // A band without vertices (crossed by a spoke's long faces, or the hub's middle) takes the depth of those each
+        // side of it.
+        let depth = std::array::from_fn(|i| {
+            let inner = found[..i].iter().rev().flatten().take(1);
+            let outer = found[i + 1..].iter().flatten().take(1);
+            let [low, high] = found[i].or(inner.chain(outer).copied().reduce(union)).unwrap_or_default();
+            [low - WHEEL_MARGIN.1, high + WHEEL_MARGIN.1]
+        });
+        Some(Wheel { to_node, radius, depth })
+    }
 }
 
 /// Element `i` (from 1) of the Halton sequence of base `b`, in 0..1.
@@ -90,10 +133,17 @@ fn screen_rect(to_clip: Mat4, (low, high): (Vec3, Vec3)) -> Option<[f32; 4]> {
     (r[2] >= 0.0 && r[3] >= 0.0 && r[0] <= 1.0 && r[1] <= 1.0).then_some(r)
 }
 
+/// The depth range holding both.
+fn union(a: [f32; 2], b: [f32; 2]) -> [f32; 2] {
+    [a[0].min(b[0]), a[1].max(b[1])]
+}
+
 /// The frame the resolve drew last.
 struct Last {
     view_projection: Mat4,
     car: Option<Mat4>,
+    /// The steering wheel's turn.
+    turn: Option<Mat4>,
     outside: bool,
 }
 
@@ -103,6 +153,8 @@ pub(crate) struct Frame {
     pub(crate) view_projection: Mat4,
     /// The car body's model space to stage space, and its parts' box in model space.
     pub(crate) car: Option<(Mat4, (Vec3, Vec3))>,
+    /// The steering wheel drawn and its turn in the car's model space.
+    pub(crate) wheel: Option<(Wheel, Mat4)>,
     /// The camera is outside the car.
     pub(crate) outside: bool,
 }
@@ -258,11 +310,21 @@ impl Taa {
             screen_rect(frame.view_projection * body, (low, high)).map(|rect| (body, was, low, high, rect))
         });
         if let Some((body, was, low, high, rect)) = moved {
+            let car_to_prev = previous * was.as_dmat4();
             uniform.car_to_local = (body.as_dmat4().inverse() * inverse).as_mat4().to_cols_array();
-            uniform.car_to_prev = (previous * was.as_dmat4()).as_mat4().to_cols_array();
+            uniform.car_to_prev = car_to_prev.as_mat4().to_cols_array();
             uniform.car_low = low.extend(1.0).to_array();
             uniform.car_high = high.extend(0.0).to_array();
             uniform.car_rect = rect;
+            // A wheel that kept its turn moves with the car (a still's frames stay as they were).
+            let turned =
+                frame.wheel.zip(last.as_ref().and_then(|last| last.turn)).filter(|((_, now), then)| now != then);
+            if let Some(((wheel, now), then)) = turned {
+                uniform.car_to_wheel = wheel.to_node.to_cols_array();
+                uniform.wheel_turn = (then.as_dmat4() * now.as_dmat4().inverse()).as_mat4().to_cols_array();
+                uniform.wheel = [wheel.radius, 1.0, 0.0, 0.0];
+                uniform.wheel_depth = bytemuck::cast(wheel.depth);
+            }
         }
         let (width, height) = (self.size.0 as f32, self.size.1 as f32);
         uniform.size = [width, height, 1.0 / width, 1.0 / height];
@@ -272,6 +334,7 @@ impl Taa {
         self.last = Some(Last {
             view_projection: frame.view_projection,
             car: frame.car.map(|(body, _)| body),
+            turn: frame.wheel.map(|(_, turn)| turn),
             outside: frame.outside,
         });
     }
@@ -367,6 +430,28 @@ mod tests {
         let moved = shift(Vec2::new(0.5, 0.25), (width, height)) * view_projection * p;
         let d = pixel(moved) - pixel(view_projection * p);
         assert!((d - Vec2::new(0.5, 0.25)).length() < 1e-3, "{d}");
+    }
+
+    #[test]
+    fn the_wheel_fills_its_bands_and_the_gaps_between() {
+        // Tilted back and off to the left; a rim at 0.18 m, 0.05 m up the column, spokes from a hub at -0.02 m with no
+        // vertices between, and the column down to -0.5 m.
+        let node = Mat4::from_translation(Vec3::new(-0.35, 0.6, -1.5)) * Mat4::from_rotation_x(-0.3);
+        let ring = |r: f32, z: f32| (0..16).map(move |k| Vec3::from((Vec2::from_angle(k as f32 * 0.4) * r, z)));
+        let column = [0.0, -0.25, -0.5].map(|z| Vec3::new(0.01, 0.0, z));
+        let points = ring(0.18, 0.05).chain(ring(0.17, 0.04)).chain(ring(0.03, -0.02)).chain(column);
+        let wheel = Wheel::new(node, points.map(|p| node.transform_point3(p))).unwrap();
+        assert!((wheel.radius - 0.19).abs() < 1e-4, "{}", wheel.radius);
+        let near = |d: [f32; 2], [low, high]: [f32; 2]| {
+            (d[0] - (low - WHEEL_MARGIN.1)).abs() < 1e-4 && (d[1] - (high + WHEEL_MARGIN.1)).abs() < 1e-4
+        };
+        assert!(near(wheel.depth[0], [-0.5, 0.0]), "{:?}", wheel.depth[0]);
+        assert!(near(wheel.depth[1], [-0.02, -0.02]), "{:?}", wheel.depth[1]);
+        for band in 2..7 {
+            assert!(near(wheel.depth[band], [-0.02, 0.05]), "{band}: {:?}", wheel.depth[band]);
+        }
+        assert!(near(wheel.depth[7], [0.04, 0.05]), "{:?}", wheel.depth[7]);
+        assert_eq!(Wheel::new(node, []), None);
     }
 
     #[test]

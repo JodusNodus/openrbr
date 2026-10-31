@@ -108,6 +108,8 @@ pub struct Renderer {
     /// ([`Renderer::set_car_body`]).
     cabin_sun: Option<crate::car::cabin::SunIn>,
     car_body: Option<Mat4>,
+    /// The car's steering wheel and its turn ([`Renderer::set_car_wheel`]).
+    car_wheel: Option<(crate::taa::Wheel, Mat4)>,
     /// The camera is outside the car ([`Renderer::set_outside_view`]).
     outside_view: bool,
     /// The sky gradient, drawn first ([`Atmosphere::zenith`] overhead, the fog colour at the horizon).
@@ -743,6 +745,7 @@ impl Renderer {
             car_dirt: Default::default(),
             cabin_sun: None,
             car_body: None,
+            car_wheel: None,
             outside_view: false,
             screen_reflection,
             skid_marks: None,
@@ -1007,6 +1010,12 @@ impl Renderer {
                 mesh.bounds = Some(meshes::placed_box(model_to_stage, model));
             }
         }
+    }
+
+    /// The car's steering wheel and its turn in the car's model space this frame, `None` when it is not drawn: the TAA
+    /// carries what it covers by its turn.
+    pub(crate) fn set_car_wheel(&mut self, wheel: Option<(crate::taa::Wheel, Mat4)>) {
+        self.car_wheel = wheel;
     }
 
     /// How much sun gets into the car's cabin by its direction ([`Enhance::cabin`], `crate::car::cabin::SunIn`), which
