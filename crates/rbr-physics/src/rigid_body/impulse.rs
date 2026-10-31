@@ -1,20 +1,19 @@
-//! `CSolid::E43Vf128` (slot 74, 0x52a0e0; `Vf74x` in the notes): applies the impulse `b` at the point `a`. The lever arm
-//! `d = a - position` gives the torque `d x b`; the body's transform of the torque (`MB560`, the walker as ecx and the body as
-//! the matrix) is scaled lanewise by the local inverse inertia (`Mul`), transformed again (the body as ecx, the walker as the
-//! matrix), and `0.6` of it is added to the angular velocity; the impulse times the inverse mass is added to the linear
-//! velocity. The hook (`+0x3cc`) and the ring tail (`+0x3c8`) run after that (`layout::impulse_tail`).
+//! Applies the impulse `b` at the point `a`. The lever arm `d = a - position` gives the torque `d x b`; the body's
+//! transform of the torque is scaled lanewise by the local inverse inertia, transformed again, and `0.6` of it is
+//! added to the angular velocity; the impulse times the inverse mass is added to the linear velocity. The hook and
+//! the ring tail run after that.
 
 use super::layout::{Body, Def, Vec4};
 use crate::math::sse;
 
-/// The factor the angular term takes (the float at 0x72f684).
+/// The factor the angular term takes.
 const ANGULAR_FACTOR: f32 = 0.6;
 
-/// The two transforms the impulse makes outside the body, in the original's order.
+/// The two transforms the impulse makes outside the body, in order.
 pub trait ImpulseHost {
-    /// `E43PairWalk::MB560` with the E43PairWalk global as ecx and the body as the matrix: the transform of the torque.
+    /// The transform of the torque, with the body as the matrix.
     fn transform_by_body(&mut self, src: Vec4) -> Vec4;
-    /// `E43PairWalk::MB560` with the body as ecx and the E43PairWalk global as the matrix: the transform of the scaled torque.
+    /// The transform of the scaled torque, with the walker as the matrix.
     fn transform_by_walker(&mut self, src: Vec4) -> Vec4;
 }
 
@@ -27,14 +26,14 @@ pub fn impulse(body: &mut Body, def: &Def, point: Vec4, impulse: Vec4, host: &mu
     body.linear_velocity = body.linear_velocity.add_scaled(impulse, def.inverse_mass);
 }
 
-/// Which of the two words the hook gets: the first when `half` (the 0.5 at 0x795e18) is above the pair's third lane `z`.
-/// The COMISS/JBE sends an unordered `z` to the second.
+/// Which of the two words the hook gets: the first when `half` is above the pair's third lane `z`. An unordered `z`
+/// takes the second.
 pub fn hook_takes_first(z: f32, half: f32) -> bool {
     half > z
 }
 
-/// Where `E46_RingAppend` (0x529100) writes in a ring with `index` and `count`, and the index and count after: `None` when
-/// a ring that does not wrap is full (64 entries). A wrapping ring's index goes round, and its count is at least the new
+/// Where the ring append writes in a ring with `index` and `count`, and the index and count after: `None` when a
+/// ring that does not wrap is full (64 entries). A wrapping ring's index goes round, and its count is at least the new
 /// index plus one.
 pub fn ring_step(wraps: bool, index: u32, count: u32) -> Option<(u32, u32)> {
     if wraps {
@@ -47,9 +46,8 @@ pub fn ring_step(wraps: bool, index: u32, count: u32) -> Option<(u32, u32)> {
     }
 }
 
-/// The scalar impulse adjustment in `E46Impulse::Impulse640` (0x529640). The first three lanes of `accumulator` are
-/// also the axis used by the dot product. The vector update uses all four direction lanes, including the caller's
-/// original lane-3 stack residue.
+/// The scalar impulse adjustment. The first three lanes of `accumulator` are also the axis used by the dot product.
+/// The vector update uses all four direction lanes, including the caller's original lane-3 stack residue.
 pub fn contact_impulse(
     accumulator: Vec4,
     direction: Vec4,

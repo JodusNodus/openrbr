@@ -8,33 +8,31 @@ use super::layout::{Body, Vec4};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HostUnavailable;
 
-/// The body's own calls the contact steps make: the slot-80 response to a point and the body's transform of a vector.
+/// The body's own calls the contact steps make: the point response and the body's transform of a vector.
 pub trait BodyCalls {
-    /// The body's slot-80 response to a point: the three floats the step takes from it (`x, y, z`).
+    /// The body's response to a point: the three floats the step takes from it (`x, y, z`).
     fn response(&mut self, point: Vec4) -> Vec4;
-    /// `E43PairWalk::MB560` on a vector, with the body as the matrix (its slot 12, `S30`, returns the body).
+    /// The body's transform of a vector.
     fn transform(&mut self, src: Vec4) -> Vec4;
 }
 
-/// The cell registration a free body makes after its position moves (`CCellGrid::LookupTwin` at `(x, y)`, then
-/// `CCar::AppendA980` with the link node at `link`, a body offset).
+/// The cell registration a free body makes after its position moves: registers the link node at `(x, y)`.
 pub trait CellHost {
     fn register_cell(&mut self, link: u32, x: f32, y: f32) -> Result<(), HostUnavailable>;
 }
 
-/// The state refresh the window steps make last (the body's vtable slot 16, `CSolid::Vf40`). The slot reads the body
-/// from memory, so the body is stored before the call.
+/// The state refresh the window steps make last. The refresh reads the body from memory, so the body is stored
+/// before the call.
 pub trait StateHost {
     fn refresh_state(&mut self, body: &Body);
 }
 
-/// The entity call `E47_Vf54Helper` (0x52b6b0) makes first: `E43_EntityVf54Fwd` (0x519ca0) (name ours), which tail-jumps into the
-/// body's `+0x5c` object's slot 1. That object's code is not ported, so its effects are the host's.
+/// The entity's scratch tail call, whose effects are the host's.
 pub trait Vf54Host {
     fn entity_scratch_tail(&mut self) -> Result<(), HostUnavailable>;
 }
 
-/// The call `CSolid::E43Vf20` (0x529200) (name ours) tail-jumps to: `CEntity::E43Vf20` (0x51a3a0), the entity walk on the body.
+/// The entity walk on the body.
 pub trait Vf20Host {
     fn entity_walk_s20(&mut self, body: u32, arg: u32) -> u32;
 }
