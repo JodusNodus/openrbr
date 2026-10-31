@@ -162,7 +162,8 @@ Rally3 Evo, 1280x720: 63.9 fps render, replay 16920 of 16920 frames equal, video
   made over the load's threads 1024 meshes at a time, the uploads in order (2026-10-31): 580 renderer creation to the
   sky occlusion bake 5.0 to 4.1 s, byte-identical. The cockpit eye's fit (`views::cockpit_back`, twice a load) casts
   its lines only at the interior triangles whose boxes come within reach of the eye: the 208's car load 1.9 to 1.0 s,
-  the 42 RSF cars' mounts identical.
+  the 42 RSF cars' mounts identical. The glass's film samples (`film_corners`, `Tints::film_tints`) go over the
+  threads too: `glass::Drawn::load` 0.56 to 0.25 s.
 - Object lanes `(1,1)` (`stage::OBJECT_ALPHA_REF`, kind-byte address modes).
 - Interactive props `(1,6)` (`stage/mod.rs` `InteractivePose`): every retail record drawn at its placement while its
   cell shows; live moves a woken prop by its solid's pose. The car's glass (no depth write) goes over them.

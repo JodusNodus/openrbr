@@ -32,6 +32,7 @@ use crate::car;
 use crate::coords;
 use crate::damage::{self, MeshDamage};
 use crate::dirt::Spray;
+use crate::parallel::in_parallel;
 use crate::particles::Precipitation;
 use crate::playback::Playback;
 use crate::renderer::Renderer;
@@ -419,23 +420,21 @@ impl Tints {
     fn film_tints(&self, part: &str, glass: &Glass, w: &Windscreen) -> Vec<f32> {
         let [columns, rows] = model::FILM_CELLS.map(|n| n * gpu::PANE_TINTS);
         let (lo, hi) = (glass.film_corner(0, 0), glass.film_corner(model::FILM_CELLS[0], model::FILM_CELLS[1]));
-        (0..=rows)
+        let points: Vec<Vec2> = (0..=rows)
             .flat_map(|row| (0..=columns).map(move |column| (column, row)))
-            .map(|(column, row)| {
-                let at = lo + (hi - lo) * Vec2::new(column as f32 / columns as f32, row as f32 / rows as f32);
-                self.through(part, w, at)
-            })
-            .collect()
+            .map(|(column, row)| lo + (hi - lo) * Vec2::new(column as f32 / columns as f32, row as f32 / rows as f32))
+            .collect();
+        // Over the load's threads: one after another the five panes' took 0.22 s (the 208 Rally4's 4200 faces).
+        in_parallel(&points, |&at| self.through(part, w, at))
     }
 }
 
 /// The film corners of `glass` on its chart `w`, row by row.
 fn film_corners(glass: &Glass, w: &Windscreen) -> Vec<Corner> {
     let [columns, rows] = model::FILM_CELLS;
-    (0..=rows)
-        .flat_map(|row| (0..=columns).map(move |column| glass.film_corner(column, row)))
-        .map(|at| Corner { point: w.point_near(at), edge: w.edge(at) })
-        .collect()
+    let points: Vec<Vec2> =
+        (0..=rows).flat_map(|row| (0..=columns).map(move |column| glass.film_corner(column, row))).collect();
+    in_parallel(&points, |&at| Corner { point: w.point_near(at), edge: w.edge(at) })
 }
 
 /// A film corner of a pane seen from inside (`pane_cells`): its model-space point and how far inside the glass's
