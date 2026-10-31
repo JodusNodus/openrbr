@@ -8,7 +8,7 @@
 
 mod common;
 
-use common::{check_windows, load, map_windows, Inner};
+use common::{check_windows, load, map_windows, Inner, Window};
 use rbr_physics::entities::hinge_frame_walks::{self, FrameWalkCalls};
 use rbr_physics::entities::store::HingeStore;
 use rbr_physics::mem::Mem;
@@ -35,7 +35,7 @@ impl<'a> Answers<'a> {
             .unwrap_or_else(|| panic!("the port made call {}, the original made {}", self.next, self.inner.len()));
         assert_eq!(call.addr, addr, "call {}: callee", self.next);
         self.next += 1;
-        for (_, at, _, _, post) in &call.windows {
+        for Window { index: _, at, len: _, before: _, after: post } in &call.windows {
             self.mem.map(*at, post);
         }
         call
@@ -50,10 +50,10 @@ fn check_vector(call: &Inner, a: [f32; 3], index: usize) {
     let window = call
         .windows
         .iter()
-        .find(|w| w.1 == at)
+        .find(|w| w.at == at)
         .unwrap_or_else(|| panic!("call {index}: no window at the input vector {at:#x}"));
     for (i, value) in a.iter().enumerate() {
-        let bytes: [u8; 4] = window.3[4 * i..4 * i + 4].try_into().unwrap();
+        let bytes: [u8; 4] = window.before[4 * i..4 * i + 4].try_into().unwrap();
         let recorded = f32::from_le_bytes(bytes);
         assert!(
             value.to_bits() == recorded.to_bits() || (value.is_nan() && recorded.is_nan()),

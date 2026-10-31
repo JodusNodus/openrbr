@@ -7,7 +7,7 @@
 
 mod common;
 
-use common::{check_windows, load, map_windows, Call, Inner};
+use common::{check_windows, load, map_windows, Call, Inner, Window};
 use rbr_physics::entities::hinge_pivot::{self, PivotCalls, PivotHandles};
 use rbr_physics::entities::store::HingeStore;
 use rbr_physics::mem::Mem;
@@ -32,7 +32,7 @@ impl<'a> Answers<'a> {
             .unwrap_or_else(|| panic!("the port made call {}, the original made {}", self.next, self.inner.len()));
         assert_eq!(call.addr, addr, "call {}: callee", self.next);
         self.next += 1;
-        for (_, at, _, _, post) in &call.windows {
+        for Window { index: _, at, len: _, before: _, after: post } in &call.windows {
             self.mem.map(*at, post);
         }
         call

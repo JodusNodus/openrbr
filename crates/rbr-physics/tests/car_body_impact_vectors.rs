@@ -5,7 +5,7 @@
 
 mod common;
 
-use common::{check_windows, load, map_windows, shared_windows, Call, Inner};
+use common::{check_windows, load, map_windows, shared_windows, After, Call, Inner};
 use rbr_physics::car_body::layout::{self, DamageHitCalls};
 use rbr_physics::mem::Mem;
 
@@ -57,7 +57,7 @@ impl DamageHitCalls for Recorded<'_> {
         let inner = self.next(function);
         assert_eq!(inner.args[..], [&[this][..], &args[..]].concat(), "{name} call {index}: the functor's arguments");
         let (eax, after) = (inner.eax, inner.after.clone());
-        for (at, _, bytes) in &after {
+        for After { at, len: _, bytes } in &after {
             self.mem.map(*at, bytes);
         }
         eax

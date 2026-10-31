@@ -3,7 +3,6 @@
 
 mod common;
 
-use common::{check_windows, load, map_windows};
 use rbr_physics::game_log::{self, LogHost};
 use rbr_physics::mem::Mem;
 
@@ -36,21 +35,14 @@ impl LogHost for Calls {
 
 #[test]
 fn e01_log_matches() {
-    let Some(calls) = load(VAR, E01_LOG).filter(|c| !c.is_empty()) else {
-        eprintln!("skipping E01Log: no calls ({VAR})");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
+    common::replay(VAR, E01_LOG, "E01Log", |call, mem| {
         let words: Vec<u8> = call.args[3..].iter().flat_map(|w| w.to_le_bytes()).collect();
         mem.map(ARGS, &words);
         let mut host = Calls { returns: call.inner.iter().map(|i| i.eax).collect(), calls: Vec::new() };
-        let eax = game_log::log(&mut mem, &mut host, call.args[0], call.args[1], call.args[2], ARGS)
+        let eax = game_log::log(mem, &mut host, call.args[0], call.args[1], call.args[2], ARGS)
             .unwrap_or_else(|e| panic!("E01Log call {}: {e:?}", call.index));
         let expected: Vec<_> = call.inner.iter().map(|i| (i.addr, i.args.clone())).collect();
         assert_eq!(host.calls, expected, "E01Log call {}: calls", call.index);
         assert_eq!(eax, call.eax, "E01Log call {}: eax", call.index);
-        check_windows(call, &mem, "E01Log");
-    }
-    eprintln!("E01Log: {} calls match", calls.len());
+    });
 }
