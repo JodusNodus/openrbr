@@ -12,6 +12,8 @@
 
 use std::io;
 
+use crate::sized;
+
 /// The tag.
 pub const FFB1: [u8; 4] = *b"FFB1";
 const PAYLOAD_BYTES: usize = 4;
@@ -25,17 +27,12 @@ pub struct Steering {
 impl Steering {
     /// The record.
     pub fn to_bytes(&self) -> Vec<u8> {
-        let payload = self.force.to_le_bytes();
-        let mut out = Vec::with_capacity(8 + PAYLOAD_BYTES);
-        crate::live::write_record(&mut out, FFB1, &payload);
-        out
+        crate::live::record(FFB1, &self.force.to_le_bytes())
     }
 
     /// Reads the record's payload (the bytes after its tag and length, `crate::live::read_records`).
     pub fn from_payload(payload: &[u8]) -> io::Result<Steering> {
-        let payload: &[u8; PAYLOAD_BYTES] = payload.try_into().map_err(|_| {
-            io::Error::new(io::ErrorKind::InvalidData, format!("a force record of {} bytes", payload.len()))
-        })?;
+        let payload: &[u8; PAYLOAD_BYTES] = sized(payload, format!("a force record of {} bytes", payload.len()))?;
         Ok(Steering { force: f32::from_le_bytes(*payload) })
     }
 }

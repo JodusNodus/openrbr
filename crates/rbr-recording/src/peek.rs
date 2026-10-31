@@ -9,6 +9,8 @@
 
 use std::fmt::{self, Display, Formatter};
 
+use crate::{read_u32, word_at};
+
 pub const MAGIC: u32 = 0x314b_4550;
 pub const VERSION: u32 = 1;
 
@@ -168,10 +170,10 @@ impl Record<'_> {
         let offset: usize = self.probes[..index].iter().map(|item| item.ty.byte_len()).sum();
         let bytes = self.values.get(offset..offset + probe.ty.byte_len())?;
         match probe.ty {
-            PeekType::F32 => Some(Value::F32(f32::from_bits(u32::from_le_bytes(bytes.try_into().ok()?)))),
-            PeekType::U32 => Some(Value::U32(u32::from_le_bytes(bytes.try_into().ok()?))),
-            PeekType::U8 => Some(Value::U8(bytes[0])),
-            PeekType::I32 => Some(Value::I32(i32::from_le_bytes(bytes.try_into().ok()?))),
+            PeekType::F32 => Some(Value::F32(f32::from_bits(read_u32(bytes, 0)?))),
+            PeekType::U32 => Some(Value::U32(read_u32(bytes, 0)?)),
+            PeekType::U8 => Some(Value::U8(bytes.first().copied()?)),
+            PeekType::I32 => Some(Value::I32(read_u32(bytes, 0)? as i32)),
         }
     }
 }
@@ -199,13 +201,9 @@ impl<'a> Iterator for Records<'a> {
             return Some(Err(error));
         }
         let offset = self.offset;
-        let step = u32::from_le_bytes(self.bytes[offset..offset + 4].try_into().unwrap());
+        let step = word_at(self.bytes, offset);
         let values = &self.bytes[offset + 4..end];
         self.offset = end;
         Some(Ok(Record { offset, step, probes: self.probes, values }))
     }
-}
-
-fn read_u32(bytes: &[u8], offset: usize) -> Option<u32> {
-    Some(u32::from_le_bytes(bytes.get(offset..offset + 4)?.try_into().ok()?))
 }

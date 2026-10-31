@@ -5,6 +5,8 @@
 
 use std::io::{self, Read};
 
+use crate::invalid;
+
 /// The car's control (`rbr_gameplay::control::CarControl`'s eight words, word 6 0 when unset) the frame's last step
 /// took: the `CSigCarControl` payload the in-car driver turns the wheel by (LocoMotion `OnCarControl`), which the
 /// frame's echoed input payload is not; zeros before the first step.
@@ -13,6 +15,13 @@ pub const CTL1: [u8; 4] = *b"CTL1";
 pub const SCN1: [u8; 4] = *b"SCN1";
 /// Payload bytes a record may have, at most (a guard against a bad stream).
 pub const MAX_PAYLOAD: usize = 1 << 24;
+
+/// One tagged record: the tag, the payload length and the payload.
+pub fn record(tag: [u8; 4], payload: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(8 + payload.len());
+    write_record(&mut out, tag, payload);
+    out
+}
 
 /// Appends one record to `out`.
 pub fn write_record(out: &mut Vec<u8>, tag: [u8; 4], payload: &[u8]) {
@@ -34,7 +43,7 @@ pub fn read_records(reader: &mut impl Read) -> io::Result<Vec<([u8; 4], Vec<u8>)
         reader.read_exact(&mut len)?;
         let len = u32::from_le_bytes(len) as usize;
         if len > MAX_PAYLOAD {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, format!("a {len}-byte live record")));
+            return Err(invalid(format!("a {len}-byte live record")));
         }
         let mut payload = vec![0; len];
         reader.read_exact(&mut payload)?;

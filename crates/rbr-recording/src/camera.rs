@@ -10,6 +10,8 @@
 
 use std::io;
 
+use crate::{sized, word};
+
 /// The tag.
 pub const CAM1: [u8; 4] = *b"CAM1";
 /// The body's size.
@@ -36,18 +38,13 @@ impl Camera {
         let mut body = [0; BODY_BYTES];
         body[..4].copy_from_slice(&self.mode.to_le_bytes());
         body[4..].copy_from_slice(&self.angle.to_le_bytes());
-        let mut out = Vec::with_capacity(8 + BODY_BYTES);
-        crate::live::write_record(&mut out, CAM1, &body);
-        out
+        crate::live::record(CAM1, &body)
     }
 
     /// The record's body (the bytes after the tag and length).
     pub fn read_body(body: &[u8]) -> io::Result<Camera> {
-        if body.len() != BODY_BYTES {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, format!("a CAM1 body of {} bytes", body.len())));
-        }
-        let word = |i: usize| u32::from_le_bytes(body[4 * i..4 * i + 4].try_into().unwrap());
-        Ok(Camera { mode: word(0), angle: f32::from_bits(word(1)) })
+        let body: &[u8; BODY_BYTES] = sized(body, format!("a CAM1 body of {} bytes", body.len()))?;
+        Ok(Camera { mode: word(body, 0), angle: f32::from_bits(word(body, 1)) })
     }
 }
 

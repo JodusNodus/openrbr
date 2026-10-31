@@ -18,7 +18,7 @@
 
 use rbr_formats::ai_ini::{Master, Roster};
 use rbr_formats::saves::after_season::{CarStore, DriverStore, Stores, TeamStore};
-use rbr_formats::saves::season::{self as save, Season, DRIVERS};
+use rbr_formats::saves::season::{Season, DRIVERS};
 
 use crate::ai_season::{self, CarState, DriverState, TeamCosts};
 use crate::crt::CrtRand;
@@ -33,13 +33,13 @@ pub(crate) use forecast::{BLOCK, SLOT};
 pub use forecast::{blocks, init6, new_blocks, Block, Slot, RALLY_ORDER};
 pub use layout::{
     add_rally_penalty, add_rally_points, advance_clock, advance_rally, advance_stage, clock, entry_car, entry_excluded,
-    entry_id, entry_name, entry_rank, entry_team_slot, false_starts, first_stage_order, forecast_rally_id,
-    forecast_slot_time, forecast_start_time, head_time, inc_false_starts, out_of_rally as saved_out_of_rally,
-    player_entry as saved_player_entry, position, rally_penalty, rally_points, rally_total, rank_order_override,
-    rewind_stage, season_points, set_clock, set_entry_rank, set_first_stage_order, set_head_time, set_start_order,
-    skill_level, start_key, start_order, team_ids, wrapping_season_points, ENTRIES,
+    entry_id, entry_name, entry_rank, entry_team_slot, false_starts, fill_neg, first_stage_order, forecast_rally_id,
+    forecast_slot_time, forecast_start_time, head_time, inc_false_starts, out_of_rally, player_entry, position,
+    rally_penalty, rally_points, rally_total, rank_order_override, rewind_stage, season_points, set_clock,
+    set_entry_rank, set_first_stage_order, set_head_time, set_start_order, skill_level, start_key, start_order,
+    team_ids, wrapping_season_points, ENTRIES,
 };
-pub(crate) use layout::{bubble, fill_neg as saved_fill_neg, push_pair, set_stage_start_time};
+pub(crate) use layout::{bubble, push_pair, retired_in, set_stage_start_time, stage_retired};
 
 /// The rally and stage in progress, with the stage run before it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -138,11 +138,6 @@ pub fn create(
         }
     }
     season
-}
-
-/// The player's entry (the one with id -2).
-pub fn player_entry(season: &Season) -> Option<usize> {
-    saved_player_entry(season)
 }
 
 /// The team offers' order: the rows' team ids.
@@ -327,13 +322,6 @@ impl AiField {
     }
 }
 
-/// Whether the entry is out of the current rally: a retired stage or a
-/// negative time, unless the rank-order flag keeps the player in. The stage
-/// loop leaves such entries out of a stage's starts and services.
-pub fn out_of_rally(season: &Season, entry: usize) -> bool {
-    saved_out_of_rally(season, entry)
-}
-
 /// A rally's first start order: the season's points so far, most first; the
 /// first rally, or while the rank-order flag is set, by the entries' ranks.
 pub fn rally_start_order(season: &Season) -> [u32; DRIVERS] {
@@ -355,12 +343,6 @@ pub fn stage_start_order(season: &Season) -> [u32; DRIVERS] {
     bubble(ENTRIES, |n, c| start_key(season, n) > start_key(season, c))
 }
 
-/// Mark stages from `from` on as not driven when below 0.1: time -1, retired.
-/// The rally's time total is left as it is.
-pub fn fill_neg(season: &mut Season, entry: usize, from: usize) {
-    saved_fill_neg(season, entry, from);
-}
-
 /// One line of a rally's standings.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RallyLine {
@@ -370,10 +352,6 @@ pub struct RallyLine {
     pub total: Option<f32>,
     pub stages: Vec<Option<f32>>,
     pub points: u32,
-}
-
-fn retired_in(r: &save::DriverRally) -> bool {
-    r.stages.iter().any(|s| s.retired != 0 || s.time < 0.0)
 }
 
 /// The points sort's key: time plus penalty, -1 for a retired driver.
@@ -396,7 +374,7 @@ pub fn rally_standings(season: &Season, rally: usize, stages: usize) -> Vec<Rall
         .map(|(k, _)| {
             let r = &season.drivers[k].rallies[rally];
             let done = &r.stages[..stages.min(6)];
-            let retired = done.iter().any(|s| s.retired != 0 || s.time < 0.0);
+            let retired = done.iter().any(stage_retired);
             RallyLine {
                 entry: k,
                 name: entry_name(season, k),
@@ -432,7 +410,7 @@ pub fn award_points(season: &mut Season, rally: usize) {
     }
     let mut place = 0;
     for e in order {
-        let retired = season.drivers[e].rallies[rally].stages.iter().any(|s| s.retired != 0 || s.time < 0.0);
+        let retired = retired_in(&season.drivers[e].rallies[rally]);
         let no_time = rally_total(season, e, rally) == ai_season::RETIRED;
         if retired || no_time || entry_excluded(season, e) || place >= POINTS.len() {
             continue;

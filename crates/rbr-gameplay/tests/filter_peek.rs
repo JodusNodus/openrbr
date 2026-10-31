@@ -18,6 +18,9 @@ use rbr_recording::{read_f32, Frame, Frames};
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 
+mod common;
+use common::{peeked, peeked_f32, peeked_u32};
+
 const DRIVE: &str = "g5-filter";
 /// The physics step, `MaxTimeStep` (the f32 0.0070 of `Root/physics.rbz`, which the drive runs at).
 const DT: f32 = 0.007;
@@ -50,29 +53,10 @@ fn read_run() -> Option<(Vec<u8>, Vec<u8>)> {
     Some((read(&dir.join(format!("{DRIVE}.bin"))), read(&dir.join(format!("{DRIVE}.peek.bin")))))
 }
 
-fn peeked(record: &Record, probes: &[Probe], name: &str) -> Value {
-    let index = probes.iter().position(|probe| probe.name == name).unwrap_or_else(|| panic!("no probe {name}"));
-    record.value(index).expect("record holds every probe")
-}
-
-fn peeked_u32(record: &Record, probes: &[Probe], name: &str) -> u32 {
-    match peeked(record, probes, name) {
-        Value::U32(v) => v,
-        other => panic!("{name}: {other:?}, expected u32"),
-    }
-}
-
 fn peeked_u8(record: &Record, probes: &[Probe], name: &str) -> u8 {
     match peeked(record, probes, name) {
         Value::U8(v) => v,
         other => panic!("{name}: {other:?}, expected u8"),
-    }
-}
-
-fn peeked_f32(record: &Record, probes: &[Probe], name: &str) -> f32 {
-    match peeked(record, probes, name) {
-        Value::F32(v) => v,
-        other => panic!("{name}: {other:?}, expected f32"),
     }
 }
 
