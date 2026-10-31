@@ -60,16 +60,16 @@ impl<H: Heap + entities::exclusion::Heap> PartFactory for Factories<'_, H> {
     }
 }
 
-/// `CBody::Vf40`'s state reset, run by the placement after `Vf16Helper` (as `stage::layout` does): the helper's matrix
-/// multiply and its two calls are deferred.
+/// `CBody::Vf40`'s state reset, run by the placement after `Vf16Helper` (as `stage::layout` does): the helper's two
+/// calls are deferred; its matrix multiply is `E46Mat::Mul`'s, as the stage's.
 #[derive(Default)]
 struct DeferredVf40 {
     state: Option<u32>,
 }
 
 impl rigid_body::rotation::MulHost for DeferredVf40 {
-    fn mul(&mut self, matrix: [f32; 9], diagonal: [f32; 9]) -> Result<[f32; 9], rigid_body::host::HostUnavailable> {
-        Ok(std::array::from_fn(|i| matrix[i] * diagonal[3 * (i % 3) + i % 3]))
+    fn mul(&mut self, m: [f32; 9], b: [f32; 9]) -> Result<[f32; 9], rigid_body::host::HostUnavailable> {
+        Ok(rigid_body::rotation::mul_rows(m, b))
     }
 }
 
