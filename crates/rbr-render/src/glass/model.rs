@@ -295,6 +295,8 @@ const FILM_WETS: f32 = 0.6;
 const FILM_DRIES: f32 = 0.02;
 const FILM_AIRFLOW: f32 = 20.0;
 const FILM_BLOWN: f32 = 0.5;
+/// How far from the blade's swept angles water is cleared, metres (the blade's half width and the wipe's lag).
+const BLADE_PAD: f32 = 0.02;
 /// What a blade leaves of the film it sweeps: a thin smear.
 const FILM_SMEAR: f32 = 0.1;
 /// Snow on the blades (ours): each blade carries what it sweeps, in flakes, at most [`BLADE_MOST`], and loses
@@ -724,7 +726,10 @@ impl Glass {
                 Kind::Mud => !wet && d.seed < MUD_SMEAR,
                 Kind::Water | Kind::Snow | Kind::Trail => false,
             };
-            let by = wipers.iter().position(|w| w.swept(d.at, from * w.sweep, phase * w.sweep, d.radius));
+            // The blade has a width: water under it or just behind it goes too (a drop landing there this step lies
+            // outside the angles it swept).
+            let pad = d.radius + if matches!(d.kind, Kind::Water | Kind::Trail) { BLADE_PAD } else { 0.0 };
+            let by = wipers.iter().position(|w| w.swept(d.at, from * w.sweep, phase * w.sweep, pad));
             if let (Some(k), Kind::Snow, false) = (by, d.kind, stays) {
                 blade_snow[k] = (blade_snow[k] + d.left.max(0.3)).min(BLADE_MOST);
             }
