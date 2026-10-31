@@ -72,6 +72,52 @@ impl WetRoads {
     }
 }
 
+impl Choice for WetRoads {
+    const ALL: &[Self] = &WetRoads::ALL;
+    fn name(self) -> &'static str {
+        match self {
+            WetRoads::Off => "off",
+            WetRoads::Low => "low",
+            WetRoads::Medium => "medium",
+            WetRoads::High => "high",
+        }
+    }
+    fn label(self) -> &'static str {
+        match self {
+            WetRoads::Off => "Off",
+            WetRoads::Low => "Low",
+            WetRoads::Medium => "Medium",
+            WetRoads::High => "High",
+        }
+    }
+}
+
+impl Choice for AntiAliasing {
+    const ALL: &[Self] = &AntiAliasing::ALL;
+    fn name(self) -> &'static str {
+        AntiAliasing::name(self)
+    }
+    fn label(self) -> &'static str {
+        match self {
+            AntiAliasing::Taa => "Temporal",
+            AntiAliasing::Off => "Off",
+        }
+    }
+}
+
+impl Choice for Detail {
+    const ALL: &[Self] = &Detail::ALL;
+    fn name(self) -> &'static str {
+        Detail::name(self)
+    }
+    fn label(self) -> &'static str {
+        match self {
+            Detail::High => "High",
+            Detail::Ultra => "Ultra",
+        }
+    }
+}
+
 /// The Quality section's presets (their cost: `notes/renderer.md` "Cost on an M3 Pro").
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Quality {

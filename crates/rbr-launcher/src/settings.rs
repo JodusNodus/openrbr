@@ -117,6 +117,44 @@ impl Precipitation {
         [Precipitation::None, Precipitation::Light, Precipitation::Moderate, Precipitation::Heavy];
 }
 
+impl Choice for Fog {
+    const ALL: &[Self] = &Fog::ALL;
+    fn name(self) -> &'static str {
+        match self {
+            Fog::Off => "off",
+            Fog::Light => "light",
+            Fog::Heavy => "heavy",
+        }
+    }
+    fn label(self) -> &'static str {
+        match self {
+            Fog::Off => "Off",
+            Fog::Light => "Light",
+            Fog::Heavy => "Heavy",
+        }
+    }
+}
+
+impl Choice for Clouds {
+    const ALL: &[Self] = &Clouds::ALL;
+    fn name(self) -> &'static str {
+        ["clear", "partly", "light", "heavy"][self as usize]
+    }
+    fn label(self) -> &'static str {
+        ["Clear", "Partly cloudy", "Light clouds", "Overcast"][self as usize]
+    }
+}
+
+impl Choice for Precipitation {
+    const ALL: &[Self] = &Precipitation::ALL;
+    fn name(self) -> &'static str {
+        ["none", "light", "moderate", "heavy"][self as usize]
+    }
+    fn label(self) -> &'static str {
+        ["None", "Light", "Moderate", "Heavy"][self as usize]
+    }
+}
+
 /// The road wetness word of `wetness` (0 dry, 1 damp, 2 wet).
 pub fn wetness_name(wetness: u32) -> &'static str {
     ["dry", "damp", "wet"][wetness.min(2) as usize]

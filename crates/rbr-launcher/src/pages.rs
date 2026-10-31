@@ -6,16 +6,11 @@ use std::time::Duration;
 use egui::{Color32, Id, RichText};
 use rbr_sound::menu::MenuPlayer;
 
-use rbr_gameplay::race_options::{DamageLevel, Skill};
-use rbr_gameplay::season as season_model;
-use rbr_render::renderer::{AntiAliasing, Detail};
-
 use crate::browser;
 use crate::car_browser;
 use crate::catalog::{self, car_label};
-use crate::graphics_page::WetRoads;
-use crate::settings::{Clouds, Fog, Precipitation};
 use crate::settings_page::RSF_FIELD;
+use rbr_gameplay::season as season_model;
 
 use crate::{rally_page, Form};
 
@@ -69,115 +64,6 @@ pub trait Choice: Copy + PartialEq + 'static {
     /// The settings word's value; `None` for anything else (unknown text keeps the default).
     fn parse(text: &str) -> Option<Self> {
         Self::ALL.iter().copied().find(|choice| choice.name() == text)
-    }
-}
-
-impl Choice for Fog {
-    const ALL: &[Self] = &Fog::ALL;
-    fn name(self) -> &'static str {
-        match self {
-            Fog::Off => "off",
-            Fog::Light => "light",
-            Fog::Heavy => "heavy",
-        }
-    }
-    fn label(self) -> &'static str {
-        match self {
-            Fog::Off => "Off",
-            Fog::Light => "Light",
-            Fog::Heavy => "Heavy",
-        }
-    }
-}
-
-impl Choice for Clouds {
-    const ALL: &[Self] = &Clouds::ALL;
-    fn name(self) -> &'static str {
-        ["clear", "partly", "light", "heavy"][self as usize]
-    }
-    fn label(self) -> &'static str {
-        ["Clear", "Partly cloudy", "Light clouds", "Overcast"][self as usize]
-    }
-}
-
-impl Choice for Precipitation {
-    const ALL: &[Self] = &Precipitation::ALL;
-    fn name(self) -> &'static str {
-        ["none", "light", "moderate", "heavy"][self as usize]
-    }
-    fn label(self) -> &'static str {
-        ["None", "Light", "Moderate", "Heavy"][self as usize]
-    }
-}
-
-impl Choice for WetRoads {
-    const ALL: &[Self] = &WetRoads::ALL;
-    fn name(self) -> &'static str {
-        match self {
-            WetRoads::Off => "off",
-            WetRoads::Low => "low",
-            WetRoads::Medium => "medium",
-            WetRoads::High => "high",
-        }
-    }
-    fn label(self) -> &'static str {
-        match self {
-            WetRoads::Off => "Off",
-            WetRoads::Low => "Low",
-            WetRoads::Medium => "Medium",
-            WetRoads::High => "High",
-        }
-    }
-}
-
-impl Choice for DamageLevel {
-    const ALL: &[Self] = &DamageLevel::ALL;
-    fn name(self) -> &'static str {
-        DamageLevel::name(self)
-    }
-    fn label(self) -> &'static str {
-        match self {
-            DamageLevel::Off => "Off",
-            DamageLevel::Safe => "Safe",
-            DamageLevel::Reduced => "Reduced",
-            DamageLevel::Realistic => "Realistic",
-        }
-    }
-}
-
-impl Choice for Skill {
-    const ALL: &[Self] = &Skill::ALL;
-    fn name(self) -> &'static str {
-        Skill::name(self)
-    }
-    fn label(self) -> &'static str {
-        Skill::label(self)
-    }
-}
-
-impl Choice for AntiAliasing {
-    const ALL: &[Self] = &AntiAliasing::ALL;
-    fn name(self) -> &'static str {
-        AntiAliasing::name(self)
-    }
-    fn label(self) -> &'static str {
-        match self {
-            AntiAliasing::Taa => "Temporal",
-            AntiAliasing::Off => "Off",
-        }
-    }
-}
-
-impl Choice for Detail {
-    const ALL: &[Self] = &Detail::ALL;
-    fn name(self) -> &'static str {
-        Detail::name(self)
-    }
-    fn label(self) -> &'static str {
-        match self {
-            Detail::High => "High",
-            Detail::Ultra => "Ultra",
-        }
     }
 }
 
@@ -735,8 +621,11 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::settings::{load, Settings};
+    use crate::graphics_page::WetRoads;
+    use crate::settings::{load, Clouds, Fog, Precipitation, Settings};
     use crate::{Start, SETTINGS_FILE};
+    use rbr_gameplay::race_options::{DamageLevel, Skill};
+    use rbr_render::renderer::{AntiAliasing, Detail};
 
     /// Every dropdown choice parses back from its settings word, with a label of its own (`settings_round_trip`
     /// pins the file's text; this pins each value's word and label).

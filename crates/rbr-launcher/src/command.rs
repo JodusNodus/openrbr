@@ -184,8 +184,9 @@ pub struct ViewerLaunch {
     pub setup: Option<PathBuf>,
 }
 
+#[cfg(test)]
 impl Default for ViewerLaunch {
-    /// Filler for the tests' struct update syntax; [`ViewerLaunch::args`] reads every field set.
+    /// Filler for the tests' struct update syntax.
     fn default() -> Self {
         Self {
             stage: Stage::default(),
@@ -222,24 +223,26 @@ impl Default for ViewerLaunch {
 impl ViewerLaunch {
     /// The argument vector: the viewer's flags, then `rbr-standalone`'s after the second `--live`.
     pub fn args(&self) -> Vec<String> {
-        let stage = &self.stage;
-        let car = &self.car;
-        let options = &self.options;
-        let weather = &self.weather;
-        let tyre = self.tyre;
-        let size = self.size;
-        let fov = self.fov;
-        let volume = self.volume;
-        let volumes = self.volumes;
-        let codriver = self.codriver;
-        let hud = self.hud;
-        let graphics = &self.graphics;
-        let wipers = self.wipers;
-        let standalone = self.standalone.as_path();
-        let data = self.data.as_path();
-        let marker = self.marker;
-        let bindings = self.bindings.as_deref();
-        let setup = self.setup.as_deref();
+        let ViewerLaunch {
+            stage,
+            car,
+            options,
+            weather,
+            tyre,
+            size,
+            fov,
+            volume,
+            volumes,
+            codriver,
+            hud,
+            graphics,
+            wipers,
+            standalone,
+            data,
+            marker,
+            bindings,
+            setup,
+        } = self;
         let pack = car.rsf.as_ref().and_then(|r| r.pack.as_ref().ok()).map(|p| p.display().to_string());
         let car_arg = match &pack {
             Some(pack) => ["--rsf-car".into(), pack.clone()],
@@ -686,7 +689,6 @@ impl Form {
                 seen
             })
     }
-    /// Runs the viewer with `args`; whether it started.
     /// The viewer as a child process with `args`: the game and the RSF install in its environment, without
     /// `RBR_PATCH` when the install folder is the game.
     pub(crate) fn viewer_command(&self, args: &[String]) -> Command {

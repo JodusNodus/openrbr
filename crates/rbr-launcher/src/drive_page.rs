@@ -1,7 +1,7 @@
 //! The Drive page: the quick race's car and stage, conditions, race options, the previews and Start.
 
 use egui::{Color32, ComboBox, Key, RichText};
-use rbr_gameplay::race_options::DamageLevel;
+use rbr_gameplay::race_options::{DamageLevel, Skill};
 use rbr_gameplay::weather::{self, Preset, Weather};
 use rbr_render::glass::model::Switch;
 use rbr_render::shifter::{CarBox, Engagement};
@@ -613,6 +613,31 @@ const GEARBOXES: [CarBox; 3] = [
     CarBox { engagement: Engagement::Synchro, sequential: false },
     CarBox { engagement: Engagement::Dog, sequential: false },
 ];
+
+impl Choice for DamageLevel {
+    const ALL: &[Self] = &DamageLevel::ALL;
+    fn name(self) -> &'static str {
+        DamageLevel::name(self)
+    }
+    fn label(self) -> &'static str {
+        match self {
+            DamageLevel::Off => "Off",
+            DamageLevel::Safe => "Safe",
+            DamageLevel::Reduced => "Reduced",
+            DamageLevel::Realistic => "Realistic",
+        }
+    }
+}
+
+impl Choice for Skill {
+    const ALL: &[Self] = &Skill::ALL;
+    fn name(self) -> &'static str {
+        Skill::name(self)
+    }
+    fn label(self) -> &'static str {
+        Skill::label(self)
+    }
+}
 
 fn gearbox_label(gearbox: CarBox) -> &'static str {
     match gearbox {
