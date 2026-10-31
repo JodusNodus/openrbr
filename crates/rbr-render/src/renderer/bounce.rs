@@ -9,7 +9,7 @@ use super::DEPTH_FORMAT;
 use crate::bounce::{self, DIRECTIONS, GROUND, SIZE};
 use crate::camera::Frustum;
 use crate::sky_occlusion::{self, Tiles, BATCH, TILE};
-use crate::stage::{Anchor, Layer, Stage};
+use crate::stage::{Anchor, Layer, Lod, Stage};
 use crate::sun::{self, SunShadow};
 use bytemuck::{cast_slice, Pod, Zeroable};
 use glam::{Mat4, Vec3};
@@ -424,7 +424,10 @@ impl Surfaces {
             .filter(|mesh| mesh.bounds.is_none_or(|(centre, half)| frustum.intersects_box(centre, half)))
             .flat_map(|mesh| mesh.draws.iter().map(move |draw| (mesh, draw)))
             .filter(|(_, draw)| {
+                // The grass's tile meshes (`Lod::Close`) hold no cards at load: drawn, their zeroed vertices only took the
+                // vertex stage's time in every cut-out pass.
                 draw.lod.shows(0.0)
+                    && draw.lod != Lod::Close
                     && draw.pipeline.depth_write
                     && !draw.pipeline.blend
                     && !draw.bind.water
