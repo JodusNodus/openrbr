@@ -6,9 +6,11 @@
 //! `Root/physics.rbz` and `Root/misc.rbz`), and the `bit_names` lookup must
 //! cover exactly the proven bitfield keys.
 
-use rbr_formats::{lsp, lsp_keys, lsp_tables, rbz};
+use rbr_formats::{lsp, lsp_keys, lsp_tables};
 use std::collections::BTreeSet;
 use std::path::Path;
+
+mod common;
 
 use lsp::Node;
 
@@ -44,25 +46,18 @@ fn collect_heads(items: &[Node], heads: &mut BTreeSet<String>) {
 
 #[test]
 fn registry_classes_appear_in_retail() {
-    let Ok(data_dir) = std::env::var("RBR_DATA") else {
-        eprintln!("skipping: RBR_DATA not set");
+    let Some(data_dir) = common::data_dir() else {
         return;
     };
     let mut heads = BTreeSet::new();
     let mut files = 0;
     for archive_name in ["Root/physics.rbz", "Root/misc.rbz"] {
         let path = Path::new(&data_dir).join(archive_name);
-        let mut archive = rbz::open(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-        for i in 0..archive.len() {
-            let mut entry = archive.by_index(i).expect("entry");
-            let entry_name = entry.name().expect("ascii name").into_owned();
+        common::each_rbz_entry(&path, |entry_name, bytes| {
             if !entry_name.ends_with(".lsp") {
-                continue;
+                return;
             }
-            let mut bytes = Vec::new();
-            use std::io::Read as _;
-            entry.read_to_end(&mut bytes).unwrap_or_else(|e| panic!("{entry_name}: {e}"));
-            let text = std::str::from_utf8(&bytes).expect("utf-8");
+            let text = std::str::from_utf8(bytes).expect("utf-8");
             let doc = lsp::parse(text).unwrap_or_else(|e| panic!("{entry_name}: {e}"));
             files += 1;
             let Node::List(root) = &doc[0] else {
@@ -73,7 +68,7 @@ fn registry_classes_appear_in_retail() {
                 _ => panic!("{entry_name}: expected single root list"),
             };
             collect_heads(root, &mut heads);
-        }
+        });
     }
     assert!(files > 80, "expected most retail .lsp files, got {files}");
     for entry in lsp_tables::REGISTRY {

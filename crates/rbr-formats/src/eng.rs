@@ -13,6 +13,7 @@
 //! The readers skip the tags without checking them. Four retail files (`Saxo`, `bubbla`, `fiat`, `vaux`) hold two
 //! `WAVE` blocks per part, an older layout 1.02 cannot load; [`parse`] refuses them ([`Error::TwoWaveParts`]).
 
+use crate::le::{Reader, Truncated};
 use std::fmt::{self, Display, Formatter};
 
 /// One recording: a bank's rpm at one load.
@@ -74,37 +75,17 @@ impl Display for Error {
 
 impl std::error::Error for Error {}
 
-struct Cursor<'a> {
-    bytes: &'a [u8],
-    at: usize,
-}
-
-impl Cursor<'_> {
-    fn take(&mut self, n: usize) -> Result<&[u8], Error> {
-        let end =
-            self.at.checked_add(n).filter(|&e| e <= self.bytes.len()).ok_or(Error::Truncated { offset: self.at })?;
-        let out = &self.bytes[self.at..end];
-        self.at = end;
-        Ok(out)
-    }
-
-    fn u32(&mut self) -> Result<u32, Error> {
-        Ok(u32::from_le_bytes(self.take(4)?.try_into().unwrap()))
-    }
-
-    fn u32s(&mut self, n: u32) -> Result<Vec<u32>, Error> {
-        // No reservation: `n` comes from the file and can be huge; the loop fails at the first missing word.
-        let mut out = Vec::new();
-        for _ in 0..n {
-            out.push(self.u32()?);
-        }
-        Ok(out)
+impl From<Truncated> for Error {
+    fn from(t: Truncated) -> Self {
+        Error::Truncated { offset: t.offset }
     }
 }
+
+type Cursor<'a> = Reader<'a, Error>;
 
 /// Reads a whole `.eng` file.
 pub fn parse(bytes: &[u8]) -> Result<Engine, Error> {
-    let mut c = Cursor { bytes, at: 0 };
+    let mut c = Cursor::new(bytes);
     c.take(4)?;
     let version = c.u32()?;
     let nbanks = c.u32()?;
@@ -121,12 +102,12 @@ pub fn parse(bytes: &[u8]) -> Result<Engine, Error> {
             c.take(8)?;
             let rate = c.u32()?;
             let nsamples = c.u32()? as usize;
-            let raw = c.take(nsamples.checked_mul(2).ok_or(Error::Truncated { offset: c.at })?)?;
+            let raw = c.take(nsamples.checked_mul(2).ok_or(Error::Truncated { offset: c.pos() })?)?;
             let samples = raw.chunks_exact(2).map(|s| i16::from_le_bytes([s[0], s[1]])).collect();
             let ncycles = c.u32()?;
-            let rows = c.u32s(ncycles.checked_mul(2).ok_or(Error::Truncated { offset: c.at })?)?;
+            let rows = c.u32s(ncycles.checked_mul(2).ok_or(Error::Truncated { offset: c.pos() })?)?;
             let cycles = rows.chunks_exact(2).map(|r| f64::from(r[0]) + f64::from(r[1]) / 65536.0).collect();
-            if bytes.get(c.at..c.at + 4) == Some(b"WAVE") {
+            if bytes.get(c.pos()..c.pos() + 4) == Some(b"WAVE") {
                 return Err(Error::TwoWaveParts);
             }
             parts.push(Part { rpm, load, rate, samples, cycles });
@@ -139,8 +120,8 @@ pub fn parse(bytes: &[u8]) -> Result<Engine, Error> {
         let n = c.u32()?;
         (c.u32s(n)?, c.u32s(n)?)
     };
-    if c.at != bytes.len() {
-        return Err(Error::TrailingBytes { offset: c.at });
+    if c.pos() != bytes.len() {
+        return Err(Error::TrailingBytes { offset: c.pos() });
     }
     Ok(Engine { version, banks, table_a, table_b })
 }

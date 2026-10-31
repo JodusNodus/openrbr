@@ -10,27 +10,17 @@ use rbr_formats::{
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::Write as _;
 use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-fn collect_rbz(dir: &Path, out: &mut Vec<PathBuf>) {
-    for entry in std::fs::read_dir(dir).expect("read_dir") {
-        let path = entry.expect("dir entry").path();
-        if path.is_dir() {
-            collect_rbz(&path, out);
-        } else if path.extension().is_some_and(|e| e == "rbz") {
-            out.push(path);
-        }
-    }
-}
+mod common;
 
 #[test]
 fn all_retail_archives_read_with_valid_crc() {
-    let Ok(data_dir) = std::env::var("RBR_DATA") else {
-        eprintln!("skipping: RBR_DATA not set");
+    let Some(data_dir) = common::data_dir() else {
         return;
     };
     let mut files = Vec::new();
-    collect_rbz(Path::new(&data_dir), &mut files);
+    common::collect_rbz(&data_dir, &mut files);
     assert_eq!(files.len(), 93, "retail 1.0 ships 93 .rbz archives");
 
     let mut entries = 0;
@@ -55,56 +45,25 @@ fn all_retail_archives_read_with_valid_crc() {
 /// exactly one top-level list (see `notes/formats.md` "Physics scripts").
 #[test]
 fn all_retail_lsp_parse_to_one_list() {
-    let Ok(data_dir) = std::env::var("RBR_DATA") else {
-        eprintln!("skipping: RBR_DATA not set");
+    let Some(data_dir) = common::data_dir() else {
         return;
     };
     let mut files = 0;
     for archive_name in ["Root/physics.rbz", "Root/misc.rbz"] {
         let path = Path::new(&data_dir).join(archive_name);
-        let mut archive = rbz::open(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-        for i in 0..archive.len() {
-            let mut entry = archive.by_index(i).expect("entry");
-            if !entry.name().expect("ascii name").ends_with(".lsp") {
-                continue;
+        common::each_rbz_entry(&path, |entry_name, bytes| {
+            if !entry_name.ends_with(".lsp") {
+                return;
             }
-            let name = format!("{}!{}", path.display(), entry.name().expect("ascii name"));
-            let mut bytes = Vec::new();
-            entry.read_to_end(&mut bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
-            let text = std::str::from_utf8(&bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
+            let name = format!("{}!{entry_name}", path.display());
+            let text = std::str::from_utf8(bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
             let doc = lsp::parse(text).unwrap_or_else(|e| panic!("{name}: {e}"));
             assert_eq!(doc.len(), 1, "{name}: expected one top-level list");
             assert!(matches!(doc[0], lsp::Node::List(_)), "{name}: top level is a list");
             files += 1;
-        }
+        });
     }
     assert_eq!(files, 89, "retail 1.0 ships 89 .lsp files");
-}
-
-fn maps_dir() -> Option<PathBuf> {
-    let data_dir = std::env::var("RBR_DATA").ok()?;
-    let dir = Path::new(&data_dir).join("Maps");
-    if dir.is_dir() {
-        Some(dir)
-    } else {
-        eprintln!("skipping: {} not found", dir.display());
-        None
-    }
-}
-
-fn collect_ext(dir: &Path, ext: &str) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return out;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_file() && path.extension().is_some_and(|e| e.eq_ignore_ascii_case(ext)) {
-            out.push(path);
-        }
-    }
-    out.sort();
-    out
 }
 
 /// Parses every retail `Maps/*.mat` material grid.
@@ -113,11 +72,10 @@ fn collect_ext(dir: &Path, ext: &str) -> Vec<PathBuf> {
 /// one `.mat`; the `Clouds`/`skyboxes` skybox sets do not.
 #[test]
 fn all_retail_mat_parse() {
-    let Some(dir) = maps_dir() else {
-        eprintln!("skipping: RBR_DATA not set");
+    let Some(dir) = common::maps_dir() else {
         return;
     };
-    let files = collect_ext(&dir, "mat");
+    let files = common::collect_ext(&dir, "mat");
     assert_eq!(files.len(), 86, "retail ships 86 .mat files");
     let mut sparse_files = 0;
     assert!(!files.is_empty(), "expected Maps/*.mat in {}", dir.display());
@@ -170,11 +128,10 @@ fn all_retail_mat_parse() {
 /// `E09_LoadMaterials` first-match rule).
 #[test]
 fn all_retail_mat_select() {
-    let Some(dir) = maps_dir() else {
-        eprintln!("skipping: RBR_DATA not set");
+    let Some(dir) = common::maps_dir() else {
         return;
     };
-    let files = collect_ext(&dir, "mat");
+    let files = common::collect_ext(&dir, "mat");
     assert_eq!(files.len(), 86, "retail ships 86 .mat files");
     let wear = ["new", "normal", "worn"];
     let wetness = ["dry", "damp", "wet"];
@@ -206,11 +163,10 @@ fn all_retail_mat_select() {
 /// distinct root placeholder, and that every vertex index is in range.
 #[test]
 fn all_retail_col_parse() {
-    let Some(dir) = maps_dir() else {
-        eprintln!("skipping: RBR_DATA not set");
+    let Some(dir) = common::maps_dir() else {
         return;
     };
-    let files = collect_ext(&dir, "col");
+    let files = common::collect_ext(&dir, "col");
     assert_eq!(files.len(), 86, "retail 1.0 ships 86 Maps/*.col");
     let (mut cells, mut triangles, mut walls) = (0, 0, 0);
     for path in &files {
@@ -248,8 +204,7 @@ fn all_retail_col_parse() {
 /// slot, and every leaf carries its owner's slot.
 #[test]
 fn all_retail_col_relocate() {
-    let Some(dir) = maps_dir() else {
-        eprintln!("skipping: RBR_DATA not set");
+    let Some(dir) = common::maps_dir() else {
         return;
     };
     const B1: u32 = 0x0a00_0000;
@@ -299,7 +254,7 @@ fn all_retail_col_relocate() {
             }
         }
     }
-    let files = collect_ext(&dir, "col");
+    let files = common::collect_ext(&dir, "col");
     assert_eq!(files.len(), 86, "retail 1.0 ships 86 Maps/*.col");
     for path in &files {
         let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
@@ -396,11 +351,10 @@ fn all_retail_col_relocate() {
 /// one `.fnc`; the `Clouds`/`skyboxes` skybox sets do not.
 #[test]
 fn all_retail_fnc_parse() {
-    let Some(dir) = maps_dir() else {
-        eprintln!("skipping: RBR_DATA not set");
+    let Some(dir) = common::maps_dir() else {
         return;
     };
-    let files = collect_ext(&dir, "fnc");
+    let files = common::collect_ext(&dir, "fnc");
     assert_eq!(files.len(), 86, "retail ships 86 .fnc files");
     let mut zero_group_files = 0;
     let mut texture_counts = [0usize; 7];
@@ -439,11 +393,10 @@ fn all_retail_fnc_parse() {
 /// Parses every retail AnimData header, count table, and loader-read record.
 #[test]
 fn all_retail_dls_parse() {
-    let Some(dir) = maps_dir() else {
-        eprintln!("skipping: RBR_DATA not set");
+    let Some(dir) = common::maps_dir() else {
         return;
     };
-    let files = collect_ext(&dir, "dls");
+    let files = common::collect_ext(&dir, "dls");
     assert_eq!(files.len(), 86, "retail ships 86 .dls files");
     for path in &files {
         let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
@@ -504,11 +457,10 @@ fn all_retail_dls_parse() {
 /// mesh chunks dispatched by `FUN_0046ed20`.
 #[test]
 fn all_retail_trk_frame() {
-    let Some(dir) = maps_dir() else {
-        eprintln!("skipping: RBR_DATA not set");
+    let Some(dir) = common::maps_dir() else {
         return;
     };
-    let files = collect_ext(&dir, "trk");
+    let files = common::collect_ext(&dir, "trk");
     assert_eq!(files.len(), 88, "retail ships 88 .trk files");
     let mut empty_files = 0;
     assert!(!files.is_empty(), "expected Maps/*.trk in {}", dir.display());
@@ -556,11 +508,10 @@ fn all_retail_trk_frame() {
 /// every stored field exactly.
 #[test]
 fn all_retail_trk_stored_fields() {
-    let Some(dir) = maps_dir() else {
-        eprintln!("skipping: RBR_DATA not set");
+    let Some(dir) = common::maps_dir() else {
         return;
     };
-    let files = collect_ext(&dir, "trk");
+    let files = common::collect_ext(&dir, "trk");
     assert_eq!(files.len(), 88, "retail ships 88 .trk files");
     let (mut records, mut meshes, mut faces) = (0, 0, 0);
     for path in &files {
@@ -618,8 +569,7 @@ fn all_retail_trk_stored_fields() {
 /// `<car>_settings.ini`; shader settings are `<ShaderSettings>_clear.ini` and `_overcast.ini`.
 #[test]
 fn all_retail_cars_resolve_and_ini_parse() {
-    let Ok(data_dir) = std::env::var("RBR_DATA") else {
-        eprintln!("skipping: RBR_DATA not set");
+    let Some(data_dir) = common::data_dir() else {
         return;
     };
     let root = Path::new(&data_dir);
@@ -664,8 +614,7 @@ fn all_retail_cars_resolve_and_ini_parse() {
 /// `centre` and is `half_extent` either side (1,005 meshes, rbr-recomp `notes/formats/sgc.md`, section 5.2).
 #[test]
 fn all_retail_sgc_bounds_are_centre_and_half_extent() {
-    let Ok(data_dir) = std::env::var("RBR_DATA") else {
-        eprintln!("skipping: RBR_DATA not set");
+    let Some(data_dir) = common::data_dir() else {
         return;
     };
     let root = Path::new(&data_dir);
@@ -709,8 +658,7 @@ fn all_retail_sgc_bounds_are_centre_and_half_extent() {
 /// are rotated and do not coincide (rbr-recomp `notes/formats/sgc.md`, section 12).
 #[test]
 fn all_retail_cars_rear_doors_match_their_interior_twins() {
-    let Ok(data_dir) = std::env::var("RBR_DATA") else {
-        eprintln!("skipping: RBR_DATA not set");
+    let Some(data_dir) = common::data_dir() else {
         return;
     };
     let root = Path::new(&data_dir);
@@ -750,8 +698,7 @@ fn apply(m: &[[f32; 4]; 3], p: [f32; 3]) -> [f32; 3] {
 /// diffuse material of a mesh part resolves through `TextureSet0` to a DDS file that parses.
 #[test]
 fn all_retail_car_parts_and_diffuse_textures_resolve() {
-    let Ok(data_dir) = std::env::var("RBR_DATA") else {
-        eprintln!("skipping: RBR_DATA not set");
+    let Some(data_dir) = common::data_dir() else {
         return;
     };
     let root = Path::new(&data_dir);
@@ -819,8 +766,7 @@ fn all_retail_car_parts_and_diffuse_textures_resolve() {
 /// `physics.rbz`), and the test pins that set; see `notes/formats.md` "Cars".
 #[test]
 fn all_retail_chelalic_archives_parse() {
-    let Ok(data_dir) = std::env::var("RBR_DATA") else {
-        eprintln!("skipping: RBR_DATA not set");
+    let Some(data_dir) = common::data_dir() else {
         return;
     };
     let root = Path::new(&data_dir);
@@ -869,8 +815,7 @@ fn all_retail_chelalic_archives_parse() {
 /// `mg_zr` has 69 parts and is a short-file error. See `notes/formats.md` "Cars".
 #[test]
 fn all_retail_repair_ini_parse() {
-    let Ok(data_dir) = std::env::var("RBR_DATA") else {
-        eprintln!("skipping: RBR_DATA not set");
+    let Some(data_dir) = common::data_dir() else {
         return;
     };
     let path = Path::new(&data_dir).join("Root/physics.rbz");
@@ -969,11 +914,10 @@ fn check_surface_faces(name: &std::path::Display<'_>, faces: &[lbs::SurfaceFace<
 
 #[test]
 fn all_retail_lbs_parse() {
-    let Some(dir) = maps_dir() else {
-        eprintln!("skipping: RBR_DATA not set");
+    let Some(dir) = common::maps_dir() else {
         return;
     };
-    let files = collect_ext(&dir, "lbs");
+    let files = common::collect_ext(&dir, "lbs");
     assert_eq!(files.len(), 88, "retail 1.0 ships 88 Maps/*.lbs");
     let (mut geometry, mut blocks, mut draws, mut objects, mut items) = (0, 0, 0, 0, 0);
     let (mut clipping, mut water_items, mut texture_words) = (0, 0, 0);
@@ -1255,8 +1199,7 @@ fn all_retail_lbs_parse() {
 /// are triangle lists with indices shifted to the group's vertices. Runs only with `RBR_DATA`.
 #[test]
 fn lbs_track_10_o_writes_obj() {
-    let Some(dir) = maps_dir() else {
-        eprintln!("skipping: RBR_DATA not set");
+    let Some(dir) = common::maps_dir() else {
         return;
     };
     let bytes = std::fs::read(dir.join("track-10_O.lbs")).expect("track-10_O.lbs");
@@ -1330,8 +1273,7 @@ fn lbs_track_10_o_writes_obj() {
 /// separately. Layout: `notes/formats.md` "Stage geometry".
 #[test]
 fn all_retail_stage_textures_resolve() {
-    let Some(dir) = maps_dir() else {
-        eprintln!("skipping: RBR_DATA not set");
+    let Some(dir) = common::maps_dir() else {
         return;
     };
     let map_bytes = std::fs::read(dir.join("TextureFilenameMap.dat")).expect("TextureFilenameMap.dat");
@@ -1341,7 +1283,7 @@ fn all_retail_stage_textures_resolve() {
     // Every texture archive in Maps: lower-case file name to lower-case entry paths.
     let mut archives: std::collections::HashMap<String, std::collections::HashSet<String>> =
         std::collections::HashMap::new();
-    for path in collect_ext(&dir, "rbz") {
+    for path in common::collect_ext(&dir, "rbz") {
         let name = path.file_name().unwrap().to_string_lossy().to_ascii_lowercase();
         if !name.ends_with("_textures.rbz") {
             continue;
@@ -1365,7 +1307,7 @@ fn all_retail_stage_textures_resolve() {
 
     let (mut own, mut sibling, mut shadows, mut specular) = (0, 0, 0, 0);
     let mut stages = 0;
-    for lbs_path in collect_ext(&dir, "lbs") {
+    for lbs_path in common::collect_ext(&dir, "lbs") {
         let base = lbs_path.file_stem().unwrap().to_string_lossy().into_owned();
         // The sky sets (`Clouds`, `skyboxes`) load their textures through the sky loader, not here.
         if !base.starts_with("track-") {
@@ -1456,27 +1398,21 @@ fn all_retail_stage_textures_resolve() {
 /// parse as DXT1 or DXT3 with its mip chain filling the entry exactly. Layout: `notes/formats.md` "Textures and sprites".
 #[test]
 fn all_retail_dds_parse() {
-    let Some(dir) = maps_dir() else {
-        eprintln!("skipping: RBR_DATA not set");
+    let Some(dir) = common::maps_dir() else {
         return;
     };
     let (mut files, mut dxt1, mut dxt3, mut levels) = (0, 0, 0, 0);
-    for path in collect_ext(&dir, "rbz") {
+    for path in common::collect_ext(&dir, "rbz") {
         let name = path.file_name().unwrap().to_string_lossy().to_ascii_lowercase();
         if !name.ends_with("_textures.rbz") {
             continue;
         }
-        let mut zip = rbz::open(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-        for i in 0..zip.len() {
-            let mut entry = zip.by_index(i).expect("entry");
-            let name = entry.name().expect("ascii name").into_owned();
+        common::each_rbz_entry(&path, |name, bytes| {
             if !name.to_ascii_lowercase().ends_with(".dds") {
-                continue;
+                return;
             }
             let entry_name = format!("{}!{name}", path.display());
-            let mut bytes = Vec::new();
-            entry.read_to_end(&mut bytes).expect("read entry");
-            let dds = dds::parse(&bytes).unwrap_or_else(|e| panic!("{entry_name}: {e}"));
+            let dds = dds::parse(bytes).unwrap_or_else(|e| panic!("{entry_name}: {e}"));
             let chain = dds.levels();
             assert_eq!(chain.len(), dds.mip_count as usize, "{entry_name}: mip levels");
             assert_eq!(chain.iter().map(|l| l.data.len()).sum::<usize>(), dds.data.len(), "{entry_name}: mip chain");
@@ -1487,7 +1423,7 @@ fn all_retail_dds_parse() {
             }
             files += 1;
             levels += chain.len();
-        }
+        });
     }
     assert_eq!(files, 3485, "stage texture archives hold 3,485 DDS files");
     eprintln!("{files} DDS files: {dxt1} DXT1, {dxt3} DXT3, {levels} mip levels");
@@ -1608,8 +1544,7 @@ fn check_mesh(car: &str, mesh: &sgc::Mesh, sections: &[ini::Section]) {
 /// (`notes/formats.md` "Car models"). Runs only when `RBR_DATA` is set.
 #[test]
 fn all_retail_sgc_models_parse() {
-    let Ok(data_dir) = std::env::var("RBR_DATA") else {
-        eprintln!("skipping: RBR_DATA not set");
+    let Some(data_dir) = common::data_dir() else {
         return;
     };
     let root = Path::new(&data_dir);
@@ -1657,8 +1592,7 @@ fn all_retail_sgc_models_parse() {
 /// `/tmp/rbr-sgc/xsara-meshes.obj`.
 #[test]
 fn xsara_meshes_export_to_obj() {
-    let Ok(data_dir) = std::env::var("RBR_DATA") else {
-        eprintln!("skipping: RBR_DATA not set");
+    let Some(data_dir) = common::data_dir() else {
         return;
     };
     let root = Path::new(&data_dir);
@@ -1722,12 +1656,11 @@ fn xsara_meshes_export_to_obj() {
 /// in `Sgs::trailing` (`notes/formats.md` "Characters").
 #[test]
 fn all_retail_sgs_parse() {
-    let Ok(data_dir) = std::env::var("RBR_DATA") else {
-        eprintln!("skipping: RBR_DATA not set");
+    let Some(data_dir) = common::data_dir() else {
         return;
     };
     let dir = Path::new(&data_dir).join("SGS");
-    let mut files = collect_ext(&dir, "sgs");
+    let mut files = common::collect_ext(&dir, "sgs");
     files.sort();
     assert_eq!(files.len(), 153, "retail 1.0 ships 153 SGS/*.sgs");
     let (mut static_meshes, mut skinned) = (0, 0);
@@ -1870,12 +1803,11 @@ fn all_retail_sgs_parse() {
 /// is consumed exactly.
 #[test]
 fn all_retail_sga_parse() {
-    let Ok(data_dir) = std::env::var("RBR_DATA") else {
-        eprintln!("skipping: RBR_DATA not set");
+    let Some(data_dir) = common::data_dir() else {
         return;
     };
     let dir = Path::new(&data_dir).join("SGA");
-    let mut files = collect_ext(&dir, "sga");
+    let mut files = common::collect_ext(&dir, "sga");
     files.sort();
     assert_eq!(files.len(), 137, "retail 1.0 ships 137 SGA/*.sga");
     let (mut ranges, mut sampled, mut interleaved, mut single, mut position, mut scale, mut float, mut ik) =
@@ -1955,13 +1887,12 @@ fn all_retail_sga_parse() {
 /// Runs only when `RBR_DATA` is set (see above).
 #[test]
 fn stage_objects_reference_sgs_and_sga() {
-    let Ok(data_dir) = std::env::var("RBR_DATA") else {
-        eprintln!("skipping: RBR_DATA not set");
+    let Some(data_dir) = common::data_dir() else {
         return;
     };
     let data = Path::new(&data_dir);
     let mut animation = 0;
-    for path in collect_ext(&data.join("Maps"), "lbs") {
+    for path in common::collect_ext(&data.join("Maps"), "lbs") {
         let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         let lbs = lbs::parse(&bytes).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         for chunk in &lbs.chunks {
@@ -1989,8 +1920,7 @@ fn stage_objects_reference_sgs_and_sga() {
 /// Runs only when `RBR_DATA` is set (see above); the patch archive also when `RBR_PATCH` is.
 #[test]
 fn all_retail_scripts_parse() {
-    let Ok(data_dir) = std::env::var("RBR_DATA") else {
-        eprintln!("skipping: RBR_DATA not set");
+    let Some(data_dir) = common::data_dir() else {
         return;
     };
     let mut archives = vec![Path::new(&data_dir).join("Root/Scripts.rbz")];
@@ -2009,21 +1939,17 @@ fn all_retail_scripts_parse() {
             || file.contains("test_redbull_")
     };
     for path in &archives {
-        let mut archive = rbz::open(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         let mut scripts = 0;
-        for i in 0..archive.len() {
-            let mut entry = archive.by_index(i).expect("entry");
-            let name = format!("{}", entry.name().expect("ascii name"));
+        common::each_rbz_entry(path, |entry_name, bytes| {
+            let name = entry_name.to_owned();
             if !name.to_lowercase().ends_with(".lua") {
-                continue;
+                return;
             }
-            let mut bytes = Vec::new();
-            entry.read_to_end(&mut bytes).expect("read");
             let file = name.rsplit('/').next().unwrap_or(&name).to_lowercase();
-            let parsed = rbr_formats::lua::parse(&bytes);
+            let parsed = rbr_formats::lua::parse(bytes);
             if broken(&file) {
                 assert!(parsed.is_err(), "{name} parses");
-                continue;
+                return;
             }
             let chunk = parsed.unwrap_or_else(|e| panic!("{name}: {e}"));
             if file.starts_with("load_") {
@@ -2033,7 +1959,7 @@ fn all_retail_scripts_parse() {
                 assert!(defines(&chunk, "Update") && defines(&chunk, "Trigger"), "{name}: no Update/Trigger");
             }
             scripts += 1;
-        }
+        });
         assert!(scripts > 400, "{}: {scripts} scripts", path.display());
     }
 }
@@ -2043,13 +1969,12 @@ fn all_retail_scripts_parse() {
 /// Runs only when `RBR_DATA` is set (see above).
 #[test]
 fn stage_animation_triggers_name_animation_objects() {
-    let Ok(data_dir) = std::env::var("RBR_DATA") else {
-        eprintln!("skipping: RBR_DATA not set");
+    let Some(data_dir) = common::data_dir() else {
         return;
     };
     let maps = Path::new(&data_dir).join("Maps");
     let (mut stages, mut triggers) = (0, 0);
-    for path in collect_ext(&maps, "dls") {
+    for path in common::collect_ext(&maps, "dls") {
         let bytes = std::fs::read(&path).expect("read dls");
         let file = dls::parse(&bytes).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         let found =
@@ -2083,8 +2008,7 @@ fn stage_animation_triggers_name_animation_objects() {
 /// `Misc/times.ini` in `Root/misc.rbz`: 37 stages, each with two splits and a finish in increasing order.
 #[test]
 fn all_retail_times_ini_parse() {
-    let Ok(data_dir) = std::env::var("RBR_DATA") else {
-        eprintln!("skipping: RBR_DATA not set");
+    let Some(data_dir) = common::data_dir() else {
         return;
     };
     let stages = times::read(&Path::new(&data_dir).join("Root/misc.rbz")).expect("times.ini");
@@ -2105,13 +2029,12 @@ fn all_retail_times_ini_parse() {
 /// Runs only when `RBR_DATA` is set (see above).
 #[test]
 fn stage_plain_triggers_reach_the_bird_strikes() {
-    let Ok(data_dir) = std::env::var("RBR_DATA") else {
-        eprintln!("skipping: RBR_DATA not set");
+    let Some(data_dir) = common::data_dir() else {
         return;
     };
     let maps = Path::new(&data_dir).join("Maps");
     let (mut stages, mut keys, mut strikes) = (0, 0, 0);
-    for path in collect_ext(&maps, "dls") {
+    for path in common::collect_ext(&maps, "dls") {
         let bytes = std::fs::read(&path).expect("read dls");
         let file = dls::parse(&bytes).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         let found = rbr_formats::markers::plain_triggers(&file).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
@@ -2137,11 +2060,10 @@ fn stage_plain_triggers_reach_the_bird_strikes() {
 
 #[test]
 fn all_retail_tga_parse() {
-    let Ok(data_dir) = std::env::var("RBR_DATA") else {
-        eprintln!("skipping: RBR_DATA not set");
+    let Some(data_dir) = common::data_dir() else {
         return;
     };
-    let files = collect_ext(&Path::new(&data_dir).join("Textures"), "tga");
+    let files = common::collect_ext(&Path::new(&data_dir).join("Textures"), "tga");
     assert_eq!(files.len(), 5, "retail 1.0 ships 5 loose .tga files, all in Textures");
     for path in &files {
         let bytes = std::fs::read(path).expect("read tga");

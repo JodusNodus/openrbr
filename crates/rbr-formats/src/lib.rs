@@ -70,6 +70,7 @@ pub mod ini;
 pub mod installshield;
 pub mod iso9660;
 pub mod lbs;
+mod le;
 pub mod lsp;
 pub mod lsp_keys;
 pub mod lsp_keys_ngp;

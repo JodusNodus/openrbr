@@ -27,6 +27,7 @@
 //! append a `CMAP` block there (`notes/formats.md` "RSF stages"). All length
 //! checks are bounds-checked; counts are never used for unchecked allocation.
 
+use crate::le::{self, Truncated};
 use std::fmt::{self, Display, Formatter};
 
 /// One 264-byte material run: grid dimensions plus the 16x16 class bytes.
@@ -94,9 +95,7 @@ pub enum Error {
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Error::Truncated { offset, needed, len } => {
-                write!(f, "truncated at offset {offset}: need {needed} bytes but file is {len} bytes")
-            }
+            Error::Truncated { offset, needed, len } => le::fmt_truncated(f, *offset, *needed, *len),
             Error::MissingNul { offset } => {
                 write!(f, "missing NUL terminator for name at offset {offset}")
             }
@@ -109,14 +108,10 @@ impl Display for Error {
 
 impl std::error::Error for Error {}
 
-fn read_u32_le(bytes: &[u8], offset: usize) -> Result<u32, Error> {
-    let end = offset.checked_add(4).ok_or(Error::Truncated { offset, needed: 4, len: bytes.len() })?;
-    if end > bytes.len() {
-        return Err(Error::Truncated { offset, needed: 4, len: bytes.len() });
+impl From<Truncated> for Error {
+    fn from(t: Truncated) -> Self {
+        Error::Truncated { offset: t.offset, needed: t.needed, len: t.len }
     }
-    let mut buf = [0u8; 4];
-    buf.copy_from_slice(&bytes[offset..end]);
-    Ok(u32::from_le_bytes(buf))
 }
 
 /// Parses a whole `.mat` buffer.
@@ -124,7 +119,7 @@ pub fn parse(bytes: &[u8]) -> Result<MatFile, Error> {
     if bytes.len() < 4 {
         return Err(Error::Truncated { offset: 0, needed: 4, len: bytes.len() });
     }
-    let entry_count = read_u32_le(bytes, 0)?;
+    let entry_count = le::read_u32_le(bytes, 0)?;
     let mut offset = 4usize;
     let mut entries = Vec::new();
 
@@ -135,8 +130,7 @@ pub fn parse(bytes: &[u8]) -> Result<MatFile, Error> {
         let name = std::str::from_utf8(name_bytes).map_err(|_| Error::InvalidName { offset: name_start })?.to_owned();
         offset += nul + 1;
 
-        let run_count =
-            read_u32_le(bytes, offset).map_err(|_| Error::Truncated { offset, needed: 4, len: bytes.len() })? as usize;
+        let run_count = le::read_u32_le(bytes, offset)? as usize;
         offset += 4;
 
         let mut runs = Vec::new();
@@ -149,8 +143,8 @@ pub fn parse(bytes: &[u8]) -> Result<MatFile, Error> {
             if end > bytes.len() {
                 return Err(Error::Truncated { offset, needed: RECORD_LEN, len: bytes.len() });
             }
-            let width = read_u32_le(bytes, offset)?;
-            let height = read_u32_le(bytes, offset + 4)?;
+            let width = le::read_u32_le(bytes, offset)?;
+            let height = le::read_u32_le(bytes, offset + 4)?;
             let mut cells = [0u8; GRID_CELLS];
             cells.copy_from_slice(&bytes[offset + 8..offset + RECORD_LEN]);
             runs.push(MatRun { width, height, cells });

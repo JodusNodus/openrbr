@@ -709,6 +709,14 @@ impl Display for Error {
 
 impl std::error::Error for Error {}
 
+/// Builds [`Error::Truncated`]. The reader reports the bytes left in scope
+/// as `len` (see `le::Reader::within`), never the file length.
+impl From<crate::le::Truncated> for Error {
+    fn from(t: crate::le::Truncated) -> Self {
+        Error::Truncated { offset: t.offset, needed: t.needed, len: t.len }
+    }
+}
+
 fn read_vec3(b: &[u8]) -> [f32; 3] {
     let f = |at: usize| f32::from_bits(u32::from_le_bytes([b[at], b[at + 1], b[at + 2], b[at + 3]]));
     [f(0), f(4), f(8)]

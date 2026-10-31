@@ -5,10 +5,11 @@
 //! [`lsp::parse`] and compares. Runs only when `RBR_DATA` (the install tree) and `RBR_LSP_TOKENS` (the harness's
 //! output) are set.
 
-use rbr_formats::{lsp, rbz};
+use rbr_formats::lsp;
 use std::collections::BTreeMap;
-use std::io::Read;
 use std::path::Path;
+
+mod common;
 
 use lsp::Node;
 
@@ -40,17 +41,12 @@ fn retail_lsp_matches_the_game_tokenizer() {
     let mut files = 0;
     for archive_name in ["Root/physics.rbz", "Root/misc.rbz"] {
         let path = Path::new(&data_dir).join(archive_name);
-        let mut archive = rbz::open(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-        for i in 0..archive.len() {
-            let mut entry = archive.by_index(i).expect("entry");
-            let entry_name = entry.name().expect("ascii name").into_owned();
+        common::each_rbz_entry(&path, |entry_name, bytes| {
             if !entry_name.ends_with(".lsp") {
-                continue;
+                return;
             }
             let name = format!("{archive_name}!{entry_name}");
-            let mut bytes = Vec::new();
-            entry.read_to_end(&mut bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
-            let text = std::str::from_utf8(&bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
+            let text = std::str::from_utf8(bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
             let doc = lsp::parse(text).unwrap_or_else(|e| panic!("{name}: {e}"));
             // The game reads the first list only: its tokenizer strips the opening parenthesis and stops at the
             // matching one.
@@ -74,7 +70,7 @@ fn retail_lsp_matches_the_game_tokenizer() {
                     &expected[from..(at + 60).min(expected.len())]
                 ));
             }
-        }
+        });
     }
     assert_eq!(files, game.len(), "files in {tokens} not in the archives");
     assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
