@@ -464,19 +464,17 @@ mod tests {
         parse(argv.iter().map(|s| s.to_string()))
     }
 
-    /// A good command line's checks on the `Args`, or a bad one's exact error.
-    enum Expect {
-        Good(fn(&Args)),
-        Bad(&'static str),
+    /// `run` of a whitespace-separated command line (no value holds a space).
+    fn run_str(argv: &str, data: Option<&str>) -> Result<Args, String> {
+        run(&argv.split_whitespace().collect::<Vec<_>>(), data, None)
     }
 
-    use Expect::{Bad, Good};
-
-    struct Case {
-        argv: &'static [&'static str],
-        data: Option<&'static str>,
-        expect: Expect,
-    }
+    /// The modes' bases: the recording's, the boot's and the live run's.
+    const REC: &str = "--recording R --stage track-54_E --snapshot S --data D";
+    /// The boot reading the recording (twin runs, the events run).
+    const BOOT_REC: &str = "--boot --recording R --stage track-54_E --data D --ngp-physics N";
+    const BOOT: &str = "--boot --stage track-54_E --data D --ngp-physics N --autopilot OUT";
+    const LIVE: &str = "--live --stage track-54_E --snapshot S --data D";
 
     fn recording(a: &Args) {
         assert_eq!(a.recording, Some(PathBuf::from("R")));
@@ -504,190 +502,36 @@ mod tests {
         assert_eq!(a.snapshots, ["S"]);
     }
 
-    /// Every flag: a good value's `Args`, and bad values' and broken combinations' exact errors.
+    /// A good command line and its checks on the `Args`.
+    type Good = (String, fn(&Args));
+
+    /// Every flag's good values, off the mode's base.
     #[test]
-    fn every_flag_parses_as_before() {
-        let cases = [
-            // The three modes.
-            Case {
-                argv: &["--recording", "R", "--stage", "track-54_E", "--snapshot", "S", "--data", "D"],
-                data: None,
-                expect: Good(recording),
-            },
-            Case {
-                argv: &["--boot", "--stage", "track-54_E", "--data", "D", "--ngp-physics", "N", "--autopilot", "OUT"],
-                data: None,
-                expect: Good(boot),
-            },
-            Case {
-                argv: &["--live", "--stage", "track-54_E", "--snapshot", "S", "--data", "D"],
-                data: None,
-                expect: Good(live),
-            },
-            // `--data` from the environment.
-            Case {
-                argv: &["--recording", "R", "--stage", "track-54_E", "--snapshot", "S"],
-                data: Some("ENV"),
-                expect: Good(|a| assert_eq!(a.data, PathBuf::from("ENV"))),
-            },
-            // Value flags' good values.
-            Case {
-                argv: &[
-                    "--recording",
-                    "R",
-                    "--stage",
-                    "track-54_E",
-                    "--snapshot",
-                    "S",
-                    "--data",
-                    "D",
-                    "--autopilot",
-                    "OUT",
-                ],
-                data: None,
-                expect: Good(|a| assert_eq!(a.autopilot, Some(PathBuf::from("OUT")))),
-            },
-            Case {
-                argv: &["--live", "--stage", "track-54_E", "--snapshot", "S", "--data", "D", "--pilot", "autopilot"],
-                data: None,
-                expect: Good(|a| assert_eq!(a.pilot.as_deref(), Some("autopilot"))),
-            },
-            Case {
-                argv: &[
-                    "--recording",
-                    "R",
-                    "--stage",
-                    "track-54_E",
-                    "--snapshot",
-                    "S",
-                    "--data",
-                    "D",
-                    "--top-speed",
-                    "12.5",
-                ],
-                data: None,
-                expect: Good(|a| assert_eq!(a.top_speed, Some(12.5))),
-            },
-            Case {
-                argv: &[
-                    "--recording",
-                    "R",
-                    "--stage",
-                    "track-54_E",
-                    "--snapshot",
-                    "S",
-                    "--data",
-                    "D",
-                    "--autopilot",
-                    "OUT",
-                    "--aim",
-                    "1,2",
-                ],
-                data: None,
-                expect: Good(|a| assert_eq!(a.aim, Some(autopilot::Aim { at: [1.0, 2.0], coast: 0 }))),
-            },
-            Case {
-                argv: &[
-                    "--recording",
-                    "R",
-                    "--stage",
-                    "track-54_E",
-                    "--snapshot",
-                    "S",
-                    "--data",
-                    "D",
-                    "--autopilot",
-                    "OUT",
-                    "--aim",
-                    "1,2,7",
-                ],
-                data: None,
-                expect: Good(|a| assert_eq!(a.aim, Some(autopilot::Aim { at: [1.0, 2.0], coast: 7 }))),
-            },
-            Case {
-                argv: &[
-                    "--live",
-                    "--stage",
-                    "track-54_E",
-                    "--snapshot",
-                    "S",
-                    "--data",
-                    "D",
-                    "--replay",
-                    "F",
-                    "--replay-pace",
-                    "free",
-                ],
-                data: None,
-                expect: Good(|a| assert_eq!(a.replay_pace, live::Pace::Free)),
-            },
-            Case {
-                argv: &[
-                    "--boot",
-                    "--stage",
-                    "track-54_E",
-                    "--data",
-                    "D",
-                    "--ngp-physics",
-                    "N",
-                    "--autopilot",
-                    "OUT",
-                    "--dispatch",
-                    "pure",
-                ],
-                data: None,
-                expect: Good(|a| assert!(!a.direct)),
-            },
-            Case {
-                argv: &[
-                    "--boot",
-                    "--stage",
-                    "track-54_E",
-                    "--data",
-                    "D",
-                    "--ngp-physics",
-                    "N",
-                    "--autopilot",
-                    "OUT",
-                    "--car",
-                    "5",
-                ],
-                data: None,
-                expect: Good(|a| assert_eq!(a.car, Some(5))),
-            },
-            Case {
-                argv: &["--recording", "R", "--stage", "track-54_E", "--snapshot", "S", "--data", "D", "--steps", "0"],
-                data: None,
-                expect: Good(|a| assert_eq!(a.steps, 0)),
-            },
-            Case {
-                argv: &[
-                    "--boot",
-                    "--stage",
-                    "track-54_E",
-                    "--data",
-                    "D",
-                    "--ngp-physics",
-                    "N",
-                    "--autopilot",
-                    "OUT",
-                    "--weather",
-                    "2",
-                    "--tyre",
-                    "7",
-                    "--wear",
-                    "worn",
-                    "--wetness",
-                    "wet",
-                    "--season-row",
-                    "3",
-                    "--rand-seed",
-                    "9",
-                    "--setup",
-                    "SET",
-                ],
-                data: None,
-                expect: Good(|a| {
+    fn good_flags_parse_as_before() {
+        let good: Vec<Good> = vec![
+            (REC.into(), recording),
+            (BOOT.into(), boot),
+            (LIVE.into(), live),
+            (format!("{REC} --autopilot OUT"), |a| assert_eq!(a.autopilot, Some(PathBuf::from("OUT")))),
+            (format!("{LIVE} --pilot autopilot"), |a| assert_eq!(a.pilot.as_deref(), Some("autopilot"))),
+            (format!("{REC} --top-speed 12.5"), |a| assert_eq!(a.top_speed, Some(12.5))),
+            (format!("{REC} --autopilot OUT --aim 1,2"), |a| {
+                assert_eq!(a.aim, Some(autopilot::Aim { at: [1.0, 2.0], coast: 0 }))
+            }),
+            (format!("{REC} --autopilot OUT --aim 1,2,7"), |a| {
+                assert_eq!(a.aim, Some(autopilot::Aim { at: [1.0, 2.0], coast: 7 }))
+            }),
+            (format!("{LIVE} --replay F --replay-pace free"), |a| {
+                assert_eq!(a.replay_pace, live::Pace::Free)
+            }),
+            (format!("{BOOT} --dispatch pure"), |a| assert!(!a.direct)),
+            (format!("{BOOT} --car 5"), |a| assert_eq!(a.car, Some(5))),
+            (format!("{REC} --steps 0"), |a| assert_eq!(a.steps, 0)),
+            (
+                format!(
+                    "{BOOT} --weather 2 --tyre 7 --wear worn --wetness wet --season-row 3 --rand-seed 9 --setup SET"
+                ),
+                |a| {
                     assert_eq!(a.weather, Some(2));
                     assert_eq!(a.tyre, Some(7));
                     assert_eq!(a.wear, Some(2));
@@ -695,282 +539,72 @@ mod tests {
                     assert_eq!(a.season_row, Some(3));
                     assert_eq!(a.rand_seed, Some(9));
                     assert_eq!(a.setup, Some(PathBuf::from("SET")));
-                }),
-            },
-            Case {
-                argv: &[
-                    "--boot",
-                    "--stage",
-                    "track-54_E",
-                    "--data",
-                    "D",
-                    "--ngp-physics",
-                    "N",
-                    "--autopilot",
-                    "OUT",
-                    "--damage",
-                    "realistic",
-                ],
-                data: None,
-                expect: Good(|a| assert_eq!(a.damage, Some(DamageLevel::Realistic))),
-            },
-            Case {
-                argv: &[
-                    "--boot",
-                    "--stage",
-                    "track-54_E",
-                    "--data",
-                    "D",
-                    "--ngp-physics",
-                    "N",
-                    "--autopilot",
-                    "OUT",
-                    "--championship",
-                    "champion",
-                ],
-                data: None,
-                expect: Good(|a| {
-                    assert!(matches!(
-                        a.championship,
-                        Some(c) if c.skill == Skill::Champion && c.damage == DamageLevel::Realistic
-                    ))
-                }),
-            },
-            Case {
-                argv: &[
-                    "--boot",
-                    "--stage",
-                    "track-54_E",
-                    "--data",
-                    "D",
-                    "--ngp-physics",
-                    "N",
-                    "--autopilot",
-                    "OUT",
-                    "--championship",
-                    "rookie",
-                    "--championship-damage",
-                    "safe",
-                    "--championship-false-starts",
-                    "2",
-                    "--rally-next",
-                    "service",
-                ],
-                data: None,
-                expect: Good(|a| {
+                },
+            ),
+            (format!("{BOOT} --damage realistic"), |a| assert_eq!(a.damage, Some(DamageLevel::Realistic))),
+            (format!("{BOOT} --championship champion"), |a| {
+                assert!(matches!(
+                    a.championship,
+                    Some(c) if c.skill == Skill::Champion && c.damage == DamageLevel::Realistic
+                ))
+            }),
+            (
+                format!(
+                    "{BOOT} --championship rookie --championship-damage safe --championship-false-starts 2 --rally-next service"
+                ),
+                |a| {
                     assert!(matches!(
                         a.championship,
                         Some(c) if c.skill == Skill::Rookie && c.damage == DamageLevel::Safe
                     ));
                     assert_eq!(a.false_starts, 2);
                     assert_eq!(a.rally_next, Some(live::RallyNext::Service));
-                }),
-            },
-            Case {
-                argv: &[
-                    "--boot",
-                    "--stage",
-                    "track-54_E",
-                    "--data",
-                    "D",
-                    "--ngp-physics",
-                    "N",
-                    "--autopilot",
-                    "OUT",
-                    "--auto-gears",
-                    "on",
-                    "--gear-guard",
-                    "off",
-                    "--neutral-lock",
-                    "on",
-                    "--clutch-help",
-                    "off",
-                ],
-                data: None,
-                expect: Good(|a| {
+                },
+            ),
+            (
+                format!("{BOOT} --auto-gears on --gear-guard off --neutral-lock on --clutch-help off"),
+                |a| {
                     assert_eq!(a.auto_gears, Some(true));
                     assert!(!a.aids.gear_guard && a.aids.neutral_lock && !a.aids.clutch_help);
-                }),
-            },
-            Case {
-                argv: &[
-                    "--live",
-                    "--stage",
-                    "track-54_E",
-                    "--snapshot",
-                    "S",
-                    "--data",
-                    "D",
-                    "--callout-distance",
-                    "150",
-                    "--marker-threshold",
-                    "0.5",
-                ],
-                data: None,
-                expect: Good(|a| {
-                    assert_eq!(a.marker_settings.callout_distance, 150.0);
-                    assert_eq!(a.marker_settings.marker_threshold, 0.5);
-                }),
-            },
-            Case {
-                argv: &[
-                    "--boot",
-                    "--recording",
-                    "R",
-                    "--stage",
-                    "track-54_E",
-                    "--data",
-                    "D",
-                    "--ngp-physics",
-                    "N",
-                    "--twin",
-                    "mem",
-                ],
-                data: None,
-                expect: Good(|a| assert_eq!(a.twin, Some(crate::twin::Kind::Mem))),
-            },
-            Case {
-                argv: &[
-                    "--boot",
-                    "--recording",
-                    "R",
-                    "--stage",
-                    "track-54_E",
-                    "--data",
-                    "D",
-                    "--ngp-physics",
-                    "N",
-                    "--twin",
-                    "mem-direct",
-                ],
-                data: None,
-                expect: Good(|a| assert_eq!(a.twin, Some(crate::twin::Kind::MemDirect))),
-            },
-            Case {
-                argv: &[
-                    "--boot",
-                    "--autopilot",
-                    "OUT",
-                    "--stage",
-                    "track-54_E",
-                    "--data",
-                    "D",
-                    "--ngp-physics",
-                    "N",
-                    "--damage-in",
-                    "IN",
-                    "--damage-out",
-                    "OUT2",
-                    "--result-out",
-                    "RES",
-                ],
-                data: None,
-                expect: Good(|a| {
-                    assert_eq!(a.damage_in, Some(PathBuf::from("IN")));
-                    assert_eq!(a.damage_out, Some(PathBuf::from("OUT2")));
-                    assert_eq!(a.result_out, Some(PathBuf::from("RES")));
-                }),
-            },
-            Case {
-                argv: &[
-                    "--recording",
-                    "R",
-                    "--stage",
-                    "track-54_E",
-                    "--snapshot",
-                    "S",
-                    "--data",
-                    "D",
-                    "--recorded-payload",
-                    "--extra-payloads",
-                    "EP",
-                    "--wall-clock",
-                    "WC",
-                    "--trace-out",
-                    "T",
-                    "--ffb-settings",
-                    "1,0.5,0,0.1,0.2",
-                ],
-                data: None,
-                expect: Good(|a| {
+                },
+            ),
+            (format!("{LIVE} --callout-distance 150 --marker-threshold 0.5"), |a| {
+                assert_eq!(a.marker_settings.callout_distance, 150.0);
+                assert_eq!(a.marker_settings.marker_threshold, 0.5);
+            }),
+            (format!("{BOOT_REC} --twin mem"), |a| assert_eq!(a.twin, Some(crate::twin::Kind::Mem))),
+            (format!("{BOOT_REC} --twin mem-direct"), |a| {
+                assert_eq!(a.twin, Some(crate::twin::Kind::MemDirect))
+            }),
+            (format!("{BOOT} --damage-in IN --damage-out OUT2 --result-out RES"), |a| {
+                assert_eq!(a.damage_in, Some(PathBuf::from("IN")));
+                assert_eq!(a.damage_out, Some(PathBuf::from("OUT2")));
+                assert_eq!(a.result_out, Some(PathBuf::from("RES")));
+            }),
+            (
+                format!(
+                    "{REC} --recorded-payload --extra-payloads EP --wall-clock WC --trace-out T --ffb-settings 1,0.5,0,0.1,0.2"
+                ),
+                |a| {
                     assert!(a.recorded_payload);
                     assert_eq!(a.extra_payloads, Some(PathBuf::from("EP")));
                     assert_eq!(a.wall_clock, Some(PathBuf::from("WC")));
                     assert_eq!(a.trace_out, Some(PathBuf::from("T")));
                     assert!(a.ffb_settings.enabled && !a.ffb_settings.inverse);
                     assert_eq!(a.ffb_settings.strength, 0.5);
-                }),
-            },
-            Case {
-                argv: &[
-                    "--boot",
-                    "--recording",
-                    "R",
-                    "--stage",
-                    "track-54_E",
-                    "--data",
-                    "D",
-                    "--ngp-physics",
-                    "N",
-                    "--events-out",
-                    "E",
-                ],
-                data: None,
-                expect: Good(|a| assert_eq!(a.events_out, Some(PathBuf::from("E")))),
-            },
-            Case {
-                argv: &["--live", "--stage", "track-54_E", "--snapshot", "S", "--data", "D", "--frames", "F"],
-                data: None,
-                expect: Good(|a| assert_eq!(a.frames.as_deref(), Some("F"))),
-            },
-            Case {
-                argv: &[
-                    "--live",
-                    "--stage",
-                    "track-54_E",
-                    "--snapshot",
-                    "S",
-                    "--data",
-                    "D",
-                    "--frames-out",
-                    "F",
-                    "--start-time",
-                    "9:36",
-                ],
-                data: None,
-                expect: Good(|a| {
-                    assert_eq!(a.frames_out, Some(PathBuf::from("F")));
-                    assert_eq!(a.start_time, Some(34560.0));
-                }),
-            },
-            Case {
-                argv: &[
-                    "--boot",
-                    "--stage",
-                    "track-54_E",
-                    "--data",
-                    "D",
-                    "--ngp-physics",
-                    "N",
-                    "--autopilot",
-                    "OUT",
-                    "--rsf-car",
-                    "PACK",
-                    "--ffb-sensitivity",
-                    "90,80,70",
-                    "--head-gasket-durability",
-                    "3",
-                    "--saves",
-                    "SV",
-                    "--profile",
-                    "P",
-                    "--read-set",
-                    "RS",
-                    "--dump-image",
-                    "IMG",
-                ],
-                data: None,
-                expect: Good(|a| {
+                },
+            ),
+            (format!("{BOOT_REC} --events-out E"), |a| assert_eq!(a.events_out, Some(PathBuf::from("E")))),
+            (format!("{LIVE} --frames F"), |a| assert_eq!(a.frames.as_deref(), Some("F"))),
+            (format!("{LIVE} --frames-out F --start-time 9:36"), |a| {
+                assert_eq!(a.frames_out, Some(PathBuf::from("F")));
+                assert_eq!(a.start_time, Some(34560.0));
+            }),
+            (
+                format!(
+                    "{BOOT} --rsf-car PACK --ffb-sensitivity 90,80,70 --head-gasket-durability 3 --saves SV --profile P --read-set RS --dump-image IMG"
+                ),
+                |a| {
                     assert_eq!(a.rsf_car.as_deref(), Some("PACK"));
                     assert_eq!(a.ffb_sensitivity, Some([90, 80, 70]));
                     assert_eq!(a.head_gasket_durability, Some(3));
@@ -978,835 +612,120 @@ mod tests {
                     assert_eq!(a.profile.as_deref(), Some("P"));
                     assert_eq!(a.read_set, Some(PathBuf::from("RS")));
                     assert_eq!(a.dump_image, Some(PathBuf::from("IMG")));
-                }),
-            },
-            // Bad values' errors.
-            Case { argv: &["--car"], data: None, expect: Bad("--car: no value") },
-            Case {
-                argv: &[
-                    "--recording",
-                    "R",
-                    "--stage",
-                    "track-54_E",
-                    "--snapshot",
-                    "S",
-                    "--data",
-                    "D",
-                    "--top-speed",
-                    "fast",
-                ],
-                data: None,
-                expect: Bad("--top-speed fast"),
-            },
-            Case {
-                argv: &["--recording", "R", "--stage", "track-54_E", "--snapshot", "S", "--data", "D", "--steps", "x"],
-                data: None,
-                expect: Bad("--steps x"),
-            },
-            Case {
-                argv: &["--recording", "R", "--stage", "track-54_E", "--snapshot", "S", "--data", "D", "--car", "x"],
-                data: None,
-                expect: Bad("--car x"),
-            },
-            Case {
-                argv: &[
-                    "--boot",
-                    "--stage",
-                    "track-54_E",
-                    "--data",
-                    "D",
-                    "--ngp-physics",
-                    "N",
-                    "--autopilot",
-                    "OUT",
-                    "--weather",
-                    "x",
-                ],
-                data: None,
-                expect: Bad("--weather x"),
-            },
-            Case {
-                argv: &[
-                    "--boot",
-                    "--stage",
-                    "track-54_E",
-                    "--data",
-                    "D",
-                    "--ngp-physics",
-                    "N",
-                    "--autopilot",
-                    "OUT",
-                    "--tyre",
-                    "x",
-                ],
-                data: None,
-                expect: Bad("--tyre x"),
-            },
-            Case {
-                argv: &[
-                    "--boot",
-                    "--stage",
-                    "track-54_E",
-                    "--data",
-                    "D",
-                    "--ngp-physics",
-                    "N",
-                    "--autopilot",
-                    "OUT",
-                    "--season-row",
-                    "x",
-                ],
-                data: None,
-                expect: Bad("--season-row x"),
-            },
-            Case {
-                argv: &[
-                    "--boot",
-                    "--stage",
-                    "track-54_E",
-                    "--data",
-                    "D",
-                    "--ngp-physics",
-                    "N",
-                    "--autopilot",
-                    "OUT",
-                    "--rand-seed",
-                    "x",
-                ],
-                data: None,
-                expect: Bad("--rand-seed x"),
-            },
-            Case {
-                argv: &[
-                    "--recording",
-                    "R",
-                    "--stage",
-                    "track-54_E",
-                    "--snapshot",
-                    "S",
-                    "--data",
-                    "D",
-                    "--autopilot",
-                    "OUT",
-                    "--aim",
-                    "1",
-                ],
-                data: None,
-                expect: Bad("--aim 1: want X,Y[,COAST]"),
-            },
-            Case {
-                argv: &[
-                    "--recording",
-                    "R",
-                    "--stage",
-                    "track-54_E",
-                    "--snapshot",
-                    "S",
-                    "--data",
-                    "D",
-                    "--autopilot",
-                    "OUT",
-                    "--aim",
-                    "1,2,x",
-                ],
-                data: None,
-                expect: Bad("--aim 1,2,x"),
-            },
-            Case {
-                argv: &["--live", "--stage", "track-54_E", "--snapshot", "S", "--data", "D", "--callout-distance", "x"],
-                data: None,
-                expect: Bad("--callout-distance x"),
-            },
-            Case {
-                argv: &["--live", "--stage", "track-54_E", "--snapshot", "S", "--data", "D", "--marker-threshold", "x"],
-                data: None,
-                expect: Bad("--marker-threshold x"),
-            },
-            Case {
-                argv: &["--recording", "R", "--rsf-stage", "x", "--snapshot", "S", "--data", "D"],
-                data: None,
-                expect: Bad("--rsf-stage x"),
-            },
-            Case {
-                argv: &["--recording", "R", "--rsf-stage", "101", "--snapshot", "S", "--data", "D"],
-                data: None,
-                expect: Bad("--rsf-stage needs --rsf-root or RBR_RSF"),
-            },
-            Case {
-                argv: &[
-                    "--boot",
-                    "--recording",
-                    "R",
-                    "--stage",
-                    "track-54_E",
-                    "--data",
-                    "D",
-                    "--ngp-physics",
-                    "N",
-                    "--twin",
-                    "both",
-                ],
-                data: None,
-                expect: Bad("--twin both: mem or mem-direct"),
-            },
-            Case {
-                argv: &[
-                    "--live",
-                    "--stage",
-                    "track-54_E",
-                    "--snapshot",
-                    "S",
-                    "--data",
-                    "D",
-                    "--replay",
-                    "F",
-                    "--replay-pace",
-                    "fast",
-                ],
-                data: None,
-                expect: Bad("--replay-pace fast: clock or free"),
-            },
-            Case {
-                argv: &[
-                    "--boot",
-                    "--stage",
-                    "track-54_E",
-                    "--data",
-                    "D",
-                    "--ngp-physics",
-                    "N",
-                    "--autopilot",
-                    "OUT",
-                    "--dispatch",
-                    "warp",
-                ],
-                data: None,
-                expect: Bad("--dispatch warp: pure or direct"),
-            },
-            Case {
-                argv: &[
-                    "--boot",
-                    "--stage",
-                    "track-54_E",
-                    "--data",
-                    "D",
-                    "--ngp-physics",
-                    "N",
-                    "--autopilot",
-                    "OUT",
-                    "--wear",
-                    "muddy",
-                ],
-                data: None,
-                expect: Bad("--wear muddy: new, normal or worn"),
-            },
-            Case {
-                argv: &[
-                    "--boot",
-                    "--stage",
-                    "track-54_E",
-                    "--data",
-                    "D",
-                    "--ngp-physics",
-                    "N",
-                    "--autopilot",
-                    "OUT",
-                    "--wetness",
-                    "humid",
-                ],
-                data: None,
-                expect: Bad("--wetness humid: dry, damp or wet"),
-            },
-            Case {
-                argv: &[
-                    "--boot",
-                    "--stage",
-                    "track-54_E",
-                    "--data",
-                    "D",
-                    "--ngp-physics",
-                    "N",
-                    "--autopilot",
-                    "OUT",
-                    "--damage",
-                    "flat",
-                ],
-                data: None,
-                expect: Bad("--damage flat: off, safe, reduced or realistic"),
-            },
-            Case {
-                argv: &[
-                    "--boot",
-                    "--stage",
-                    "track-54_E",
-                    "--data",
-                    "D",
-                    "--ngp-physics",
-                    "N",
-                    "--autopilot",
-                    "OUT",
-                    "--championship",
-                    "easy",
-                ],
-                data: None,
-                expect: Bad("--championship easy: rookie, professional or champion"),
-            },
-            Case {
-                argv: &[
-                    "--boot",
-                    "--stage",
-                    "track-54_E",
-                    "--data",
-                    "D",
-                    "--ngp-physics",
-                    "N",
-                    "--autopilot",
-                    "OUT",
-                    "--championship",
-                    "rookie",
-                    "--championship-damage",
-                    "flat",
-                ],
-                data: None,
-                expect: Bad("--championship-damage flat: off, safe, reduced or realistic"),
-            },
-            Case {
-                argv: &[
-                    "--boot",
-                    "--stage",
-                    "track-54_E",
-                    "--data",
-                    "D",
-                    "--ngp-physics",
-                    "N",
-                    "--autopilot",
-                    "OUT",
-                    "--championship-false-starts",
-                    "x",
-                ],
-                data: None,
-                expect: Bad("--championship-false-starts x: invalid digit found in string"),
-            },
-            Case {
-                argv: &[
-                    "--boot",
-                    "--stage",
-                    "track-54_E",
-                    "--data",
-                    "D",
-                    "--ngp-physics",
-                    "N",
-                    "--autopilot",
-                    "OUT",
-                    "--championship",
-                    "rookie",
-                    "--rally-next",
-                    "soon",
-                ],
-                data: None,
-                expect: Bad("--rally-next soon: stage, service or end"),
-            },
-            Case {
-                argv: &[
-                    "--boot",
-                    "--stage",
-                    "track-54_E",
-                    "--data",
-                    "D",
-                    "--ngp-physics",
-                    "N",
-                    "--autopilot",
-                    "OUT",
-                    "--auto-gears",
-                    "maybe",
-                ],
-                data: None,
-                expect: Bad("--auto-gears maybe: on or off"),
-            },
-            Case {
-                argv: &[
-                    "--boot",
-                    "--stage",
-                    "track-54_E",
-                    "--data",
-                    "D",
-                    "--ngp-physics",
-                    "N",
-                    "--autopilot",
-                    "OUT",
-                    "--ffb-sensitivity",
-                    "90,80",
-                ],
-                data: None,
-                expect: Bad("--ffb-sensitivity 90,80: three percentages, G,T,S"),
-            },
-            Case {
-                argv: &[
-                    "--boot",
-                    "--stage",
-                    "track-54_E",
-                    "--data",
-                    "D",
-                    "--ngp-physics",
-                    "N",
-                    "--autopilot",
-                    "OUT",
-                    "--head-gasket-durability",
-                    "x",
-                ],
-                data: None,
-                expect: Bad("--head-gasket-durability x: an integer"),
-            },
-            Case {
-                argv: &[
-                    "--recording",
-                    "R",
-                    "--stage",
-                    "track-54_E",
-                    "--snapshot",
-                    "S",
-                    "--data",
-                    "D",
-                    "--recorded-payload",
-                    "--trace-out",
-                    "T",
-                    "--ffb-settings",
-                    "1,2",
-                ],
-                data: None,
-                expect: Bad("--ffb-settings 1,2: ENABLED,STRENGTH,INVERSE,DEAD_ZONE,THRESHOLD (0 or 1, then numbers)"),
-            },
-            Case {
-                argv: &[
-                    "--recording",
-                    "R",
-                    "--stage",
-                    "track-54_E",
-                    "--snapshot",
-                    "S",
-                    "--data",
-                    "D",
-                    "--recorded-payload",
-                    "--trace-out",
-                    "T",
-                    "--ffb-settings",
-                    "2,1,0,0,0",
-                ],
-                data: None,
-                expect: Bad(
-                    "--ffb-settings 2,1,0,0,0: ENABLED,STRENGTH,INVERSE,DEAD_ZONE,THRESHOLD (0 or 1, then numbers)",
-                ),
-            },
-            Case {
-                argv: &["--live", "--stage", "track-54_E", "--snapshot", "S", "--data", "D", "--start-time", "9"],
-                data: None,
-                expect: Bad("--start-time 9: H:MM"),
-            },
-            Case { argv: &["--warp", "x"], data: None, expect: Bad("unknown argument --warp") },
-            // Broken combinations.
-            Case {
-                argv: &[
-                    "--boot",
-                    "--stage",
-                    "track-54_E",
-                    "--snapshot",
-                    "S",
-                    "--data",
-                    "D",
-                    "--ngp-physics",
-                    "N",
-                    "--autopilot",
-                    "OUT",
-                ],
-                data: None,
-                expect: Bad("--boot takes no --snapshot"),
-            },
-            Case {
-                argv: &["--live", "--recording", "R", "--stage", "track-54_E", "--snapshot", "S", "--data", "D"],
-                data: None,
-                expect: Bad("--live takes no --recording"),
-            },
-            Case {
-                argv: &["--live", "--stage", "track-54_E", "--data", "D"],
-                data: None,
-                expect: Bad("--live takes one --snapshot"),
-            },
-            Case {
-                argv: &["--live", "--stage", "track-54_E", "--snapshot", "S", "--snapshot", "T", "--data", "D"],
-                data: None,
-                expect: Bad("--live takes one --snapshot"),
-            },
-            Case {
-                argv: &["--stage", "track-54_E", "--snapshot", "S", "--data", "D"],
-                data: None,
-                expect: Bad("--recording is required"),
-            },
-            Case {
-                argv: &["--recording", "R", "--stage", "track-54_E", "--snapshot", "S"],
-                data: None,
-                expect: Bad("--data or RBR_DATA is required"),
-            },
-            Case {
-                argv: &["--live", "--stage", "track-54_E", "--snapshot", "S", "--data", "D", "--autopilot", "OUT"],
-                data: None,
-                expect: Bad("--autopilot takes one --snapshot or --boot, and no --live"),
-            },
-            Case {
-                argv: &[
-                    "--recording",
-                    "R",
-                    "--autopilot",
-                    "OUT",
-                    "--stage",
-                    "track-54_E",
-                    "--snapshot",
-                    "S",
-                    "--snapshot",
-                    "T",
-                    "--data",
-                    "D",
-                ],
-                data: None,
-                expect: Bad("--autopilot takes one --snapshot or --boot, and no --live"),
-            },
-            Case {
-                argv: &[
-                    "--recording",
-                    "R",
-                    "--stage",
-                    "track-54_E",
-                    "--snapshot",
-                    "S",
-                    "--data",
-                    "D",
-                    "--setup",
-                    "SET",
-                ],
-                data: None,
-                expect: Bad("--setup needs --boot"),
-            },
-            Case {
-                argv: &[
-                    "--recording",
-                    "R",
-                    "--stage",
-                    "track-54_E",
-                    "--snapshot",
-                    "S",
-                    "--data",
-                    "D",
-                    "--ngp-physics",
-                    "N",
-                    "--autopilot",
-                    "OUT",
-                ],
-                data: None,
-                expect: Bad("--ngp-physics needs --boot"),
-            },
-            Case {
-                argv: &["--boot", "--stage", "track-54_E", "--data", "D", "--autopilot", "OUT"],
-                data: None,
-                expect: Bad("--boot needs --ngp-physics FILE (NGP's physics.rbz): ReRBR steps NGP physics only"),
-            },
-            Case {
-                argv: &[
-                    "--recording",
-                    "R",
-                    "--stage",
-                    "track-54_E",
-                    "--snapshot",
-                    "S",
-                    "--data",
-                    "D",
-                    "--rsf-car",
-                    "PACK",
-                ],
-                data: None,
-                expect: Bad("--rsf-car needs --boot"),
-            },
-            Case {
-                argv: &[
-                    "--recording",
-                    "R",
-                    "--stage",
-                    "track-54_E",
-                    "--snapshot",
-                    "S",
-                    "--data",
-                    "D",
-                    "--ffb-sensitivity",
-                    "90,80,70",
-                ],
-                data: None,
-                expect: Bad("--ffb-sensitivity needs --boot"),
-            },
-            Case {
-                argv: &[
-                    "--recording",
-                    "R",
-                    "--stage",
-                    "track-54_E",
-                    "--snapshot",
-                    "S",
-                    "--data",
-                    "D",
-                    "--head-gasket-durability",
-                    "3",
-                ],
-                data: None,
-                expect: Bad("--head-gasket-durability needs --boot"),
-            },
-            Case {
-                argv: &[
-                    "--recording",
-                    "R",
-                    "--stage",
-                    "track-54_E",
-                    "--snapshot",
-                    "S",
-                    "--data",
-                    "D",
-                    "--damage-in",
-                    "IN",
-                ],
-                data: None,
-                expect: Bad("--damage-in needs --boot"),
-            },
-            Case {
-                argv: &[
-                    "--recording",
-                    "R",
-                    "--stage",
-                    "track-54_E",
-                    "--snapshot",
-                    "S",
-                    "--data",
-                    "D",
-                    "--damage-out",
-                    "OUT",
-                ],
-                data: None,
-                expect: Bad("--damage-out and --result-out need --autopilot or --live --boot"),
-            },
-            Case {
-                argv: &[
-                    "--boot",
-                    "--stage",
-                    "track-54_E",
-                    "--data",
-                    "D",
-                    "--ngp-physics",
-                    "N",
-                    "--autopilot",
-                    "OUT",
-                    "--rally-next",
-                    "end",
-                ],
-                data: None,
-                expect: Bad("--championship-damage, --championship-false-starts and --rally-next need --championship"),
-            },
-            Case {
-                argv: &[
-                    "--recording",
-                    "R",
-                    "--stage",
-                    "track-54_E",
-                    "--snapshot",
-                    "S",
-                    "--data",
-                    "D",
-                    "--championship",
-                    "rookie",
-                ],
-                data: None,
-                expect: Bad("--championship needs --boot"),
-            },
-            Case {
-                argv: &[
-                    "--recording",
-                    "R",
-                    "--stage",
-                    "track-54_E",
-                    "--snapshot",
-                    "S",
-                    "--data",
-                    "D",
-                    "--events-out",
-                    "E",
-                ],
-                data: None,
-                expect: Bad("--events-out needs --boot and --recording, and no --live or --autopilot"),
-            },
-            Case {
-                argv: &["--live", "--stage", "track-54_E", "--snapshot", "S", "--data", "D", "--recorded-payload"],
-                data: None,
-                expect: Bad("--recorded-payload and --trace-out need --recording, and no --live or --autopilot"),
-            },
-            Case {
-                argv: &[
-                    "--recording",
-                    "R",
-                    "--stage",
-                    "track-54_E",
-                    "--snapshot",
-                    "S",
-                    "--data",
-                    "D",
-                    "--recorded-payload",
-                    "--ffb-settings",
-                    "1,1,0,0,0",
-                ],
-                data: None,
-                expect: Bad("--ffb-settings needs --trace-out"),
-            },
-            Case {
-                argv: &[
-                    "--recording",
-                    "R",
-                    "--stage",
-                    "track-54_E",
-                    "--snapshot",
-                    "S",
-                    "--data",
-                    "D",
-                    "--extra-payloads",
-                    "EP",
-                ],
-                data: None,
-                expect: Bad("--extra-payloads and --wall-clock need --recorded-payload"),
-            },
-            Case {
-                argv: &[
-                    "--recording",
-                    "R",
-                    "--stage",
-                    "track-54_E",
-                    "--snapshot",
-                    "S",
-                    "--data",
-                    "D",
-                    "--pilot",
-                    "autopilot",
-                ],
-                data: None,
-                expect: Bad("--pilot needs --live"),
-            },
-            Case {
-                argv: &[
-                    "--recording",
-                    "R",
-                    "--stage",
-                    "track-54_E",
-                    "--snapshot",
-                    "S",
-                    "--data",
-                    "D",
-                    "--frames-out",
-                    "F",
-                ],
-                data: None,
-                expect: Bad("--frames-out and --frames need --live"),
-            },
-            Case {
-                argv: &[
-                    "--live",
-                    "--stage",
-                    "track-54_E",
-                    "--snapshot",
-                    "S",
-                    "--data",
-                    "D",
-                    "--frames",
-                    "F",
-                    "--frames-out",
-                    "G",
-                ],
-                data: None,
-                expect: Bad("--frames takes no --frames-out (the frames are given)"),
-            },
-            Case {
-                argv: &[
-                    "--recording",
-                    "R",
-                    "--stage",
-                    "track-54_E",
-                    "--snapshot",
-                    "S",
-                    "--data",
-                    "D",
-                    "--replay-out",
-                    "F",
-                ],
-                data: None,
-                expect: Bad("--replay-out and --replay need --live"),
-            },
-            Case {
-                argv: &[
-                    "--live",
-                    "--stage",
-                    "track-54_E",
-                    "--snapshot",
-                    "S",
-                    "--data",
-                    "D",
-                    "--frames",
-                    "F",
-                    "--replay",
-                    "G",
-                ],
-                data: None,
-                expect: Bad("one of --frames-out, --frames, --replay-out and --replay"),
-            },
-            Case {
-                argv: &[
-                    "--live",
-                    "--stage",
-                    "track-54_E",
-                    "--snapshot",
-                    "S",
-                    "--data",
-                    "D",
-                    "--replay",
-                    "F",
-                    "--pilot",
-                    "autopilot",
-                ],
-                data: None,
-                expect: Bad("--replay takes no --pilot (the replay drives)"),
-            },
-            Case {
-                argv: &["--recording", "R", "--stage", "track-54_E", "--snapshot", "S", "--data", "D", "--aim", "1,2"],
-                data: None,
-                expect: Bad("--aim needs --autopilot"),
-            },
-            Case {
-                argv: &["--recording", "R", "--snapshot", "S", "--data", "D"],
-                data: None,
-                expect: Bad("--stage, --stage-dir or --rsf-stage is required"),
-            },
-            Case {
-                argv: &[
-                    "--recording",
-                    "R",
-                    "--stage",
-                    "track-54_E",
-                    "--stage-dir",
-                    "DIR",
-                    "--snapshot",
-                    "S",
-                    "--data",
-                    "D",
-                ],
-                data: None,
-                expect: Bad("give one of --stage, --stage-dir and --rsf-stage"),
-            },
+                },
+            ),
         ];
-        for (i, case) in cases.iter().enumerate() {
-            match (run(case.argv, case.data, None), &case.expect) {
-                (Ok(args), Good(check)) => check(&args),
-                (Err(e), Bad(want)) => assert_eq!(&e, want, "case {i}: {}", case.argv.join(" ")),
-                (Ok(_), Bad(want)) => panic!("case {i}: parsed, want error {want}"),
-                (Err(e), Good(_)) => panic!("case {i}: error {e}, want Args"),
+        for (argv, check) in &good {
+            match run_str(argv, None) {
+                Ok(args) => check(&args),
+                Err(e) => panic!("{argv}: error {e}, want Args"),
+            }
+        }
+        // `--data` from the environment.
+        match run_str("--recording R --stage track-54_E --snapshot S", Some("ENV")) {
+            Ok(args) => assert_eq!(args.data, PathBuf::from("ENV")),
+            Err(e) => panic!("RBR_DATA fallback: error {e}"),
+        }
+    }
+
+    /// Every flag's bad values and broken combinations: the command line and its exact error.
+    #[test]
+    fn bad_flags_fail_as_before() {
+        let bad: Vec<(String, &str)> = vec![
+            ("--car".into(), "--car: no value"),
+            ("--warp x".into(), "unknown argument --warp"),
+            ("--recording R --rsf-stage x --snapshot S --data D".into(), "--rsf-stage x"),
+            ("--recording R --rsf-stage 101 --snapshot S --data D".into(), "--rsf-stage needs --rsf-root or RBR_RSF"),
+            (format!("{REC} --top-speed fast"), "--top-speed fast"),
+            (format!("{REC} --steps x"), "--steps x"),
+            (format!("{REC} --car x"), "--car x"),
+            (format!("{BOOT} --weather x"), "--weather x"),
+            (format!("{BOOT} --tyre x"), "--tyre x"),
+            (format!("{BOOT} --season-row x"), "--season-row x"),
+            (format!("{BOOT} --rand-seed x"), "--rand-seed x"),
+            (format!("{REC} --autopilot OUT --aim 1"), "--aim 1: want X,Y[,COAST]"),
+            (format!("{REC} --autopilot OUT --aim 1,2,x"), "--aim 1,2,x"),
+            (format!("{LIVE} --callout-distance x"), "--callout-distance x"),
+            (format!("{LIVE} --marker-threshold x"), "--marker-threshold x"),
+            (format!("{BOOT_REC} --twin both"), "--twin both: mem or mem-direct"),
+            (format!("{LIVE} --replay F --replay-pace fast"), "--replay-pace fast: clock or free"),
+            (format!("{BOOT} --dispatch warp"), "--dispatch warp: pure or direct"),
+            (format!("{BOOT} --wear muddy"), "--wear muddy: new, normal or worn"),
+            (format!("{BOOT} --wetness humid"), "--wetness humid: dry, damp or wet"),
+            (format!("{BOOT} --damage flat"), "--damage flat: off, safe, reduced or realistic"),
+            (format!("{BOOT} --championship easy"), "--championship easy: rookie, professional or champion"),
+            (
+                format!("{BOOT} --championship rookie --championship-damage flat"),
+                "--championship-damage flat: off, safe, reduced or realistic",
+            ),
+            (
+                format!("{BOOT} --championship-false-starts x"),
+                "--championship-false-starts x: invalid digit found in string",
+            ),
+            (format!("{BOOT} --championship rookie --rally-next soon"), "--rally-next soon: stage, service or end"),
+            (format!("{BOOT} --auto-gears maybe"), "--auto-gears maybe: on or off"),
+            (format!("{BOOT} --ffb-sensitivity 90,80"), "--ffb-sensitivity 90,80: three percentages, G,T,S"),
+            (format!("{BOOT} --head-gasket-durability x"), "--head-gasket-durability x: an integer"),
+            (
+                format!("{REC} --recorded-payload --trace-out T --ffb-settings 1,2"),
+                "--ffb-settings 1,2: ENABLED,STRENGTH,INVERSE,DEAD_ZONE,THRESHOLD (0 or 1, then numbers)",
+            ),
+            (
+                format!("{REC} --recorded-payload --trace-out T --ffb-settings 2,1,0,0,0"),
+                "--ffb-settings 2,1,0,0,0: ENABLED,STRENGTH,INVERSE,DEAD_ZONE,THRESHOLD (0 or 1, then numbers)",
+            ),
+            (format!("{LIVE} --start-time 9"), "--start-time 9: H:MM"),
+            (format!("{BOOT} --snapshot S"), "--boot takes no --snapshot"),
+            (format!("{LIVE} --recording R"), "--live takes no --recording"),
+            ("--live --stage track-54_E --data D".into(), "--live takes one --snapshot"),
+            (format!("{LIVE} --snapshot T"), "--live takes one --snapshot"),
+            ("--stage track-54_E --snapshot S --data D".into(), "--recording is required"),
+            ("--recording R --stage track-54_E --snapshot S".into(), "--data or RBR_DATA is required"),
+            (format!("{LIVE} --autopilot OUT"), "--autopilot takes one --snapshot or --boot, and no --live"),
+            (
+                format!("{REC} --autopilot OUT --snapshot T"),
+                "--autopilot takes one --snapshot or --boot, and no --live",
+            ),
+            (format!("{REC} --setup SET"), "--setup needs --boot"),
+            (format!("{REC} --ngp-physics N"), "--ngp-physics needs --boot"),
+            (
+                "--boot --stage track-54_E --data D --autopilot OUT".into(),
+                "--boot needs --ngp-physics FILE (NGP's physics.rbz): ReRBR steps NGP physics only",
+            ),
+            (format!("{REC} --rsf-car PACK"), "--rsf-car needs --boot"),
+            (format!("{REC} --ffb-sensitivity 90,80,70"), "--ffb-sensitivity needs --boot"),
+            (format!("{REC} --head-gasket-durability 3"), "--head-gasket-durability needs --boot"),
+            (format!("{REC} --damage-in IN"), "--damage-in needs --boot"),
+            (format!("{REC} --damage-out OUT"), "--damage-out and --result-out need --autopilot or --live --boot"),
+            (
+                format!("{BOOT} --rally-next end"),
+                "--championship-damage, --championship-false-starts and --rally-next need --championship",
+            ),
+            (format!("{REC} --championship rookie"), "--championship needs --boot"),
+            (
+                format!("{REC} --events-out E"),
+                "--events-out needs --boot and --recording, and no --live or --autopilot",
+            ),
+            (
+                format!("{LIVE} --recorded-payload"),
+                "--recorded-payload and --trace-out need --recording, and no --live or --autopilot",
+            ),
+            (format!("{REC} --recorded-payload --ffb-settings 1,1,0,0,0"), "--ffb-settings needs --trace-out"),
+            (format!("{REC} --extra-payloads EP"), "--extra-payloads and --wall-clock need --recorded-payload"),
+            (format!("{REC} --pilot autopilot"), "--pilot needs --live"),
+            (format!("{REC} --frames-out F"), "--frames-out and --frames need --live"),
+            (format!("{LIVE} --frames F --frames-out G"), "--frames takes no --frames-out (the frames are given)"),
+            (format!("{REC} --replay-out F"), "--replay-out and --replay need --live"),
+            (format!("{LIVE} --frames F --replay G"), "one of --frames-out, --frames, --replay-out and --replay"),
+            (format!("{LIVE} --replay F --pilot autopilot"), "--replay takes no --pilot (the replay drives)"),
+            (format!("{REC} --aim 1,2"), "--aim needs --autopilot"),
+            ("--recording R --snapshot S --data D".into(), "--stage, --stage-dir or --rsf-stage is required"),
+            (format!("{REC} --stage-dir DIR"), "give one of --stage, --stage-dir and --rsf-stage"),
+        ];
+        for (argv, want) in &bad {
+            match run_str(argv, None) {
+                Err(e) => assert_eq!(&e, want, "{argv}"),
+                Ok(_) => panic!("{argv}: parsed, want error {want}"),
             }
         }
     }
