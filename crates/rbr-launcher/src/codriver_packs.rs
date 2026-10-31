@@ -682,34 +682,21 @@ fn check_notes(staged: &Path, src: &Path) -> Result<usize, Fail> {
     }
 }
 
-/// Stages a pack with `copy` below `home/dir` (into a temp folder) and validates the staging with `check`:
-/// the staging and what the check says. A failure leaves no pack behind (the staging drops with its temp folder).
-fn stage_pack<T, R>(
-    home: &Path,
-    dir: &str,
-    name: &str,
-    cancel: &AtomicBool,
-    copy: impl FnOnce(&Path, &AtomicBool) -> Result<R, Fail>,
-    check: impl FnOnce(&Path) -> Result<T, Fail>,
-) -> Result<(Staged, T), Fail> {
-    let op = stage(home, dir, name)?;
-    copy(&op.staged, cancel)?;
-    let checked = check(&op.staged)?;
-    Ok((op, checked))
-}
-
 /// A staged voice pack and what its validation says: its call styles and range sets.
 type StagedVoice = (Staged, (Vec<String>, Vec<String>));
 
 /// Stages a voice pack named `name` with `copy` (into a temp folder, validated): the staging, its styles and
-/// range sets.
+/// range sets. A failure leaves no pack behind (the staging drops with its temp folder).
 fn stage_voice<R>(
     home: &Path,
     name: &str,
     cancel: &AtomicBool,
     copy: impl FnOnce(&Path, &AtomicBool) -> Result<R, Fail>,
 ) -> Result<StagedVoice, Fail> {
-    stage_pack(home, VOICES_DIR, name, cancel, copy, check_voice)
+    let op = stage(home, VOICES_DIR, name)?;
+    copy(&op.staged, cancel)?;
+    let checked = check_voice(&op.staged)?;
+    Ok((op, checked))
 }
 
 /// Stages a note pack named `name` with `copy`: the staging and its note files.
@@ -720,7 +707,10 @@ fn stage_notes<R>(
     cancel: &AtomicBool,
     copy: impl FnOnce(&Path, &AtomicBool) -> Result<R, Fail>,
 ) -> Result<(Staged, usize), Fail> {
-    stage_pack(home, NOTES_DIR, name, cancel, copy, |staged| check_notes(staged, src))
+    let op = stage(home, NOTES_DIR, name)?;
+    copy(&op.staged, cancel)?;
+    let n = check_notes(&op.staged, src)?;
+    Ok((op, n))
 }
 
 /// Stages a voice pack named `name` with `copy` (into a temp folder, validated, then published): the lines saying
