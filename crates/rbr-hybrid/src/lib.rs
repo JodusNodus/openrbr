@@ -286,6 +286,13 @@ pub struct Binding {
     pub run: BindingFn,
 }
 
+/// One binding entry. The subsystem strings are what [`pure::Pure::direct`] matches on (`IN_PLACE`), so they stay
+/// exactly as they are.
+
+pub const fn bind(subsystem: &'static str, addr: u32, name: &'static str, run: BindingFn) -> Binding {
+    Binding { addr, name, subsystem, run }
+}
+
 /// Every bound function.
 pub fn bindings() -> impl Iterator<Item = &'static Binding> {
     vcu::BINDINGS
@@ -435,6 +442,16 @@ pub(crate) mod tests {
         listed.sort();
         bound.sort();
         assert_eq!(listed, bound);
+    }
+
+    /// Every binding's address, subsystem and name, pinned: the file is the sorted `bindings()` list, generated
+    /// from this code. A refactor that moves bindings must leave it byte-identical.
+    #[test]
+    fn bindings_snapshot_matches() {
+        let mut rows: Vec<String> =
+            bindings().map(|b| format!("0x{:x} {} {}", b.addr, b.subsystem, b.name)).collect();
+        rows.sort();
+        assert_eq!(rows.join("\n") + "\n", include_str!("../bindings_snapshot.txt"));
     }
 
     #[test]
