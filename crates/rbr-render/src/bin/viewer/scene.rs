@@ -133,8 +133,11 @@ pub fn load(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Result<
     report_load(&scene.stage);
     match (args.at, &mut scene.playback, &scene.live) {
         (Some(step), Some(playback), None) => playback.seek_to_step(step),
-        // A live screenshot shows its last frame, `--at` payloads after the first.
-        (Some(_), Some(playback), Some(_)) => playback.step(playback.samples().len() as isize),
+        // A live screenshot shows its last frame, `--at` payloads after the first; a `--sequence` ends on it.
+        (Some(_), Some(playback), Some(_)) => {
+            let back = (args.sequence.max(1) as isize - 1) * args.sequence_step.max(0);
+            playback.step(playback.samples().len() as isize - 1 - back)
+        }
         _ => {}
     }
     Ok(scene)
