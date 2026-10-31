@@ -60,15 +60,14 @@ impl Damage {
     pub fn read(reader: &mut impl Read) -> io::Result<Damage> {
         let mut bytes = [0u8; DMG1_BYTES];
         reader.read_exact(&mut bytes)?;
-        let word = |i: usize| u32::from_le_bytes(bytes[4 * i..4 * i + 4].try_into().unwrap());
-        if word(0) != DMG1 {
-            let tag = word(0);
-            return Err(io::Error::new(io::ErrorKind::InvalidData, format!("{tag:#010x} is not a damage record")));
+        if crate::word(&bytes, 0) != DMG1 {
+            let tag = crate::word(&bytes, 0);
+            return Err(crate::invalid(format!("{tag:#010x} is not a damage record")));
         }
         Ok(Damage {
-            zones: std::array::from_fn(|zone| f32::from_bits(word(1 + zone))),
-            code: word(1 + ZONES),
-            index: word(2 + ZONES),
+            zones: std::array::from_fn(|zone| f32::from_bits(crate::word(&bytes, 1 + zone))),
+            code: crate::word(&bytes, 1 + ZONES),
+            index: crate::word(&bytes, 2 + ZONES),
         })
     }
 }

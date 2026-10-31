@@ -98,8 +98,12 @@ impl Step {
 
     /// Reads the bytes after the tag.
     pub fn from_body(body: &[u8; STEP_BYTES]) -> Step {
-        let word = |i: usize| u32::from_le_bytes(body[4 * i..4 * i + 4].try_into().unwrap());
-        Step { step: word(0), seq: word(1), force: f32::from_bits(word(2)), control: body[12..].try_into().unwrap() }
+        Step {
+            step: crate::word(body, 0),
+            seq: crate::word(body, 1),
+            force: f32::from_bits(crate::word(body, 2)),
+            control: body[12..].try_into().unwrap(),
+        }
     }
 
     /// The control's steering (word 4), -1 (left) to 1 (right).

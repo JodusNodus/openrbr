@@ -37,11 +37,8 @@ pub fn save_result(replay: &Path, result: &Splits) -> std::io::Result<()> {
 pub fn read_result(replay: &Path) -> std::io::Result<Splits> {
     let mut bytes = Vec::new();
     std::fs::File::open(result_path(replay))?.take(512).read_to_end(&mut bytes)?;
-    if bytes.len() < 8
-        || bytes[..4] != SPL1
-        || u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as usize != bytes.len() - 8
-    {
-        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid replay result"));
+    if bytes.len() < 8 || bytes[..4] != SPL1 || crate::word_at(&bytes, 4) as usize != bytes.len() - 8 {
+        return Err(crate::invalid("invalid replay result"));
     }
     Splits::from_payload(&bytes[8..])
 }

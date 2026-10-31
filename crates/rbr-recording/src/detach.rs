@@ -46,24 +46,21 @@ pub fn to_bytes(poses: &[PartPose]) -> Vec<u8> {
             payload.extend_from_slice(&value.to_le_bytes());
         }
     }
-    let mut out = Vec::with_capacity(8 + payload.len());
-    crate::live::write_record(&mut out, DET1, &payload);
-    out
+    crate::live::record(DET1, &payload)
 }
 
 /// The entries of a record's payload (the bytes after its tag and length).
 pub fn parse(payload: &[u8]) -> io::Result<Vec<PartPose>> {
     if !payload.len().is_multiple_of(ENTRY_BYTES) {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, format!("{} bytes of detached parts", payload.len())));
+        return Err(crate::invalid(format!("{} bytes of detached parts", payload.len())));
     }
     payload
         .chunks_exact(ENTRY_BYTES)
         .map(|entry| {
-            let word = |i: usize| u32::from_le_bytes(entry[4 * i..4 * i + 4].try_into().unwrap());
-            let float = |i: usize| f32::from_bits(word(i));
-            let part = word(0);
+            let float = |i: usize| f32::from_bits(crate::word(entry, i));
+            let part = crate::word(entry, 0);
             if part as usize >= PARTS.len() {
-                return Err(io::Error::new(io::ErrorKind::InvalidData, format!("detached part {part}")));
+                return Err(crate::invalid(format!("detached part {part}")));
             }
             Ok(PartPose {
                 part,

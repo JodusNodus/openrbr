@@ -44,7 +44,7 @@ pub fn from_bytes(bytes: &[u8]) -> Option<Vec<Callout>> {
     if bytes.len() != 4 + CALLOUT_BYTES * count {
         return None;
     }
-    let word = |at: usize| u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap());
+    let word = |at: usize| crate::word_at(bytes, at);
     Some(
         (0..count)
             .map(|k| {

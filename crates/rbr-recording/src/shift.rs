@@ -33,17 +33,14 @@ impl ShiftPoints {
     pub fn to_bytes(&self) -> Vec<u8> {
         let payload: Vec<u8> =
             self.up.iter().chain(&self.down).chain([&self.limit]).flat_map(|f| f.to_le_bytes()).collect();
-        let mut out = Vec::with_capacity(8 + PAYLOAD_BYTES);
-        crate::live::write_record(&mut out, SHF1, &payload);
-        out
+        crate::live::record(SHF1, &payload)
     }
 
     /// Reads the record's payload (the bytes after its tag and length, `crate::live::read_records`).
     pub fn from_payload(payload: &[u8]) -> io::Result<ShiftPoints> {
-        let payload: &[u8; PAYLOAD_BYTES] = payload.try_into().map_err(|_| {
-            io::Error::new(io::ErrorKind::InvalidData, format!("a shift-point record of {} bytes", payload.len()))
-        })?;
-        let float = |i: usize| f32::from_le_bytes(payload[4 * i..4 * i + 4].try_into().unwrap());
+        let payload: &[u8; PAYLOAD_BYTES] =
+            crate::sized(payload, format!("a shift-point record of {} bytes", payload.len()))?;
+        let float = |i: usize| f32::from_bits(crate::word(payload, i));
         Ok(ShiftPoints {
             up: std::array::from_fn(float),
             down: std::array::from_fn(|g| float(GEARS + g)),

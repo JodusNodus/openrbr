@@ -22,17 +22,13 @@ const PAYLOAD_BYTES: usize = 4 * WHEELS;
 /// The tagged record of the wheels' hub offsets.
 pub fn record(offsets: [f32; WHEELS]) -> Vec<u8> {
     let payload: Vec<u8> = offsets.iter().flat_map(|o| o.to_le_bytes()).collect();
-    let mut out = Vec::with_capacity(8 + PAYLOAD_BYTES);
-    crate::live::write_record(&mut out, HUB1, &payload);
-    out
+    crate::live::record(HUB1, &payload)
 }
 
 /// Reads the record's payload (the bytes after its tag and length, `crate::live::read_records`).
 pub fn from_payload(payload: &[u8]) -> io::Result<[f32; WHEELS]> {
-    if payload.len() != PAYLOAD_BYTES {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, format!("a hub record of {} bytes", payload.len())));
-    }
-    Ok(std::array::from_fn(|k| f32::from_le_bytes(payload[4 * k..4 * k + 4].try_into().unwrap())))
+    let payload: &[u8; PAYLOAD_BYTES] = crate::sized(payload, format!("a hub record of {} bytes", payload.len()))?;
+    Ok(std::array::from_fn(|k| f32::from_bits(crate::word(payload, k))))
 }
 
 #[cfg(test)]

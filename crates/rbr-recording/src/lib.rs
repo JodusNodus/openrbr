@@ -127,6 +127,29 @@ fn control_words<T>(control: &[u8; CONTROL_BYTES], decode: fn([u8; 4]) -> T) -> 
     std::array::from_fn(|i| decode(words[i]))
 }
 
+/// One little-endian u32 word of a validated payload: word `i` (panics when it
+/// is missing; the reader checked the length first).
+pub(crate) fn word(bytes: &[u8], i: usize) -> u32 {
+    u32::from_le_bytes(bytes[4 * i..4 * i + 4].try_into().unwrap())
+}
+
+/// One little-endian u32 at byte offset `at` of a validated payload (panics
+/// when it is missing; the reader checked the length first).
+pub(crate) fn word_at(bytes: &[u8], at: usize) -> u32 {
+    u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap())
+}
+
+/// An `InvalidData` I/O error with `message` (the bytes and the messages at
+/// each site stay identical).
+pub(crate) fn invalid(message: impl Into<String>) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::InvalidData, message.into())
+}
+
+/// `bytes` as exactly `N` bytes, or an `InvalidData` error with `message`.
+pub(crate) fn sized<const N: usize>(bytes: &[u8], message: impl Into<String>) -> std::io::Result<&[u8; N]> {
+    bytes.try_into().map_err(|_| invalid(message))
+}
+
 /// Little-endian u32 at `offset` in a car or wheel block, or `None` if the four
 /// bytes are not all present.
 pub fn read_u32(bytes: &[u8], offset: usize) -> Option<u32> {

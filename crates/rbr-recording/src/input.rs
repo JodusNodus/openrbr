@@ -103,7 +103,7 @@ impl Payload {
     /// Reads a payload; an error for a word 7 that is neither a recorded payload's nor [`INPUT_MAGIC`], or input bits
     /// outside the layout.
     pub fn read(bytes: &[u8; CONTROL_BYTES]) -> Result<Payload, String> {
-        let words: [u32; 8] = std::array::from_fn(|i| u32::from_le_bytes(bytes[4 * i..4 * i + 4].try_into().unwrap()));
+        let words: [u32; 8] = std::array::from_fn(|i| crate::word(bytes, i));
         match words[7] {
             0 | 1 => Ok(Payload::Recorded(words)),
             INPUT_MAGIC => {
