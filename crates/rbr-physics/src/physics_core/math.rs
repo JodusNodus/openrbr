@@ -4,29 +4,6 @@
 
 pub use crate::math::vec::{Vec3, Vec4};
 
-/// The batch adds of a vector over a slice of rows, kept in this module: they are physics-core specific, not shared
-/// vector math.
-pub trait Vec4Rows {
-    /// Adds `self` to every row of `dst`.
-    fn add_each(self, dst: &mut [Vec4]);
-    /// Subtracts `self` from every row of `dst`.
-    fn sub_each(self, dst: &mut [Vec4]);
-}
-
-impl Vec4Rows for Vec4 {
-    fn add_each(self, dst: &mut [Vec4]) {
-        for row in dst {
-            *row = *row + self;
-        }
-    }
-
-    fn sub_each(self, dst: &mut [Vec4]) {
-        for row in dst {
-            *row = *row - self;
-        }
-    }
-}
-
 /// A 3x3 matrix stored as 10 floats. `rows[r][c]` is row `r`, column `c`. `extra` is the tenth float; only
 /// `scale_rows` reads it (lane 3).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]

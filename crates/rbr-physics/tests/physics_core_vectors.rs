@@ -17,7 +17,7 @@ use rbr_physics::physics_core::layout::{
     self, construct, contact_walk, detect_calls, flags, material, mounted, mounted_body, mounted_ctor, mounted_pose,
     passenger_ctor, physics_object, setup, signal_emit,
 };
-use rbr_physics::physics_core::math::{self, Vec4, Vec4Rows};
+use rbr_physics::physics_core::math::{self, Vec4};
 use rbr_physics::physics_core::{debug, detect, pacing, passenger};
 
 const VAR: &str = "RBR_PHYSICS_CORE_VECTORS";
@@ -155,7 +155,9 @@ fn vec4_add_matches() {
     replay_eax(VAR, VEC_ADD, "E46Vec::Add", true, |mem, a| {
         let this = Vec4::load(mem, a[0]);
         let mut dst = layout::vec4s(mem, a[1], a[2] as usize);
-        this.add_each(&mut dst);
+        for row in &mut dst {
+            *row = *row + this;
+        }
         layout::set_vec4s(mem, a[1], &dst);
         a[1]
     });
@@ -246,7 +248,9 @@ fn vec4_sub_matches() {
     replay_eax(VAR, VEC_SUB, "E46Vec::Sub", true, |mem, a| {
         let this = Vec4::load(mem, a[0]);
         let mut dst = layout::vec4s(mem, a[1], a[2] as usize);
-        this.sub_each(&mut dst);
+        for row in &mut dst {
+            *row = *row - this;
+        }
         layout::set_vec4s(mem, a[1], &dst);
         a[1]
     });

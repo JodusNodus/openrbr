@@ -202,17 +202,18 @@ fn update_body_rows<S: RigidStore>(
 
 /// `E47Solid::Vf39x` (0x52ac80), `E43Vf9C` in the C++: scales the `n` rows at `dst` by the matrix, then adds the origin
 /// to them. Returns `dst`. The original's two row calls (`E46Mat::ScaleRows`, `E46Vec::Add`) are `Mat::scale_rows` and
-/// `Vec4Rows::add_each`. The matrix and origin are read before the rows are written, so `dst` must not overlap them
+/// a lanewise add. The matrix and origin are read before the rows are written, so `dst` must not overlap them
 /// (the recorded calls never do).
 pub fn scale_add_rows<S: RigidStore>(store: &mut S, this: u32, dst: u32, n: u32) -> u32 {
-    use crate::physics_core::math::Vec4Rows;
     let matrix = store.matrix(this);
     let origin = store.position(this);
     // Row by row, with no buffer: each row's sums are its own.
     for at in (0..n).map(|i| dst + 16 * i) {
         let mut row = [store.row(at)];
         matrix.scale_rows(&mut row);
-        origin.add_each(&mut row);
+        for lane in &mut row {
+            *lane = *lane + origin;
+        }
         store.store_row(at, row[0]);
     }
     dst
