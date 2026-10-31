@@ -353,46 +353,21 @@ impl Game {
         let mut substeps = Vec::new();
 
         let state_at_frame_start = self.stage.state();
-        if state_at_frame_start == State::Setup && input.race_host_ready {
-            self.set_stage(self.stage.load_ready(), physics);
-        }
-
-        // `M004801d0`'s state 0xd calls StepForward(40), independent of
-        // `Vf0c`'s requested `nsteps`, then spends those steps on +0x72c.
-        if state_at_frame_start == State::Load {
-            for index in 0..tick::SETTLE_SUBSTEPS[0] {
-                substeps.push(self.physics_substep(physics, None, None, index));
-            }
-            self.set_stage(self.stage.load_tick(tick::SETTLE_SUBSTEPS[0]), physics);
-            // The countdown's state 10 sets the camera's mode 10, which starts the orbit (`M487680(10,1)`).
-            if self.stage.state() == State::Countdown && self.start_camera.is_some() {
-                self.start_camera = Some(StartCamera::start());
-            }
-        }
+        self.settle_load(state_at_frame_start, input.race_host_ready, physics, &mut substeps);
 
         // Input poll (`TicFwd`) precedes the application tick, including
         // frames where the app is loading or counting down.
         self.filter.notify(&input.raw);
         let tick_state = self.stage.state();
         let mode = Mode(self.assist_settings.mode);
-        if tick_state == State::Countdown && input.confirm && mode.confirm_arms() {
-            self.set_stage(self.stage.confirm(), physics);
-        }
-        if tick_state == State::Countdown {
-            self.set_stage(self.stage.countdown_tick(frame.facc), physics);
-            if self.stage.state() == State::Driving {
-                // `Tic` sets the player's camera (`M00566390`).
-                if self.start_camera.is_some() {
-                    self.start_camera = Some(StartCamera::Done);
-                }
-            }
-        }
+        self.tick_countdown(tick_state, frame.facc, input.confirm, mode, physics);
+
         // The pause of a message box (state 2): the box takes the input; its accept ends the race.
         let mut acknowledged = None;
         if tick_state == State::Menu && input.acknowledge {
             acknowledged = self.flow.acknowledge(&self.race_clock);
             if acknowledged.is_some() {
-                self.set_stage(self.stage.race_over(), physics);
+                self.set_race_over(physics);
             }
         }
 
@@ -401,129 +376,21 @@ impl Game {
         if tick_state == State::Driving && input.retire {
             acknowledged = self.flow.retire_from_menu(&self.race_clock);
             if acknowledged.is_some() {
-                self.set_stage(self.stage.race_over(), physics);
+                self.set_race_over(physics);
             }
         }
 
-        if tick_state == State::Driving && self.stage.state() == State::Driving {
-            if input.help_call && self.help_offered() {
-                self.pending_flags |= CALL_FOR_HELP;
-            }
-            let (count, gate) = self.gate.take(frame.nsteps);
-            self.gate = gate;
-            for index in 0..count {
-                self.filter.set_speed(self.filter_speed);
-                let filtered = self.filter.tic(self.max_time_step);
-                let quantized = QuantizedControl::pack(&filtered);
-                let generated = quantized.car_control();
-                // `CReplayManager::ClsTick` (0x4996c0) ORs the sticky flags into the entry; `E19ClsScan` clears
-                // them once it is stored.
-                let replay = if index == 0 { input.replay_control } else { input.replay_tail.or(input.replay_control) };
-                let pending = std::mem::take(&mut self.pending_flags);
-                let control = match (replay, self.controls) {
-                    (None, ControlPath::Ngp) => {
-                        let fired = Filtered { flags: filtered.flags | u32::from(pending), ..filtered };
-                        CarControl::ngp(&fired, physics.drive_gear())
-                    }
-                    (replay, _) => {
-                        let mut fired = replay.unwrap_or(quantized);
-                        fired.flags |= pending;
-                        fired.car_control()
-                    }
-                };
-                substeps.push(self.physics_substep(physics, Some(control), Some(generated), index));
-            }
-        }
+        // `Tic`'s driving case: each gated substep runs its filter, payload and `StepForward(1)`.
+        self.drive_substeps(tick_state, frame.nsteps, &input, physics, &mut substeps);
 
-        // `CCar::Vf28x`'s `CSigCarGeneralState` reaches the finish zone (`E12_Rep::CbB50`) before the driveline
-        // parameter reaches the marker ticker. Its `CSigEndRace` takes the race clock before this frame's HUD tick.
-        let mut zone_end = None;
-        let sample = self.last_sample;
-        if self.stage.state() == State::Driving && sample.is_some_and(|s| self.finish_zone.check(s.position, s.speed)) {
-            zone_end = self.flow.finish_zone(&self.race_clock);
-            if zone_end.is_some() {
-                self.set_stage(self.stage.race_over(), physics);
-            }
-        }
+        let zone_end = self.check_finish_zone(physics);
 
-        // The marker ticker `Load3b0` runs once a frame from the car's frame update: `CCar::Vf28x` emits the driveline
-        // parameter (0x4ea1f7, the float signal at manager +0x51a8), whose overflow receiver 0x478930 ticks the set
-        // when the frame counter (`CApplication` +0x18, counted by `M004801d0`) moved. It runs in the start scene
-        // (state 10) as well as in the race: the original's tanner playback takes no jump start for its car parked
-        // past the start line, so the start scene fires the key, where `Load3b0` warns and skips the jump start.
-        let mut marker_events = Vec::new();
-        let marker_state = self.stage.state();
-        if matches!(marker_state, State::Driving | State::Countdown) {
-            if let Some(sample) = self.last_sample {
-                let distance = driveline::sample_x(&self.driveline_values, sample.driveline_parameter);
-                let mut marker_input = sample.marker;
-                marker_input.x = distance.unwrap_or(sample.driveline_parameter);
-                marker_input.seek_d = 0.0;
-                marker_input.lookahead_scale = self.marker_settings.callout_distance;
-                marker_input.pace_speed_threshold = self.marker_settings.marker_threshold;
-                marker_input.start_line.game_host_result = self.assist_settings.school() as i32;
-                marker_input.start_line.menu_host_result = self.race_clock.counting_down() as i32;
-                marker_input.start_line.application_state = marker_state.value();
-                marker_input.start_line.race_host_result = self.stage.track();
-                marker_input.finish_to_menu = Mode(self.assist_settings.mode).finish_to_menu();
-                let ticker = std::mem::replace(&mut self.markers, MarkerTicker::from_keys(Vec::new()));
-                let (next, events) = ticker.tick(marker_input);
-                self.markers = next;
-                marker_events = events;
-            }
-        }
+        // `Load3b0` ticks the marker keys after the physics substeps (`M004825b0`).
+        let marker_events = self.tick_markers();
 
-        // The HUD's race clock. The start line's jump start reaches it before the frame's tick: the peeks show the
-        // clock with the countdown's rest before the countdown takes the frame's `dt` (`tests/race_clock_peek.rs`).
-        // The tick is `0x579df0` (whose first call is `M576710`) and `M573d90`, with the frame's `facc`; the camera's
-        // `CSigCamera` (`M579590`) comes after it.
-        let mut clock_events = ClockEvents::default();
-        let mut flow_events = FlowEvents { end: acknowledged.or(zone_end), ..FlowEvents::default() };
-        if self.stage.state() == State::Driving {
-            let clock_at_markers = self.race_clock.time;
-            let settings = self.assist_settings;
-            for event in &marker_events {
-                match event {
-                    MarkerEvent::StartLine(effects) => {
-                        if effects.jump_start {
-                            let (clock, penalty) = self.race_clock.jump_start(settings);
-                            self.race_clock = clock;
-                            clock_events.jump_start = clock_events.jump_start.or(penalty);
-                        }
-                        if effects.clear_menu_flag {
-                            self.race_clock.running = true;
-                        }
-                    }
-                    MarkerEvent::FinishMenu => self.race_clock.running = false,
-                    _ => {}
-                }
-            }
-            let (clock, events) = self.race_clock.tick(frame.facc, settings);
-            self.race_clock = clock;
-            clock_events = ClockEvents { jump_start: clock_events.jump_start, ..events };
-            let speed = self.last_sample.map_or(0.0, |sample| sample.speed);
-            if self.race_clock.moving_start(settings, speed) {
-                let (clock, penalty) = self.race_clock.jump_start(settings);
-                self.race_clock = clock;
-                clock_events.jump_start = clock_events.jump_start.or(penalty);
-            }
-            self.penalties += clock_events.penalty.unwrap_or(0.0) + clock_events.jump_start.unwrap_or(0.0);
-            let retires: Vec<u32> = substeps.iter().filter_map(|s| s.retire).collect();
-            flow_events = self.flow.frame(FlowFrame {
-                dt: frame.facc,
-                state: self.stage.state(),
-                clock_at_markers,
-                clock: self.race_clock,
-                markers: &marker_events,
-                retires: &retires,
-                excluded: settings.excluded(clock_events.jump_start.is_some()),
-            });
-            if flow_events.end.is_some() {
-                self.set_stage(self.stage.race_over(), physics);
-            } else if flow_events.message.is_some() {
-                self.set_stage(self.stage.pause(), physics);
-            }
-        }
+        // The HUD's race clock and the race flow: the jump start reaches the clock before its tick.
+        let (clock_events, flow_events) =
+            self.tick_race_clock(frame.facc, acknowledged.or(zone_end), &marker_events, &substeps, physics);
         // `E16CamHolder::Tic` is part of the post-tick M004825b0 path; its
         // M0047ca40 event arms the countdown for the next outer frame.
         // With the go timer, `M004825b0`'s state 10 runs the camera (`M8840`) with the frame's `facc`.
@@ -550,6 +417,215 @@ impl Game {
             clock_events,
             flow: flow_events,
         }
+    }
+
+    /// `M004801d0` (0x4801d0) before input polling: state 5's race-host reply starts the load, and state 0xd
+    /// calls `StepForward(40)`, independent of `Vf0c`'s requested `nsteps`, then spends those steps on +0x72c.
+    fn settle_load(
+        &mut self,
+        state_at_frame_start: State,
+        race_host_ready: bool,
+        physics: &mut impl PhysicsStep,
+        substeps: &mut Vec<SubstepEvent>,
+    ) {
+        if state_at_frame_start == State::Setup && race_host_ready {
+            self.set_stage(self.stage.load_ready(), physics);
+        }
+        if state_at_frame_start == State::Load {
+            for index in 0..tick::SETTLE_SUBSTEPS[0] {
+                substeps.push(self.physics_substep(physics, None, None, index));
+            }
+            self.set_stage(self.stage.load_tick(tick::SETTLE_SUBSTEPS[0]), physics);
+            // The countdown's state 10 sets the camera's mode 10, which starts the orbit (`M487680(10,1)`).
+            if self.stage.state() == State::Countdown && self.start_camera.is_some() {
+                self.start_camera = Some(StartCamera::start());
+            }
+        }
+    }
+
+    /// `Tic`'s countdown case: the player's confirm arms it in the modes that take it
+    /// (`CApplication::M0047f9c0` case 10), then the armed countdown takes the frame's `facc`; reaching driving sets
+    /// the player's camera (`M00566390`).
+    fn tick_countdown(
+        &mut self,
+        tick_state: State,
+        facc: f32,
+        confirm: bool,
+        mode: Mode,
+        physics: &mut impl PhysicsStep,
+    ) {
+        if tick_state == State::Countdown && confirm && mode.confirm_arms() {
+            self.set_stage(self.stage.confirm(), physics);
+        }
+        if tick_state == State::Countdown {
+            self.set_stage(self.stage.countdown_tick(facc), physics);
+            if self.stage.state() == State::Driving {
+                // `Tic` sets the player's camera (`M00566390`).
+                if self.start_camera.is_some() {
+                    self.start_camera = Some(StartCamera::Done);
+                }
+            }
+        }
+    }
+
+    /// `Tic`'s driving case: each gated substep runs filter -> `Pack` -> payload, replay fire, then `StepForward(1)`
+    /// (0x48c500/0x48c910/0x48d130/0x47f420/0x5273a0).
+    fn drive_substeps(
+        &mut self,
+        tick_state: State,
+        nsteps: u32,
+        input: &FrameInput,
+        physics: &mut impl PhysicsStep,
+        substeps: &mut Vec<SubstepEvent>,
+    ) {
+        if tick_state == State::Driving && self.stage.state() == State::Driving {
+            if input.help_call && self.help_offered() {
+                self.pending_flags |= CALL_FOR_HELP;
+            }
+            let (count, gate) = self.gate.take(nsteps);
+            self.gate = gate;
+            for index in 0..count {
+                self.filter.set_speed(self.filter_speed);
+                let filtered = self.filter.tic(self.max_time_step);
+                let quantized = QuantizedControl::pack(&filtered);
+                let generated = quantized.car_control();
+                // `CReplayManager::ClsTick` (0x4996c0) ORs the sticky flags into the entry; `E19ClsScan` clears
+                // them once it is stored.
+                let replay = if index == 0 { input.replay_control } else { input.replay_tail.or(input.replay_control) };
+                let pending = std::mem::take(&mut self.pending_flags);
+                let control = match (replay, self.controls) {
+                    (None, ControlPath::Ngp) => {
+                        let fired = Filtered { flags: filtered.flags | u32::from(pending), ..filtered };
+                        CarControl::ngp(&fired, physics.drive_gear())
+                    }
+                    (replay, _) => {
+                        let mut fired = replay.unwrap_or(quantized);
+                        fired.flags |= pending;
+                        fired.car_control()
+                    }
+                };
+                substeps.push(self.physics_substep(physics, Some(control), Some(generated), index));
+            }
+        }
+    }
+
+    /// `CCar::Vf28x`'s `CSigCarGeneralState` reaches the finish zone (`E12_Rep::CbB50`) before the driveline
+    /// parameter reaches the marker ticker. Its `CSigEndRace` takes the race clock before this frame's HUD tick.
+    fn check_finish_zone(&mut self, physics: &mut impl PhysicsStep) -> Option<StageEnd> {
+        let sample = self.last_sample;
+        let entered =
+            self.stage.state() == State::Driving && sample.is_some_and(|s| self.finish_zone.check(s.position, s.speed));
+        if entered {
+            let end = self.flow.finish_zone(&self.race_clock);
+            if end.is_some() {
+                self.set_race_over(physics);
+            }
+            end
+        } else {
+            None
+        }
+    }
+
+    /// The marker ticker `Load3b0` runs once a frame from the car's frame update: `CCar::Vf28x` emits the driveline
+    /// parameter (0x4ea1f7, the float signal at manager +0x51a8), whose overflow receiver 0x478930 ticks the set
+    /// when the frame counter (`CApplication` +0x18, counted by `M004801d0`) moved. It runs in the start scene
+    /// (state 10) as well as in the race: the original's tanner playback takes no jump start for its car parked
+    /// past the start line, so the start scene fires the key, where `Load3b0` warns and skips the jump start.
+    fn tick_markers(&mut self) -> Vec<MarkerEvent> {
+        let mut marker_events = Vec::new();
+        let marker_state = self.stage.state();
+        if matches!(marker_state, State::Driving | State::Countdown) {
+            if let Some(sample) = self.last_sample {
+                let distance = driveline::sample_x(&self.driveline_values, sample.driveline_parameter);
+                let mut marker_input = sample.marker;
+                marker_input.x = distance.unwrap_or(sample.driveline_parameter);
+                marker_input.seek_d = 0.0;
+                marker_input.lookahead_scale = self.marker_settings.callout_distance;
+                marker_input.pace_speed_threshold = self.marker_settings.marker_threshold;
+                marker_input.start_line.game_host_result = self.assist_settings.school() as i32;
+                marker_input.start_line.menu_host_result = self.race_clock.counting_down() as i32;
+                marker_input.start_line.application_state = marker_state.value();
+                marker_input.start_line.race_host_result = self.stage.track();
+                marker_input.finish_to_menu = Mode(self.assist_settings.mode).finish_to_menu();
+                let ticker = std::mem::replace(&mut self.markers, MarkerTicker::from_keys(Vec::new()));
+                let (next, events) = ticker.tick(marker_input);
+                self.markers = next;
+                marker_events = events;
+            }
+        }
+        marker_events
+    }
+
+    /// The HUD's race clock. The start line's jump start reaches it before the frame's tick: the peeks show the
+    /// clock with the countdown's rest before the countdown takes the frame's `dt` (`tests/race_clock_peek.rs`).
+    /// The tick is `0x579df0` (whose first call is `M576710`) and `M573d90`, with the frame's `facc`; the camera's
+    /// `CSigCamera` (`M579590`) comes after it.
+    fn tick_race_clock(
+        &mut self,
+        facc: f32,
+        end: Option<StageEnd>,
+        marker_events: &[MarkerEvent],
+        substeps: &[SubstepEvent],
+        physics: &mut impl PhysicsStep,
+    ) -> (ClockEvents, FlowEvents) {
+        let mut clock_events = ClockEvents::default();
+        let mut flow_events = FlowEvents { end, ..FlowEvents::default() };
+        if self.stage.state() == State::Driving {
+            let clock_at_markers = self.race_clock.time;
+            let settings = self.assist_settings;
+            for event in marker_events {
+                match event {
+                    MarkerEvent::StartLine(effects) => {
+                        if effects.jump_start {
+                            clock_events.jump_start = clock_events.jump_start.or(self.take_jump_start(settings));
+                        }
+                        if effects.clear_menu_flag {
+                            self.race_clock.running = true;
+                        }
+                    }
+                    MarkerEvent::FinishMenu => self.race_clock.running = false,
+                    _ => {}
+                }
+            }
+            let (clock, events) = self.race_clock.tick(facc, settings);
+            self.race_clock = clock;
+            clock_events = ClockEvents { jump_start: clock_events.jump_start, ..events };
+            let speed = self.last_sample.map_or(0.0, |sample| sample.speed);
+            if self.race_clock.moving_start(settings, speed) {
+                clock_events.jump_start = clock_events.jump_start.or(self.take_jump_start(settings));
+            }
+            self.penalties += clock_events.penalty.unwrap_or(0.0) + clock_events.jump_start.unwrap_or(0.0);
+            let retires: Vec<u32> = substeps.iter().filter_map(|s| s.retire).collect();
+            flow_events = self.flow.frame(FlowFrame {
+                dt: facc,
+                state: self.stage.state(),
+                clock_at_markers,
+                clock: self.race_clock,
+                markers: marker_events,
+                retires: &retires,
+                excluded: settings.excluded(clock_events.jump_start.is_some()),
+            });
+            if flow_events.end.is_some() {
+                self.set_race_over(physics);
+            } else if flow_events.message.is_some() {
+                self.set_stage(self.stage.pause(), physics);
+            }
+        }
+        (clock_events, flow_events)
+    }
+
+    /// Takes the jump start's penalty into the race clock, from the start line's `CSigCarGeneralState` as from the
+    /// camera's `CSigCamera` after the tick: the penalty the clock took, if any.
+    fn take_jump_start(&mut self, settings: AssistSettings) -> Option<f32> {
+        let (clock, penalty) = self.race_clock.jump_start(settings);
+        self.race_clock = clock;
+        penalty
+    }
+
+    /// Moves the stage to its end page once the flow ended: `CSigEndRace`'s receiver (`CApplication::M00480810`)
+    /// moves to state 9 in the same call, so the emitting frame is the last one the car is stepped in.
+    fn set_race_over(&mut self, physics: &mut impl PhysicsStep) {
+        self.set_stage(self.stage.race_over(), physics);
     }
 
     /// Moves the stage to `next`. A state change is `SetAppState`'s store, which the physics host is given; its
