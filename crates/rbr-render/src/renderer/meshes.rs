@@ -338,9 +338,12 @@ impl Renderer {
     /// Streams `field`'s grass into the stage's grass tile meshes ([`crate::grass::add`]), about the eye each frame, in
     /// the light computed at load for the ground under it.
     pub fn set_grass(&mut self, field: Arc<crate::grass::Field>) {
-        let tiles = self.meshes.iter().enumerate().filter_map(|(i, m)| {
-            let draw = m.draws.iter().find(|d| d.lod == Lod::Close)?;
-            Some((i, draw.indices.len() / 6))
+        let tiles = self.meshes.iter_mut().enumerate().filter_map(|(i, m)| {
+            let draw = m.draws.iter_mut().find(|d| d.lod == Lod::Close)?;
+            let capacity = draw.indices.len() / 6;
+            // Nothing drawn until a tile fills it: unbounded, an empty mesh would draw its whole capacity everywhere.
+            draw.indices.end = draw.indices.start;
+            Some((i, capacity))
         });
         let tiles = tiles.collect();
         let light = if self.ground_light.is_some() { self.grass_light(&field) } else { Vec::new() };

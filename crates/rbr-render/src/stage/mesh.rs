@@ -109,7 +109,7 @@ pub const LOD_DISTANCE: f32 = 600.0;
 pub const LOD_BAND: f32 = 50.0;
 /// How near the camera, metres, a [`Lod::Close`] draw's block's box centre must be to show (ours: the grass,
 /// [`crate::grass::REACH`] a tile past it).
-pub const CLOSE_DISTANCE: f32 = 108.0;
+pub const CLOSE_DISTANCE: f32 = 118.0;
 
 impl Lod {
     /// The level of a chunk's draw list (1 near, 3 far, anything else always).
