@@ -36,6 +36,7 @@
 //! zero-group retail files). Counts and byte lengths are bounds-checked before
 //! allocation.
 
+use crate::le::{self, Truncated};
 use std::fmt::{self, Display, Formatter};
 
 /// Magic at the start of every `.fnc` file.
@@ -109,9 +110,7 @@ pub enum Error {
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Error::Truncated { offset, needed, len } => {
-                write!(f, "truncated at offset {offset}: need {needed} bytes but file is {len} bytes")
-            }
+            Error::Truncated { offset, needed, len } => le::fmt_truncated(f, *offset, *needed, *len),
             Error::BadMagic { found } => {
                 write!(f, "bad magic: found {found}, expected {}", MAGIC)
             }
@@ -124,26 +123,10 @@ impl Display for Error {
 
 impl std::error::Error for Error {}
 
-fn read_u32_le(bytes: &[u8], offset: usize) -> Result<u32, Error> {
-    let end = offset.checked_add(4).ok_or(Error::Truncated { offset, needed: 4, len: bytes.len() })?;
-    if end > bytes.len() {
-        return Err(Error::Truncated { offset, needed: 4, len: bytes.len() });
+impl From<Truncated> for Error {
+    fn from(t: Truncated) -> Self {
+        Error::Truncated { offset: t.offset, needed: t.needed, len: t.len }
     }
-    let mut buf = [0u8; 4];
-    buf.copy_from_slice(&bytes[offset..end]);
-    Ok(u32::from_le_bytes(buf))
-}
-
-fn read_f32_le(bytes: &[u8], offset: usize) -> Result<f32, Error> {
-    read_u32_le(bytes, offset).map(f32::from_bits)
-}
-
-fn need(bytes: &[u8], offset: usize, count: usize) -> Result<(), Error> {
-    let end = offset.checked_add(count).ok_or(Error::Truncated { offset, needed: count, len: bytes.len() })?;
-    if end > bytes.len() {
-        return Err(Error::Truncated { offset, needed: count, len: bytes.len() });
-    }
-    Ok(())
 }
 
 /// Parses a whole `.fnc` buffer.
@@ -151,40 +134,40 @@ pub fn parse(bytes: &[u8]) -> Result<FncFile, Error> {
     if bytes.len() < 8 {
         return Err(Error::Truncated { offset: 0, needed: 8, len: bytes.len() });
     }
-    let magic = read_u32_le(bytes, 0)?;
+    let magic = le::read_u32_le(bytes, 0)?;
     if magic != MAGIC {
         return Err(Error::BadMagic { found: magic });
     }
-    let group_count = read_u32_le(bytes, 4)? as usize;
+    let group_count = le::read_u32_le(bytes, 4)? as usize;
     let min_group_bytes = group_count.checked_mul(4 + GROUP_HEADER_LEN).ok_or(Error::Truncated {
         offset: 8,
         needed: usize::MAX,
         len: bytes.len(),
     })?;
-    need(bytes, 8, min_group_bytes)?;
+    le::need(bytes, 8, min_group_bytes)?;
     let mut offset = 8usize;
     let mut groups = Vec::new();
     groups.try_reserve_exact(group_count).map_err(|_| Error::Allocation { offset, count: group_count })?;
 
     for _ in 0..group_count {
         let post_count =
-            read_u32_le(bytes, offset).map_err(|_| Error::Truncated { offset, needed: 4, len: bytes.len() })? as usize;
+            le::read_u32_le(bytes, offset)? as usize;
         offset += 4;
 
-        need(bytes, offset, GROUP_HEADER_LEN)?;
-        let fence_type = read_u32_le(bytes, offset)?;
-        let post_type = read_u32_le(bytes, offset + 4)?;
-        let material = read_u32_le(bytes, offset + 8)?;
-        let rail_material = read_u32_le(bytes, offset + 12)?;
+        le::need(bytes, offset, GROUP_HEADER_LEN)?;
+        let fence_type = le::read_u32_le(bytes, offset)?;
+        let post_type = le::read_u32_le(bytes, offset + 4)?;
+        let material = le::read_u32_le(bytes, offset + 8)?;
+        let rail_material = le::read_u32_le(bytes, offset + 12)?;
         offset += 16;
         let mut center = [0.0f32; 3];
         for v in &mut center {
-            *v = read_f32_le(bytes, offset)?;
+            *v = le::read_f32_le(bytes, offset)?;
             offset += 4;
         }
         let mut half_extent = [0.0f32; 3];
         for v in &mut half_extent {
-            *v = read_f32_le(bytes, offset)?;
+            *v = le::read_f32_le(bytes, offset)?;
             offset += 4;
         }
 
@@ -193,19 +176,19 @@ pub fn parse(bytes: &[u8]) -> Result<FncFile, Error> {
             needed: usize::MAX,
             len: bytes.len(),
         })?;
-        need(bytes, offset, post_bytes)?;
+        le::need(bytes, offset, post_bytes)?;
         let mut posts = Vec::new();
         posts.try_reserve_exact(post_count).map_err(|_| Error::Allocation { offset, count: post_count })?;
         for _ in 0..post_count {
-            need(bytes, offset, POST_LEN)?;
+            le::need(bytes, offset, POST_LEN)?;
             let mut position = [0.0f32; 3];
             let mut center = [0.0f32; 3];
             let mut half_extent = [0.0f32; 3];
             for v in position.iter_mut().chain(center.iter_mut()).chain(half_extent.iter_mut()) {
-                *v = read_f32_le(bytes, offset)?;
+                *v = le::read_f32_le(bytes, offset)?;
                 offset += 4;
             }
-            let color = read_u32_le(bytes, offset)?;
+            let color = le::read_u32_le(bytes, offset)?;
             offset += 4;
             posts.push(FncPost { position, center, half_extent, color });
         }
@@ -222,12 +205,12 @@ pub fn parse(bytes: &[u8]) -> Result<FncFile, Error> {
         ignored_tail.extend_from_slice(&bytes[offset..]);
     } else {
         let texture_count =
-            read_u32_le(bytes, offset).map_err(|_| Error::Truncated { offset, needed: 4, len: bytes.len() })? as usize;
+            le::read_u32_le(bytes, offset)? as usize;
         offset += 4;
 
         if texture_count != 0 {
             let name_len =
-                read_u32_le(bytes, offset).map_err(|_| Error::Truncated { offset, needed: 4, len: bytes.len() })?
+                le::read_u32_le(bytes, offset)?
                     as usize;
             offset += 4;
             if texture_count > bytes.len() {
@@ -238,7 +221,7 @@ pub fn parse(bytes: &[u8]) -> Result<FncFile, Error> {
                 needed: usize::MAX,
                 len: bytes.len(),
             })?;
-            need(bytes, offset, names_len)?;
+            le::need(bytes, offset, names_len)?;
             textures
                 .try_reserve_exact(texture_count)
                 .map_err(|_| Error::Allocation { offset, count: texture_count })?;
