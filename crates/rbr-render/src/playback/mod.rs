@@ -107,8 +107,6 @@ struct Part {
     wheel: Option<(usize, Vec3)>,
     /// In the interior set ([`Playback::add_interior`]), drawn instead of the exterior in the in-car views.
     interior: bool,
-    /// The interior steering-wheel mesh ([`MeshDamage::steering`]), turned by [`Playback::turn`].
-    steering: bool,
     /// What damage does to it.
     effect: MeshDamage,
     /// The detachable part it is ([`detach::PARTS`]), placed by its body once detached ([`Playback::set_detached`]).
@@ -130,7 +128,6 @@ impl Part {
             rest: mesh.vertices.clone(),
             wheel,
             interior,
-            steering: effect.steering,
             effect: effect.clone(),
             detach,
             damage: Vec::new(),
@@ -599,10 +596,11 @@ impl Playback {
         for part in &self.parts {
             let cracked = part.effect.crack.is_none_or(|crack| self.cracks.shows(crack));
             let lamp = part.effect.lamp.is_none_or(|switch| switch.shown(inputs));
-            let hidden = part.interior && part.steering && self.hide_wheel;
+            let steering = part.interior && part.effect.steering;
+            let hidden = steering && self.hide_wheel;
             renderer.set_visible(part.stage, part.interior == self.interior && cracked && lamp && !hidden);
             renderer.set_outside_visible(part.stage, !part.interior && cracked && lamp);
-            let turned = self.turn.filter(|_| part.interior && part.steering);
+            let turned = self.turn.filter(|_| steering);
             let detached = part.detach.and_then(|k| self.detached[k]);
             // The parts that move only with the body are given once, in its model space, and placed on the GPU: a car
             // has some 200,000 vertices, which took milliseconds a frame to place and give.
