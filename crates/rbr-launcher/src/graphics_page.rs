@@ -8,7 +8,7 @@ use rbr_render::mirrors::Rate;
 use rbr_render::present::Present;
 use rbr_render::renderer::{AntiAliasing, Detail, Reflections};
 
-use crate::pages::{fields, section, DRIVE_FIELDS, FIELD};
+use crate::pages::{combo, fields, section, Choice, DRIVE_FIELDS, FIELD};
 use crate::Form;
 
 /// The Quality section's choices: the renderer's additions (`viewer --enhance`), the wet roads (`--enhance wet` and
@@ -38,6 +38,13 @@ pub const ALWAYS_ON: [&str; 3] = ["anisotropy", "decals", "water"];
 /// A new install's choices: the High preset.
 pub const DEFAULT_GRAPHICS: Graphics = Quality::High.graphics(false);
 
+impl Default for Graphics {
+    /// A new install's choices.
+    fn default() -> Self {
+        DEFAULT_GRAPHICS
+    }
+}
+
 /// The width of the Quality section's boxes, beside the left column.
 const QUALITY_FIELD: f32 = 170.0;
 
@@ -55,20 +62,6 @@ impl WetRoads {
     /// The choices offered, in the launcher's order.
     pub const ALL: [WetRoads; 4] = [WetRoads::High, WetRoads::Medium, WetRoads::Low, WetRoads::Off];
 
-    /// Its name in the settings.
-    pub fn name(self) -> &'static str {
-        match self {
-            WetRoads::Off => "off",
-            WetRoads::Low => "low",
-            WetRoads::Medium => "medium",
-            WetRoads::High => "high",
-        }
-    }
-
-    pub fn parse(text: &str) -> Option<WetRoads> {
-        WetRoads::ALL.into_iter().find(|w| w.name() == text)
-    }
-
     /// The viewer's screen-space reflections for it.
     pub fn reflections(self) -> Reflections {
         match self {
@@ -77,13 +70,50 @@ impl WetRoads {
             WetRoads::High => Reflections::High,
         }
     }
+}
 
+impl Choice for WetRoads {
+    const ALL: &[Self] = &WetRoads::ALL;
+    fn name(self) -> &'static str {
+        match self {
+            WetRoads::Off => "off",
+            WetRoads::Low => "low",
+            WetRoads::Medium => "medium",
+            WetRoads::High => "high",
+        }
+    }
     fn label(self) -> &'static str {
         match self {
             WetRoads::Off => "Off",
             WetRoads::Low => "Low",
             WetRoads::Medium => "Medium",
             WetRoads::High => "High",
+        }
+    }
+}
+
+impl Choice for AntiAliasing {
+    const ALL: &[Self] = &AntiAliasing::ALL;
+    fn name(self) -> &'static str {
+        AntiAliasing::name(self)
+    }
+    fn label(self) -> &'static str {
+        match self {
+            AntiAliasing::Taa => "Temporal",
+            AntiAliasing::Off => "Off",
+        }
+    }
+}
+
+impl Choice for Detail {
+    const ALL: &[Self] = &Detail::ALL;
+    fn name(self) -> &'static str {
+        Detail::name(self)
+    }
+    fn label(self) -> &'static str {
+        match self {
+            Detail::High => "High",
+            Detail::Ultra => "Ultra",
         }
     }
 }
@@ -170,21 +200,6 @@ fn scale_label(percent: u32) -> String {
 }
 
 /// A detail choice's label.
-fn detail_label(choice: Detail) -> &'static str {
-    match choice {
-        Detail::High => "High",
-        Detail::Ultra => "Ultra",
-    }
-}
-
-/// An anti-aliasing choice's label.
-fn anti_aliasing_label(choice: AntiAliasing) -> &'static str {
-    match choice {
-        AntiAliasing::Taa => "Temporal",
-        AntiAliasing::Off => "Off",
-    }
-}
-
 /// A mirrors' rate's label.
 fn mirrors_label(rate: Rate) -> &'static str {
     match rate {
@@ -301,15 +316,7 @@ impl Form {
             let tip = "Draws the 3D view at this share of the window's size and scales it up: softer, but faster, for \
                        high refresh rates at 1440p and above";
             ui.label("Render scale").on_hover_text(tip);
-            ComboBox::from_id_salt("render scale")
-                .selected_text(scale_label(self.render_scale))
-                .show_ui(ui, |ui| {
-                    for percent in RENDER_SCALES {
-                        ui.selectable_value(&mut self.render_scale, percent, scale_label(percent));
-                    }
-                })
-                .response
-                .on_hover_text(tip);
+            combo(ui, "render scale", None, &mut self.render_scale, &RENDER_SCALES, scale_label).on_hover_text(tip);
             ui.end_row();
 
             let tip =
@@ -317,15 +324,7 @@ impl Form {
                        and fences' cut-outs too. Off: one sample a pixel, the cut-outs as in 1.02: a little faster, \
                        with jagged edges";
             ui.label("Anti-aliasing").on_hover_text(tip);
-            ComboBox::from_id_salt("anti-aliasing")
-                .width(FIELD)
-                .selected_text(anti_aliasing_label(self.anti_aliasing))
-                .show_ui(ui, |ui| {
-                    for choice in AntiAliasing::ALL {
-                        ui.selectable_value(&mut self.anti_aliasing, choice, anti_aliasing_label(choice));
-                    }
-                })
-                .response
+            combo(ui, "anti-aliasing", FIELD, &mut self.anti_aliasing, &AntiAliasing::ALL, AntiAliasing::label)
                 .on_hover_text(tip);
             ui.end_row();
 
@@ -514,16 +513,7 @@ impl Form {
                        screen, on the wet roads and on rivers and lakes, Medium grainier. Off: the game's wet roads. \
                        Each step up costs more frame time in the rain";
             ui.label("Wet roads").on_hover_text(tip);
-            ComboBox::from_id_salt("wet roads")
-                .width(QUALITY_FIELD)
-                .selected_text(g.wet_roads.label())
-                .show_ui(ui, |ui| {
-                    for choice in WetRoads::ALL {
-                        ui.selectable_value(&mut g.wet_roads, choice, choice.label());
-                    }
-                })
-                .response
-                .on_hover_text(tip);
+            combo(ui, "wet roads", QUALITY_FIELD, &mut g.wet_roads, &WetRoads::ALL, WetRoads::label).on_hover_text(tip);
             ui.end_row();
 
             let tip = "Asphalt, gravel, snow and the off-road ground get the fine grain and relief of scanned \
@@ -563,32 +553,14 @@ impl Form {
                        trunks) and sharper reflections in the car's paint and the wet roads. 15 to 40 % more frame \
                        time, and 0.5 GB more video memory on long stages";
             ui.label("Detail").on_hover_text(tip);
-            ComboBox::from_id_salt("detail")
-                .width(QUALITY_FIELD)
-                .selected_text(detail_label(g.detail))
-                .show_ui(ui, |ui| {
-                    for choice in Detail::ALL {
-                        ui.selectable_value(&mut g.detail, choice, detail_label(choice));
-                    }
-                })
-                .response
-                .on_hover_text(tip);
+            combo(ui, "detail", QUALITY_FIELD, &mut g.detail, &Detail::ALL, Detail::label).on_hover_text(tip);
             ui.end_row();
 
             let tip = "In the cockpit: the rear-view and door mirrors show the stage, the car and the cars behind, \
                        redrawn this often (each mirror in turn). Costly in the rain, which they draw too. Off: they \
                        only reflect the sky";
             ui.label("Mirrors").on_hover_text(tip);
-            ComboBox::from_id_salt("mirrors")
-                .width(QUALITY_FIELD)
-                .selected_text(mirrors_label(g.mirrors))
-                .show_ui(ui, |ui| {
-                    for rate in Rate::ALL {
-                        ui.selectable_value(&mut g.mirrors, rate, mirrors_label(rate));
-                    }
-                })
-                .response
-                .on_hover_text(tip);
+            combo(ui, "mirrors", QUALITY_FIELD, &mut g.mirrors, &Rate::ALL, mirrors_label).on_hover_text(tip);
             ui.end_row();
 
             let tip = "Tyre marks as wide as the tread and swept wider in a slide: ruts with berms in gravel, rubber \

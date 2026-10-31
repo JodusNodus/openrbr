@@ -43,7 +43,7 @@ pub fn ngp_offered(cars: &[Car], ngp_cars: &[u32]) -> Vec<Car> {
 }
 
 /// A car of `Cars/Cars.ini`, or an RSF or added car raced in RSF's slot.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Car {
     /// Its game's car number (`rbr-standalone --car`).
     pub index: u32,
@@ -115,7 +115,7 @@ pub fn rsf_cars(install: &Path, root: &Path, added: bool) -> Result<Vec<Car>, St
 
 /// A stage variant, `track-NN_X` (a community stage's: the path of its files, `rbr_formats::stage_files`), loaded for
 /// the weather selected by the game.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Stage {
     pub name: String,
     pub map: u32,

@@ -3,15 +3,15 @@
 use std::fs::{self, File};
 use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use egui::{ComboBox, RichText};
+use egui::RichText;
 use rbr_recording::{realtime, replay, splits::Splits};
 
 use crate::settings::{Clouds, Precipitation};
 
-use crate::pages::{section, WARN};
+use crate::pages::{combo, section, Choice, WARN};
 use crate::Form;
 
 #[derive(Clone)]
@@ -337,10 +337,8 @@ impl Form {
                 ui.add_space(10.0);
                 ui.horizontal(|ui| {
                     ui.label("Camera");
-                    ComboBox::from_id_salt("replay-view").selected_text(self.replays.view).show_ui(ui, |ui| {
-                        for view in ["cockpit", "bonnet", "chase"] {
-                            ui.selectable_value(&mut self.replays.view, view, view);
-                        }
+                    combo(ui, "replay-view", None, &mut self.replays.view, &["cockpit", "bonnet", "chase"], |view| {
+                        view
                     });
                 });
                 let ready = self.child.is_none() && entry.problem.is_none() && self.readiness().is_none();
@@ -348,22 +346,15 @@ impl Form {
                 ui.weak("Space pauses · R restarts · Esc closes");
                 section(ui, "Export to video");
                 ui.horizontal(|ui| {
-                    ComboBox::from_id_salt("replay-size").selected_text(format!("{}p", self.replays.size.1)).show_ui(
+                    combo(
                         ui,
-                        |ui| {
-                            for size in [(1280, 720), (1920, 1080), (2560, 1440), (3840, 2160)] {
-                                ui.selectable_value(&mut self.replays.size, size, format!("{}p", size.1));
-                            }
-                        },
+                        "replay-size",
+                        None,
+                        &mut self.replays.size,
+                        &[(1280, 720), (1920, 1080), (2560, 1440), (3840, 2160)],
+                        |(_, height)| format!("{height}p"),
                     );
-                    ComboBox::from_id_salt("replay-fps").selected_text(format!("{} fps", self.replays.fps)).show_ui(
-                        ui,
-                        |ui| {
-                            for fps in [30, 60] {
-                                ui.selectable_value(&mut self.replays.fps, fps, format!("{fps} fps"));
-                            }
-                        },
-                    );
+                    combo(ui, "replay-fps", None, &mut self.replays.fps, &[30, 60], |fps| format!("{fps} fps"));
                 });
                 ui.label("Save MP4 to");
                 ui.add(egui::TextEdit::singleline(&mut self.replays.output).desired_width(f32::INFINITY));
@@ -422,11 +413,8 @@ impl Form {
                 self.replays.view,
                 video.as_deref().map(|p| (p, self.replays.size, self.replays.fps)),
             );
-            let mut command = Command::new(&self.paths.viewer);
-            command.args(args).envs(self.child_env()).stdout(Stdio::null()).stderr(stderr);
-            if self.paths.patch.is_none() {
-                command.env_remove("RBR_PATCH");
-            }
+            let mut command = self.viewer_command(&args);
+            command.stdout(Stdio::null()).stderr(stderr);
             let child = command.spawn().map_err(|e| format!("Cannot start replay: {e}"))?;
             Ok::<_, String>((child, log))
         })();

@@ -19,7 +19,7 @@ use rbr_formats::saves::SaveDir;
 use rbr_gameplay::setup::{Area, CarSetup, Range, SeasonSetup, Setup, Slot, Spec, CAR_FOLDERS, MAP_POINTS, WHEELS};
 
 use crate::catalog::Car;
-use crate::pages::WARN;
+use crate::pages::{combo, WARN};
 
 /// The defaults and ranges of the NGP car pack at `path` on `surface`.
 fn pack_setup(path: &Path, surface: &str) -> Result<CarSetup, String> {
@@ -378,11 +378,8 @@ impl SetupPage {
             ui.label("Drop gear").on_hover_text("the car options' drop gear rows; the gearbox ratios are fixed");
             let gear = &mut self.setup.drop_gear;
             ui.add_enabled_ui(range.max > range.min, |ui| {
-                ComboBox::from_id_salt("drop-gear").selected_text(ratio(*gear)).show_ui(ui, |ui| {
-                    for id in range.min as u32..=range.max as u32 {
-                        ui.selectable_value(gear, id, ratio(id));
-                    }
-                });
+                let ids: Vec<u32> = (range.min as u32..=range.max as u32).collect();
+                combo(ui, "drop-gear", None, gear, &ids, ratio);
             });
         });
     }

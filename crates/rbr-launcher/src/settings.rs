@@ -26,7 +26,7 @@ use crate::ghosts::GhostChoice;
 use crate::graphics_page::{
     Graphics, HudChoice, WetRoads, DEFAULT_GRAPHICS, MAX_GROUP_VOLUME, MAX_VOLUME, RENDER_SCALES,
 };
-use crate::pages::Page;
+use crate::pages::{Choice, Page};
 use crate::rally_page::RallyPage;
 use crate::setup_page::SetupPage;
 use crate::{install, preview, Form, Paths, Start};
@@ -86,31 +86,8 @@ pub enum Fog {
 }
 
 impl Fog {
-    pub fn name(self) -> &'static str {
-        match self {
-            Fog::Off => "off",
-            Fog::Light => "light",
-            Fog::Heavy => "heavy",
-        }
-    }
-
-    /// The Drive page's word for the fog.
-    pub fn label(self) -> &'static str {
-        match self {
-            Fog::Off => "Off",
-            Fog::Light => "Light",
-            Fog::Heavy => "Heavy",
-        }
-    }
-
-    pub fn parse(text: &str) -> Option<Fog> {
-        match text {
-            "off" => Some(Fog::Off),
-            "light" => Some(Fog::Light),
-            "heavy" => Some(Fog::Heavy),
-            _ => None,
-        }
-    }
+    /// The fogs offered, in the dropdown's order.
+    pub const ALL: [Fog; 3] = [Fog::Off, Fog::Light, Fog::Heavy];
 }
 
 /// Our cloud cover over the stage (`viewer --clouds`), not the game's.
@@ -124,19 +101,6 @@ pub enum Clouds {
 
 impl Clouds {
     pub const ALL: [Clouds; 4] = [Clouds::Clear, Clouds::Partly, Clouds::Light, Clouds::Heavy];
-
-    pub fn name(self) -> &'static str {
-        ["clear", "partly", "light", "heavy"][self as usize]
-    }
-
-    /// The Drive page's word for the cover.
-    pub fn label(self) -> &'static str {
-        ["Clear", "Partly cloudy", "Light clouds", "Overcast"][self as usize]
-    }
-
-    pub fn parse(text: &str) -> Option<Clouds> {
-        Clouds::ALL.into_iter().find(|clouds| clouds.name() == text)
-    }
 }
 
 /// Our rain or snow over the stage (`viewer --precipitation`), not the game's; the road's wetness stays separate.
@@ -151,18 +115,43 @@ pub enum Precipitation {
 impl Precipitation {
     pub const ALL: [Precipitation; 4] =
         [Precipitation::None, Precipitation::Light, Precipitation::Moderate, Precipitation::Heavy];
+}
 
-    pub fn name(self) -> &'static str {
+impl Choice for Fog {
+    const ALL: &[Self] = &Fog::ALL;
+    fn name(self) -> &'static str {
+        match self {
+            Fog::Off => "off",
+            Fog::Light => "light",
+            Fog::Heavy => "heavy",
+        }
+    }
+    fn label(self) -> &'static str {
+        match self {
+            Fog::Off => "Off",
+            Fog::Light => "Light",
+            Fog::Heavy => "Heavy",
+        }
+    }
+}
+
+impl Choice for Clouds {
+    const ALL: &[Self] = &Clouds::ALL;
+    fn name(self) -> &'static str {
+        ["clear", "partly", "light", "heavy"][self as usize]
+    }
+    fn label(self) -> &'static str {
+        ["Clear", "Partly cloudy", "Light clouds", "Overcast"][self as usize]
+    }
+}
+
+impl Choice for Precipitation {
+    const ALL: &[Self] = &Precipitation::ALL;
+    fn name(self) -> &'static str {
         ["none", "light", "moderate", "heavy"][self as usize]
     }
-
-    /// The Drive page's word for the amount.
-    pub fn label(self) -> &'static str {
+    fn label(self) -> &'static str {
         ["None", "Light", "Moderate", "Heavy"][self as usize]
-    }
-
-    pub fn parse(text: &str) -> Option<Precipitation> {
-        Precipitation::ALL.into_iter().find(|rain| rain.name() == text)
     }
 }
 
