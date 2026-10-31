@@ -611,103 +611,8 @@ impl RallyPage {
         ui.label(format!("Penalties {}   Total {}", clock(c.penalty()), clock(c.total_time())));
         ui.separator();
         match c.phase() {
-            RallyPhase::Stage(index) => {
-                if let Some(ev) = self.run.as_ref().filter(|r| r.turn == Turn::Stage(index as u32)) {
-                    if let Some(head) = ev.save.events.first() {
-                        let (hour, minute) = events::time_of(head);
-                        let place = season_model::player_start_place(&ev.save).map_or(0, |p| p + 1);
-                        ui.label(format!("SS{}: start place {place}, at {hour:02}:{minute:02}", index + 1));
-                    }
-                }
-                let stage = c.rally().stages[index];
-                let choosing = choice_before(index);
-                ui.horizontal(|ui| {
-                    if choosing {
-                        let choices = tyre_choices(crate::catalog::surface_kind(stage.map));
-                        let tyre = self.next_tyre(index);
-                        ui.label("Tyres");
-                        ComboBox::from_id_salt("stage-tyre").selected_text(crate::catalog::tyre_label(tyre)).show_ui(
-                            ui,
-                            |ui| {
-                                for &t in choices {
-                                    if ui.selectable_label(t == tyre, crate::catalog::tyre_label(t)).clicked() {
-                                        self.tyre = Some(t);
-                                    }
-                                }
-                            },
-                        );
-                        let slots = SaveDir::new(here).setup_slots(car).unwrap_or_default();
-                        let label = |row: SeasonSetup| match row {
-                            SeasonSetup::Slot(n) => {
-                                let name = slots.get(n as usize).cloned().flatten();
-                                format!("{}: {}", row.label(), name.unwrap_or_else(|| "empty".into()))
-                            }
-                            _ => row.label(),
-                        };
-                        ui.label("Setup");
-                        ComboBox::from_id_salt("stage-setup").selected_text(label(self.setup)).show_ui(ui, |ui| {
-                            for row in SeasonSetup::rows(slots.len() as u32) {
-                                let empty = matches!(row, SeasonSetup::Slot(n) if slots[n as usize].is_none());
-                                let button = egui::Button::selectable(row == self.setup, label(row));
-                                if ui.add_enabled(!empty, button).clicked() {
-                                    self.setup = row;
-                                }
-                            }
-                        });
-                    } else {
-                        // No service before the stage: the stage loop starts it on the car as it is.
-                        ui.label(format!("Tyres {}, setup as driven", crate::catalog::tyre_label(self.last_tyre)));
-                    }
-                    let go = ui.add_enabled(
-                        !self.driving && blocker.is_none(),
-                        egui::Button::new(format!("Drive SS{}", index + 1)),
-                    );
-                    if go.clicked() {
-                        match self.stage_start(here, index) {
-                            Ok(start) => request = Some(Request::Launch(start)),
-                            Err(e) => self.status = e,
-                        }
-                    }
-                    if choosing && ui.button("Setup").clicked() {
-                        request = Some(Request::Setup);
-                    }
-                });
-                if let Some(issue) = blocker.filter(|_| !self.driving) {
-                    ui.colored_label(WARN, &issue.text);
-                }
-            }
-            RallyPhase::Service(stop) if c.damage().is_none() => {
-                // The rally's start (the season's welcome page): a fresh car, nothing to repair.
-                ui.label(format!(
-                    "Welcome to {}. Service before SS{}: the car is new.",
-                    self.rally_name(),
-                    stop.next + 1
-                ));
-                if self.recce_asked {
-                    // `CONTINUE_SEASON` (0x5abc20) asks before the setup choice; "Yes" goes on to it (0x5abc00).
-                    let text = |key| text_of(self.strings.as_ref(), key);
-                    let (title, info, yes, no) =
-                        (text("MSG_CRECCE"), text("INF_FORFEITRECCE"), text("YES"), text("NO"));
-                    ui.label(title);
-                    ui.label(info);
-                    ui.horizontal(|ui| {
-                        if ui.button(yes).clicked() {
-                            self.recce_asked = false;
-                            self.start_rally();
-                        }
-                        if ui.button(no).clicked() {
-                            self.recce_asked = false;
-                        }
-                    });
-                } else if ui.button("Start the rally").clicked() {
-                    let welcome = self.run.as_ref().filter(|r| r.turn == Turn::Welcome);
-                    if welcome.is_some_and(|r| events::recce_next(&r.save.events)) {
-                        self.recce_asked = true;
-                    } else {
-                        self.start_rally();
-                    }
-                }
-            }
+            RallyPhase::Stage(index) => request = self.stage_ui(ui, here, car, &c, index, blocker),
+            RallyPhase::Service(stop) if c.damage().is_none() => self.welcome_ui(ui, stop.next),
             RallyPhase::Service(stop) => {
                 if self.park.is_none() {
                     self.open_park(data, car, Some(ngp));
@@ -716,61 +621,7 @@ impl RallyPage {
                     self.service_done(penalty, damage);
                 }
             }
-            RallyPhase::Over(outcome) => {
-                ui.label(match outcome {
-                    RallyOutcome::Finished => "Rally finished.".to_owned(),
-                    RallyOutcome::Wrecked { stage } => {
-                        // Page 0x18 (FAILED, `CFailedSeasonFinishedWithBadCarUI`): the text by the season's queue.
-                        let key = match self.next_event(stage) {
-                            NextEvent::Service => "MSG_UNFINISH_SERVICE",
-                            _ => "MSG_UNFINISH_STAGE",
-                        };
-                        let text = text_of(self.strings.as_ref(), key);
-                        format!(
-                            "SS{} finished, failed: {}",
-                            stage + 1,
-                            text.split_whitespace().collect::<Vec<_>>().join(" ")
-                        )
-                    }
-                    RallyOutcome::Retired { stage } => format!("Retired on SS{}: rally over.", stage + 1),
-                });
-                match self.run.as_ref().map(|r| r.turn) {
-                    Some(Turn::Results) => {
-                        if ui.button("Continue").clicked() {
-                            self.turn_done();
-                        }
-                    }
-                    Some(Turn::BetweenRallies) => {
-                        // Page 0x19 (0x5acf30): Continue, the two trials (the car tune and the season data are the
-                        // Setup page and the standings below).
-                        ui.horizontal(|ui| {
-                            if ui.add_enabled(!self.driving, egui::Button::new("Next rally")).clicked() {
-                                self.turn_done();
-                            }
-                            for (label, map) in [("Yard trial", 72), ("Stage trial", 71)] {
-                                let trial =
-                                    ui.add_enabled(!self.driving && blocker.is_none(), egui::Button::new(label));
-                                if trial.clicked() {
-                                    match self.trial(season, map) {
-                                        Ok(start) => {
-                                            (self.driving, self.practice) = (true, true);
-                                            request = Some(Request::Launch(start));
-                                        }
-                                        Err(e) => self.status = e,
-                                    }
-                                }
-                            }
-                        });
-                        if let Some(issue) = blocker.filter(|_| !self.driving) {
-                            ui.colored_label(WARN, &issue.text);
-                        }
-                    }
-                    Some(Turn::Over) => {
-                        ui.strong("The season is over.");
-                    }
-                    _ => {}
-                }
-            }
+            RallyPhase::Over(outcome) => request = self.over_ui(ui, season, outcome, blocker),
         }
         self.season_ui(ui);
         if !self.status.is_empty() {
@@ -901,6 +752,172 @@ impl RallyPage {
                 ui.label(line);
             }
         });
+    }
+
+    /// The stage phase: the start place, the tyre and setup pick after a service (else the car as it is), and
+    /// the drive button.
+    fn stage_ui(
+        &mut self,
+        ui: &mut Ui,
+        here: &Path,
+        car: u32,
+        c: &Championship,
+        index: usize,
+        blocker: Option<&Issue>,
+    ) -> Option<Request> {
+        let mut request = None;
+        if let Some(ev) = self.run.as_ref().filter(|r| r.turn == Turn::Stage(index as u32)) {
+            if let Some(head) = ev.save.events.first() {
+                let (hour, minute) = events::time_of(head);
+                let place = season_model::player_start_place(&ev.save).map_or(0, |p| p + 1);
+                ui.label(format!("SS{}: start place {place}, at {hour:02}:{minute:02}", index + 1));
+            }
+        }
+        let stage = c.rally().stages[index];
+        let choosing = choice_before(index);
+        ui.horizontal(|ui| {
+            if choosing {
+                let choices = tyre_choices(crate::catalog::surface_kind(stage.map));
+                let tyre = self.next_tyre(index);
+                ui.label("Tyres");
+                ComboBox::from_id_salt("stage-tyre").selected_text(crate::catalog::tyre_label(tyre)).show_ui(
+                    ui,
+                    |ui| {
+                        for &t in choices {
+                            if ui.selectable_label(t == tyre, crate::catalog::tyre_label(t)).clicked() {
+                                self.tyre = Some(t);
+                            }
+                        }
+                    },
+                );
+                let slots = SaveDir::new(here).setup_slots(car).unwrap_or_default();
+                let label = |row: SeasonSetup| match row {
+                    SeasonSetup::Slot(n) => {
+                        let name = slots.get(n as usize).cloned().flatten();
+                        format!("{}: {}", row.label(), name.unwrap_or_else(|| "empty".into()))
+                    }
+                    _ => row.label(),
+                };
+                ui.label("Setup");
+                ComboBox::from_id_salt("stage-setup").selected_text(label(self.setup)).show_ui(ui, |ui| {
+                    for row in SeasonSetup::rows(slots.len() as u32) {
+                        let empty = matches!(row, SeasonSetup::Slot(n) if slots[n as usize].is_none());
+                        let button = egui::Button::selectable(row == self.setup, label(row));
+                        if ui.add_enabled(!empty, button).clicked() {
+                            self.setup = row;
+                        }
+                    }
+                });
+            } else {
+                // No service before the stage: the stage loop starts it on the car as it is.
+                ui.label(format!("Tyres {}, setup as driven", crate::catalog::tyre_label(self.last_tyre)));
+            }
+            let go =
+                ui.add_enabled(!self.driving && blocker.is_none(), egui::Button::new(format!("Drive SS{}", index + 1)));
+            if go.clicked() {
+                match self.stage_start(here, index) {
+                    Ok(start) => request = Some(Request::Launch(start)),
+                    Err(e) => self.status = e,
+                }
+            }
+            if choosing && ui.button("Setup").clicked() {
+                request = Some(Request::Setup);
+            }
+        });
+        if let Some(issue) = blocker.filter(|_| !self.driving) {
+            ui.colored_label(WARN, &issue.text);
+        }
+        request
+    }
+
+    /// The rally's start with a fresh car: the welcome page and the recce question.
+    fn welcome_ui(&mut self, ui: &mut Ui, next: usize) {
+        // The rally's start (the season's welcome page): a fresh car, nothing to repair.
+        ui.label(format!("Welcome to {}. Service before SS{}: the car is new.", self.rally_name(), next + 1));
+        if self.recce_asked {
+            // `CONTINUE_SEASON` (0x5abc20) asks before the setup choice; "Yes" goes on to it (0x5abc00).
+            let text = |key| text_of(self.strings.as_ref(), key);
+            let (title, info, yes, no) = (text("MSG_CRECCE"), text("INF_FORFEITRECCE"), text("YES"), text("NO"));
+            ui.label(title);
+            ui.label(info);
+            ui.horizontal(|ui| {
+                if ui.button(yes).clicked() {
+                    self.recce_asked = false;
+                    self.start_rally();
+                }
+                if ui.button(no).clicked() {
+                    self.recce_asked = false;
+                }
+            });
+        } else if ui.button("Start the rally").clicked() {
+            let welcome = self.run.as_ref().filter(|r| r.turn == Turn::Welcome);
+            if welcome.is_some_and(|r| events::recce_next(&r.save.events)) {
+                self.recce_asked = true;
+            } else {
+                self.start_rally();
+            }
+        }
+    }
+
+    /// The rally's end: the result, then the season's queue (the results, the trials between rallies, the season
+    /// over).
+    fn over_ui(
+        &mut self,
+        ui: &mut Ui,
+        season: &Season,
+        outcome: RallyOutcome,
+        blocker: Option<&Issue>,
+    ) -> Option<Request> {
+        let mut request = None;
+        ui.label(match outcome {
+            RallyOutcome::Finished => "Rally finished.".to_owned(),
+            RallyOutcome::Wrecked { stage } => {
+                // Page 0x18 (FAILED, `CFailedSeasonFinishedWithBadCarUI`): the text by the season's queue.
+                let key = match self.next_event(stage) {
+                    NextEvent::Service => "MSG_UNFINISH_SERVICE",
+                    _ => "MSG_UNFINISH_STAGE",
+                };
+                let text = text_of(self.strings.as_ref(), key);
+                format!("SS{} finished, failed: {}", stage + 1, text.split_whitespace().collect::<Vec<_>>().join(" "))
+            }
+            RallyOutcome::Retired { stage } => format!("Retired on SS{}: rally over.", stage + 1),
+        });
+        match self.run.as_ref().map(|r| r.turn) {
+            Some(Turn::Results) => {
+                if ui.button("Continue").clicked() {
+                    self.turn_done();
+                }
+            }
+            Some(Turn::BetweenRallies) => {
+                // Page 0x19 (0x5acf30): Continue, the two trials (the car tune and the season data are the
+                // Setup page and the standings below).
+                ui.horizontal(|ui| {
+                    if ui.add_enabled(!self.driving, egui::Button::new("Next rally")).clicked() {
+                        self.turn_done();
+                    }
+                    for (label, map) in [("Yard trial", 72), ("Stage trial", 71)] {
+                        let trial = ui.add_enabled(!self.driving && blocker.is_none(), egui::Button::new(label));
+                        if trial.clicked() {
+                            match self.trial(season, map) {
+                                Ok(start) => {
+                                    (self.driving, self.practice) = (true, true);
+                                    request = Some(Request::Launch(start));
+                                }
+                                Err(e) => self.status = e,
+                            }
+                        }
+                    }
+                });
+                if let Some(issue) = blocker.filter(|_| !self.driving) {
+                    ui.colored_label(WARN, &issue.text);
+                }
+            }
+            Some(Turn::Over) => {
+                ui.strong("The season is over.");
+            }
+            _ => {}
+        }
+        request
     }
 
     /// The park, as `CSelectPartsUI` and the timer show it: the allowed and estimated times, the damaged parts to
