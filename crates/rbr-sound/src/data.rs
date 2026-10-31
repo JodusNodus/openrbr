@@ -16,6 +16,11 @@ use crate::effects::EffectGains;
 use crate::scripted::ScriptedGains;
 use crate::world::WorldGains;
 
+/// One frame's mean over its channels: stereo is mixed down (every retail wave is mono).
+pub(crate) fn mono(channels: usize, frame: impl Iterator<Item = f32>) -> f32 {
+    frame.sum::<f32>() / channels as f32
+}
+
 /// A mono sample as floats in the 16-bit range, with its rate.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Wave {
@@ -36,10 +41,7 @@ impl Wave {
         }
         let raw: Vec<i16> = reader.samples::<i16>().collect::<Result<_, _>>().map_err(|e| e.to_string())?;
         let channels = usize::from(spec.channels.max(1));
-        let samples = raw
-            .chunks(channels)
-            .map(|frame| frame.iter().map(|&s| f32::from(s)).sum::<f32>() / channels as f32)
-            .collect();
+        let samples = raw.chunks(channels).map(|frame| mono(channels, frame.iter().map(|&s| f32::from(s)))).collect();
         Ok(Wave { rate: spec.sample_rate, samples })
     }
 
@@ -55,9 +57,7 @@ impl Wave {
         let channels = usize::from(reader.ident_hdr.audio_channels.max(1));
         let mut samples = Vec::new();
         while let Some(packet) = reader.read_dec_packet_itl().map_err(|e| e.to_string())? {
-            samples.extend(
-                packet.chunks(channels).map(|frame| frame.iter().map(|&s| f32::from(s)).sum::<f32>() / channels as f32),
-            );
+            samples.extend(packet.chunks(channels).map(|frame| mono(channels, frame.iter().map(|&s| f32::from(s)))));
         }
         Ok(Wave { rate: reader.ident_hdr.audio_sample_rate, samples })
     }
