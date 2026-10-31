@@ -975,9 +975,9 @@ mod tests {
         assert_eq!(Settings::default().ngp_dll, None);
     }
 
-    #[test]
-    fn settings_round_trip() {
-        let settings = Settings {
+    /// Every field set: `to_text` then `parse` is the identity, and `full_settings_golden` pins the text.
+    fn full_settings() -> Settings {
+        Settings {
             car: Some("COROLLA".into()),
             map: Some(54),
             recent_cars: vec!["COROLLA".into(), "Mitsubishi Lancer Evo IX N4".into()],
@@ -1015,13 +1015,13 @@ mod tests {
             hud_hide: Some(Parts::hiding("progress,car").unwrap()),
             wipers: Some(Switch::Intermittent),
             lighting: Some(false),
-            particles: None,
+            particles: Some(false),
             surfaces: Some(true),
             cabin: Some(false),
             contact: Some(false),
             grass: Some(true),
-            windscreen: None,
-            marks: None,
+            windscreen: Some(false),
+            marks: Some(true),
             render_scale: Some(75),
             anti_aliasing: Some(AntiAliasing::Off),
             wet_roads: Some(WetRoads::Low),
@@ -1049,7 +1049,7 @@ mod tests {
             ngp_dll: Some("/games/ngp/Plugins/NGP.dll".into()),
             rsf_root: Some("/games/rsf".into()),
             head_gasket: Some(10),
-            bindings: Bindings::default(),
+            bindings: Bindings { input_rate: 500, ..Default::default() },
             ffb: ffb::Options { rate: 500, ..Default::default() },
             camera: CameraPrefs::parse("[camera]\nview = bonnet\nrsf-24 chase = 0 0.5 -1\n"),
             season_cars: SeasonCars {
@@ -1063,7 +1063,12 @@ mod tests {
                 "Ford Escort Mk II".into(),
                 CarBox { engagement: Engagement::Dog, sequential: false },
             )]),
-        };
+        }
+    }
+
+    #[test]
+    fn settings_round_trip() {
+        let settings = full_settings();
         let text = settings.to_text();
         assert!(
             text.ends_with(
@@ -1117,7 +1122,7 @@ mod tests {
             "{text}"
         );
         assert!(
-            text.contains("perf_log = on\nlighting = off\nsurfaces = on\ncabin = off\ncontact = off\ngrass = on\n"),
+            text.contains("perf_log = on\nlighting = off\nparticles = off\nsurfaces = on\ncabin = off\ncontact = off\ngrass = on\nwindscreen = off\nmarks = on\n"),
             "{text}"
         );
         assert!(text.contains("start_time = 16:30\nperf_log = on\n"), "{text}");
@@ -1176,5 +1181,259 @@ mod tests {
         assert!(text.contains("championship_skill = champion\nchampionship_damage = reduced\nchampionship_team = 5\n"));
         assert_eq!(Settings::parse("[launcher]\nchampionship_skill = legend\n"), Settings::default());
         assert_eq!(Settings::parse("[launcher]\nchampionship_team = 7\n"), Settings::default());
+    }
+
+    #[test]
+    fn full_settings_golden() {
+        // Every key in file order, every section: any move, rename or reword fails here.
+        let text = full_settings().to_text();
+        assert_eq!(text, concat!(
+            "[launcher]\n",
+            "car = COROLLA\n",
+            "map = 54\n",
+            "recent_cars = COROLLA|Mitsubishi Lancer Evo IX N4\n",
+            "recent_maps = 54,129\n",
+            "favourite_cars = XSARA|Mitsubishi Lancer Evo IX N4\n",
+            "favourite_maps = 129,54,300\n",
+            "weather = bad\n",
+            "wetness = wet\n",
+            "fog = heavy\n",
+            "clouds = partly\n",
+            "precipitation = moderate\n",
+            "wear = worn\n",
+            "tyre = 5\n",
+            "size = 1920x1080\n",
+            "fov = 72.5\n",
+            "volume = 0.75\n",
+            "engine_volume = 0.5\n",
+            "codriver_volume = 1.5\n",
+            "effects_volume = 0\n",
+            "tyres_volume = 2\n",
+            "codriver = off\n",
+            "codriver_voice = Janne Laahanen EnNu A\n",
+            "codriver_style = Numeric.ini\n",
+            "codriver_ranges = Rbr.ini\n",
+            "codriver_pack = luppis\n",
+            "notes_pack = tanner-notes\n",
+            "notes_set = \n",
+            "my_pacenotes = off\n",
+            "hud = off\n",
+            "units = mph\n",
+            "fps = on\n",
+            "pace_stack = 2\n",
+            "wipers = intermittent\n",
+            "dials = off\n",
+            "hide_wheel = on\n",
+            "hud_hide = progress,car\n",
+            "callout_distance = 0.5\n",
+            "marker_threshold = 12.5\n",
+            "setup = gravel fast\n",
+            "damage = realistic\n",
+            "auto_gears = on\n",
+            "gear_guard = off\n",
+            "neutral_lock = on\n",
+            "clutch_help = off\n",
+            "ghost = me_54.ghc\n",
+            "championship_skill = champion\n",
+            "championship_damage = reduced\n",
+            "championship_team = 5\n",
+            "install_folder = /games/Richard Burns Rally\n",
+            "ngp_physics = /games/rbr-ngp/physics.rbz\n",
+            "ngp_dll = /games/ngp/Plugins/NGP.dll\n",
+            "rsf_root = /games/rsf\n",
+            "head_gasket = 10\n",
+            "render_scale = 75\n",
+            "anti_aliasing = off\n",
+            "wet_roads = low\n",
+            "detail = ultra\n",
+            "upscale_textures = on\n",
+            "present = immediate\n",
+            "mirrors = 3\n",
+            "fullscreen = off\n",
+            "start_time = 16:30\n",
+            "perf_log = on\n",
+            "lighting = off\n",
+            "particles = off\n",
+            "surfaces = on\n",
+            "cabin = off\n",
+            "contact = off\n",
+            "grass = on\n",
+            "windscreen = off\n",
+            "marks = on\n",
+            "\n",
+            "[controls]\n",
+            "h-shifter = normal\n",
+            "clutch threshold = 0.35\n",
+            "invert axes = \n",
+            "input rate = 500\n",
+            "throttle = ArrowUp\n",
+            "throttle pad = \n",
+            "brake = ArrowDown\n",
+            "brake pad = \n",
+            "steer left = ArrowLeft\n",
+            "steer left pad = \n",
+            "steer right = ArrowRight\n",
+            "steer right pad = \n",
+            "handbrake = Space\n",
+            "handbrake pad = \n",
+            "clutch = \n",
+            "clutch pad = \n",
+            "gear up = KeyA\n",
+            "gear up pad = \n",
+            "gear down = KeyZ\n",
+            "gear down pad = \n",
+            "restart = KeyR\n",
+            "restart pad = \n",
+            "call for help = KeyH\n",
+            "call for help pad = \n",
+            "wipers = KeyI\n",
+            "wipers pad = \n",
+            "headlights = KeyL\n",
+            "headlights pad = \n",
+            "ignition = KeyE\n",
+            "ignition pad = \n",
+            "reverse = \n",
+            "reverse pad = \n",
+            "neutral = \n",
+            "neutral pad = \n",
+            "gear 1 = \n",
+            "gear 1 pad = \n",
+            "gear 2 = \n",
+            "gear 2 pad = \n",
+            "gear 3 = \n",
+            "gear 3 pad = \n",
+            "gear 4 = \n",
+            "gear 4 pad = \n",
+            "gear 5 = \n",
+            "gear 5 pad = \n",
+            "gear 6 = \n",
+            "gear 6 pad = \n",
+            "look back = KeyB\n",
+            "look back pad = \n",
+            "camera = KeyC\n",
+            "camera pad = \n",
+            "pause = Escape\n",
+            "pause pad = \n",
+            "gauge mode = End\n",
+            "gauge mode pad = \n",
+            "\n",
+            "[ffb]\n",
+            "enabled = 1\n",
+            "strength = 1\n",
+            "inverse = 0\n",
+            "dead_zone = 0\n",
+            "dead_zone_threshold = 0\n",
+            "rate = 500\n",
+            "device = \n",
+            "sensitivity_gravel = 100\n",
+            "sensitivity_tarmac = 100\n",
+            "sensitivity_snow = 100\n",
+            "rotation = \n",
+            "rotation_per_car = 0\n",
+            "\n",
+            "[camera]\n",
+            "view = bonnet\n",
+            "rsf-24 chase = 0 0.5 -1\n",
+            "\n",
+            "[season]\n",
+            "last = Skoda Fabia R5\n",
+            "profile player = Mitsubishi Lancer Evo IX N4\n",
+            "profile me = Skoda Fabia R5\n",
+            "\n",
+            "[gearbox]\n",
+            "Ford Escort Mk II = dog\n"
+        ));
+    }
+
+    #[test]
+    fn settings_parse_edges() {
+        // Out-of-range numbers keep the default; the edges parse.
+        assert_eq!(Settings::parse("[launcher]\nfov = 121\n").fov, None);
+        assert_eq!(Settings::parse("[launcher]\nfov = 29.9\n").fov, None);
+        assert_eq!(Settings::parse("[launcher]\nfov = 30\n").fov, Some(30.0));
+        assert_eq!(Settings::parse("[launcher]\nfov = 120\n").fov, Some(120.0));
+        assert_eq!(Settings::parse("[launcher]\nfov = wide\n").fov, None);
+        assert_eq!(Settings::parse("[launcher]\nvolume = 5\n").volume, None);
+        assert_eq!(Settings::parse("[launcher]\nvolume = -0.1\n").volume, None);
+        assert_eq!(Settings::parse("[launcher]\nvolume = 4\n").volume, Some(4.0));
+        assert_eq!(Settings::parse("[launcher]\nengine_volume = 2\n").engine_volume, Some(2.0));
+        assert_eq!(Settings::parse("[launcher]\nengine_volume = 2.1\n").engine_volume, None);
+        assert_eq!(Settings::parse("[launcher]\npace_stack = 4\n").pace_stack, Some(4));
+        assert_eq!(Settings::parse("[launcher]\npace_stack = 5\n").pace_stack, None);
+        assert_eq!(Settings::parse("[launcher]\nrender_scale = 50\n").render_scale, Some(50));
+        assert_eq!(Settings::parse("[launcher]\nrender_scale = 80\n").render_scale, None);
+        assert_eq!(Settings::parse("[launcher]\nchampionship_team = 6\n").championship_team, Some(6));
+        assert_eq!(Settings::parse("[launcher]\nchampionship_team = 7\n").championship_team, None);
+        assert_eq!(Settings::parse("[launcher]\nhead_gasket = 0\n").head_gasket, None);
+        assert_eq!(Settings::parse("[launcher]\nhead_gasket = -2\n").head_gasket, None);
+        assert_eq!(Settings::parse("[launcher]\nhead_gasket = 1\n").head_gasket, Some(1));
+        assert_eq!(Settings::parse("[launcher]\ntyre = 6\n").tyre, Some(TyreChoice::Fixed(6)));
+        assert_eq!(Settings::parse("[launcher]\ntyre = 7\n").tyre, None);
+        assert_eq!(Settings::parse("[launcher]\nmap = abc\n").map, None);
+        assert_eq!(Settings::parse("[launcher]\ncallout_distance = -1.5\n").callout_distance, Some(-1.5));
+        // Unknown choice words keep the default.
+        assert_eq!(Settings::parse("[launcher]\nfog = mist\n").fog, None);
+        assert_eq!(Settings::parse("[launcher]\nclouds = storm\n").clouds, None);
+        assert_eq!(Settings::parse("[launcher]\nprecipitation = hail\n").precipitation, None);
+        assert_eq!(Settings::parse("[launcher]\nwetness = soaked\n").wetness, None);
+        assert_eq!(Settings::parse("[launcher]\ndamage = hard\n").damage, None);
+        assert_eq!(Settings::parse("[launcher]\ndetail = max\n").detail, None);
+        assert_eq!(Settings::parse("[launcher]\nwet_roads = on\n").wet_roads, None);
+        assert_eq!(Settings::parse("[launcher]\nanti_aliasing = 2x\n").anti_aliasing, None);
+        assert_eq!(Settings::parse("[launcher]\nmirrors = 4\n").mirrors, None);
+        assert_eq!(Settings::parse("[launcher]\nwipers = fast\n").wipers, None);
+        // The wipers, the presentation and the mirrors parse case-insensitively.
+        assert_eq!(Settings::parse("[launcher]\nwipers = INTERMITTENT\n").wipers, Some(Switch::Intermittent));
+        assert_eq!(Settings::parse("[launcher]\npresent = FIFO\n").present, Some(Present::Fifo));
+        assert_eq!(Settings::parse("[launcher]\nmirrors = off\n").mirrors, Some(Rate::Off));
+        // Missing keys keep the default; an empty file is the default settings.
+        assert_eq!(Settings::parse(""), Settings::default());
+        assert_eq!(Settings::parse("[launcher]\n"), Settings::default());
+        assert_eq!(Settings::parse("[launcher]\ncar = \n").car, Some(String::new()));
+        // The units word is `mph`/`kmh`, not the field's name.
+        assert_eq!(Settings::parse("[launcher]\nunits = mph\n").mph, Some(true));
+        assert_eq!(Settings::parse("[launcher]\nunits = kmh\n").mph, Some(false));
+        assert_eq!(Settings::parse("[launcher]\nunits = kph\n").mph, None);
+        // Any ghost word parses: empty and `off` are none, anything else a file.
+        assert_eq!(Settings::parse("[launcher]\n").ghost, None);
+        assert_eq!(Settings::parse("[launcher]\nghost = \n").ghost, Some(GhostChoice::Off));
+        assert_eq!(Settings::parse("[launcher]\nghost = off\n").ghost, Some(GhostChoice::Off));
+        assert_eq!(
+            Settings::parse("[launcher]\nghost = me_54.ghc\n").ghost,
+            Some(GhostChoice::File("me_54.ghc".into()))
+        );
+        // Empty strings are dropped, but the notes set and the NGP DLL keep an empty choice.
+        assert_eq!(Settings::parse("[launcher]\ncodriver_voice = \n").codriver_voice, None);
+        assert_eq!(Settings::parse("[launcher]\nsetup = \n").setup, None);
+        assert_eq!(Settings::parse("[launcher]\ninstall_folder = \n").install_folder, None);
+        assert_eq!(Settings::parse("[launcher]\nnotes_set = \n").notes_set, Some(String::new()));
+        // Empty lists are empty; blanks and words that do not parse are skipped.
+        assert_eq!(Settings::parse("[launcher]\nrecent_cars = \n").recent_cars, Vec::<String>::new());
+        assert_eq!(
+            Settings::parse("[launcher]\nrecent_cars = A|| B |\n").recent_cars,
+            ["A".to_owned(), "B".to_owned()]
+        );
+        assert_eq!(Settings::parse("[launcher]\nrecent_maps = \n").recent_maps, Vec::<u32>::new());
+        assert_eq!(Settings::parse("[launcher]\nrecent_maps = 54,,abc,129\n").recent_maps, [54, 129]);
+        // An empty hidden list reads as all shown, which the writer omits.
+        assert_eq!(Settings::parse("[launcher]\nhud_hide = \n").hud_hide, Some(Parts::default()));
+        assert!(!Settings::parse("[launcher]\nhud_hide = \n").to_text().contains("hud_hide"));
+        // The wear and the size: unknown words keep the default, and the writer clamps the wear.
+        assert_eq!(Settings::parse("[launcher]\nwear = worn\n").wear, Some(2));
+        assert_eq!(Settings::parse("[launcher]\nwear = old\n").wear, None);
+        assert!(Settings { wear: Some(9), ..Default::default() }.to_text().contains("wear = worn\n"));
+        assert_eq!(Settings::parse("[launcher]\nsize = 1920x1080\n").size, Some((1920, 1080)));
+        assert_eq!(Settings::parse("[launcher]\nsize = 1920\n").size, None);
+        // The weather: empty keeps the default, any other unknown word is a season row.
+        assert_eq!(Settings::parse("[launcher]\nweather = \n").weather, None);
+        assert_eq!(Settings::parse("[launcher]\nweather = dry\n").weather, Some(WeatherChoice::Row("dry".into())));
+        // The clock pads the hour; midnight and the last minute parse.
+        assert_eq!(Settings::parse("[launcher]\nstart_time = 0:00\n").start_time, Some(0));
+        assert_eq!(Settings::parse("[launcher]\nstart_time = 23:59\n").start_time, Some(23 * 60 + 59));
+        assert!(
+            Settings { start_time: Some(5 * 60 + 5), ..Default::default() }
+                .to_text()
+                .contains("start_time = 05:05\n")
+        );
     }
 }
