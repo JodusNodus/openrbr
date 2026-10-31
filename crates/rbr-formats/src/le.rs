@@ -1,13 +1,6 @@
-//! One shared little-endian reader for the format parsers.
-//!
-//! Several readers walked their buffers with a private cursor or one-off
-//! `u32_at` helpers. They all do the same thing: take slices and words with
-//! bounds checks that fail as a `Truncated { offset, needed, len }` error.
-//! This module holds that reader ([`Reader`]), the truncation value it
-//! converts into each module's error ([`Truncated`]), and the slice helpers
-//! the offset-based readers share. Behaviour is unchanged: every error value
-//! and message is the same as the helper it replaces, including the `.lbs`
-//! convention of reporting the bytes left in scope (see [`Reader::within`]).
+//! The little-endian reads the format parsers share: a bounds-checked cursor ([`Reader`]) whose failures are a
+//! [`Truncated`] each module's error converts from, and offset reads that fail as [`Truncated`], `None` or a panic
+//! (for slices the caller already holds).
 
 use std::fmt::{self, Display, Formatter};
 use std::marker::PhantomData;
@@ -64,9 +57,8 @@ impl<'a, E: From<Truncated>> Reader<'a, E> {
         Ok(Reader { bytes, pos: offset, end: bytes.len(), remaining: false, error: PhantomData })
     }
 
-    /// A reader over `bytes[pos..end]`, reporting the bytes left in scope in
-    /// errors. Like the `.lbs` cursor it replaces, this does not check the
-    /// bounds up front; the first read past them fails.
+    /// A reader over `bytes[pos..end]`, reporting the bytes left in scope in errors (the `.lbs` chunks). The
+    /// bounds are not checked up front; the first read past them fails.
     pub(crate) fn within(bytes: &'a [u8], pos: usize, end: usize) -> Self {
         Reader { bytes, pos, end, remaining: true, error: PhantomData }
     }
@@ -123,9 +115,8 @@ impl<'a, E: From<Truncated>> Reader<'a, E> {
         Ok(f32::from_bits(self.u32()?))
     }
 
-    /// `n` words in file order. Like the engine bank reader it replaces,
-    /// this reserves nothing: `n` comes from the file, and the loop fails at
-    /// the first missing word.
+    /// `n` words in file order. Nothing is reserved: `n` comes from the file, and the loop fails at the first
+    /// missing word.
     pub(crate) fn u32s(&mut self, n: u32) -> Result<Vec<u32>, E> {
         let mut out = Vec::new();
         for _ in 0..n {
@@ -199,12 +190,12 @@ pub(crate) fn read_f32_le(bytes: &[u8], offset: usize) -> Result<f32, Truncated>
 
 /// The little-endian half word at `at`, or `None` when it runs past the end.
 pub(crate) fn u16_at(b: &[u8], at: usize) -> Option<u16> {
-    Some(u16::from_le_bytes(b.get(at..at + 2)?.try_into().ok()?))
+    Some(u16::from_le_bytes(b.get(at..at.checked_add(2)?)?.try_into().ok()?))
 }
 
 /// The little-endian word at `at`, or `None` when it runs past the end.
 pub(crate) fn u32_at(b: &[u8], at: usize) -> Option<u32> {
-    Some(u32::from_le_bytes(b.get(at..at + 4)?.try_into().ok()?))
+    Some(u32::from_le_bytes(b.get(at..at.checked_add(4)?)?.try_into().ok()?))
 }
 
 /// The little-endian float at `at`, or `None` when it runs past the end.
@@ -288,7 +279,6 @@ mod tests {
         assert_eq!(r.u8().unwrap(), 5);
         assert!(r.is_empty());
         assert_eq!(r.take(1).unwrap_err(), Shaped { truncated: Truncated { offset: 12, needed: 1, len: 12 } });
-        // Overflow and short reads name the same values the old cursors did.
         let mut r = Reader::<Shaped>::new(&bytes);
         assert_eq!(
             r.take(usize::MAX).unwrap_err(),

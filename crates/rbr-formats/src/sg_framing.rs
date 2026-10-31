@@ -7,7 +7,7 @@
 //! ([`FileKind`]) because it differs per format. Variants a reader never constructs (the scenery trailing bytes,
 //! the car unknown subtype, the animation unknown binding) exist for the readers that do.
 
-use crate::le::le_bytes;
+use crate::le::{le_bytes, u32_at};
 use std::fmt::{self, Display, Formatter};
 
 /// Banner at the start of every file: 22 characters and a NUL.
@@ -48,17 +48,15 @@ pub enum Error {
     Truncated { offset: usize },
     /// A body is shorter than its layout, or a count is negative.
     BadBody { offset: usize, what: &'static str },
-    /// Non-record bytes after the last record ([`crate::sgs`] keeps them;
-    /// its [`parse`](crate::sgs::parse) keeps them, its
-    /// [`records`](crate::sgs::records) rejects them). Only two retail files have any.
+    /// Non-record bytes after the last record: [`crate::sgs::parse`] keeps them, [`crate::sgs::records`] rejects
+    /// them. Only two retail files have any.
     Trailing { offset: usize, len: usize },
     /// A body ends before its layout does.
     Leftover { offset: usize, unread: usize },
     /// A geometry, camera, helper, collision or shadow record with a subtype this reader does not know.
     UnknownSubtype { offset: usize, kind: u32, subtype: u32 },
-    /// A 6/21 inner type, or a track type, the animation reader does not decode.
-    /// Rotation, look-at, Euler, link-constraints and plain-PRS bindings
-    /// never occur in retail files.
+    /// A 6/21 inner type, or a track type, the animation reader does not decode. Rotation, look-at, Euler,
+    /// link-constraints and plain-PRS bindings never occur in retail files.
     UnknownBinding { offset: usize, controller: u32, subtype: u32 },
 }
 
@@ -99,10 +97,10 @@ impl std::error::Error for Error {}
 pub(crate) fn split_records(
     bytes: &[u8],
     keep_trailing: bool,
-    kind: FileKind,
+    file: FileKind,
 ) -> Result<(Vec<Record<'_>>, &[u8]), Error> {
     if bytes.get(..BANNER.len()) != Some(BANNER.as_slice()) {
-        return Err(Error::BadBanner { kind });
+        return Err(Error::BadBanner { kind: file });
     }
     let mut out = Vec::new();
     let mut pos = BANNER.len();
@@ -115,27 +113,22 @@ pub(crate) fn split_records(
             return Err(Error::HeaderLength { offset: pos, length: header_len });
         }
         let truncated = Error::Truncated { offset: pos };
-        let kind_value = u32_at(bytes, pos + 4).ok_or_else(|| truncated.clone())?;
+        let kind = u32_at(bytes, pos + 4).ok_or_else(|| truncated.clone())?;
         let subtype = u32_at(bytes, pos + 8).ok_or_else(|| truncated.clone())?;
         let body_len = u32_at(bytes, pos + 16).ok_or_else(|| truncated.clone())?;
         let start = pos + 20;
         let end =
             start.checked_add(body_len as usize).filter(|&end| end <= bytes.len()).ok_or_else(|| truncated.clone())?;
         let body = bytes.get(start..end).ok_or(truncated)?;
-        out.push(Record { offset: pos, kind: kind_value, subtype, body });
+        out.push(Record { offset: pos, kind, subtype, body });
         pos = end;
     }
     Ok((out, &bytes[bytes.len()..]))
 }
 
 /// Reads the banner and the record list. Records must tile the file exactly.
-pub(crate) fn records(bytes: &[u8], kind: FileKind) -> Result<Vec<Record<'_>>, Error> {
-    split_records(bytes, false, kind).map(|(out, _)| out)
-}
-
-fn u32_at(bytes: &[u8], at: usize) -> Option<u32> {
-    let b = bytes.get(at..at.checked_add(4)?)?;
-    Some(u32::from_le_bytes(le_bytes(b)))
+pub(crate) fn records(bytes: &[u8], file: FileKind) -> Result<Vec<Record<'_>>, Error> {
+    split_records(bytes, false, file).map(|(out, _)| out)
 }
 
 /// Cursor over one record body. Every read is bounds-checked against the body.
