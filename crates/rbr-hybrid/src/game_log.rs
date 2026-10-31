@@ -8,7 +8,7 @@ use crate::pure::CRT_DELETE;
 use crate::rigid_body::OPERATOR_NEW;
 use crate::{Binding, Ctx, Decline, Host, Regs, Return};
 
-pub static BINDINGS: [Binding; 1] = [Binding { addr: E01LOG, name: "E01Log", subsystem: "game_log", run: log }];
+pub static BINDINGS: [Binding; 1] = [crate::bind("game_log", E01LOG, "E01Log", log)];
 
 /// The debugger sink's `operator new` and `operator delete`, entered where the original calls them: `E01Log` and
 /// `GameLog` push 0x18 bytes below the entry, the sink's slot 1 and its function 0x18 more, and the function four

@@ -35,27 +35,23 @@ pub const SET_1E40: u32 = 0x4f1e40; // Lights: brake light
 pub const SET_1ED0: u32 = 0x4f1ed0; // Lights: neutral light
 pub const QUERY_SLIP: u32 = 0x536fe0; // E50_QuerySlip (fastcall on the scratch)
 
-const fn bind(addr: u32, name: &'static str, run: crate::BindingFn) -> Binding {
-    Binding { addr, name, subsystem: "vcu", run }
-}
-
 pub static BINDINGS: [Binding; 16] = [
-    bind(TABLE_BLEND, "E49Proxy::VcuTableBlend", table_blend),
-    bind(M6840, "CDrive::M6840", set_commanded_gear),
-    bind(LOOKUP_PAIR_TABLE, "NPhysics::LookupPairTable", lookup_pair_table),
-    bind(LOCK_MAX, "CScratchSim::LockMax", lock_max),
-    bind(DIFF_LOCKS, "CScratchSim::DiffLocks", diff_locks),
-    bind(REV_LIMIT_CUT, "CScratchSim::RevLimitCut", rev_limit_cut),
-    bind(CHECK_SLIP, "CScratchSim::CheckSlip", check_slip),
-    bind(GEARBOX_UPDATE, "CScratchSim::GearboxUpdate", gearbox_update),
-    bind(LAUNCH_CLUTCH, "CScratchSim::LaunchClutch", launch_clutch),
-    bind(STEP, "CScratchSim::Step", step_full),
-    bind(STEP_BASIC, "CScratchSim::StepBasic", step_basic),
-    bind(0x536f70, "CScratchSim::NopA", nop_a),
-    bind(FLAG_DISPATCH, "CScratchSim::FlagDispatch", flag_dispatch),
-    bind(READ_PACKET, "CScratchSim::ReadPacket", read_packet),
-    bind(QUERY_SLIP, "CVehicleControlUnit::E50_QuerySlip", query_slip),
-    bind(0x537c90, "CScratchSim::CopyDef", copy_def),
+    crate::bind("vcu", TABLE_BLEND, "E49Proxy::VcuTableBlend", table_blend),
+    crate::bind("vcu", M6840, "CDrive::M6840", set_commanded_gear),
+    crate::bind("vcu", LOOKUP_PAIR_TABLE, "NPhysics::LookupPairTable", lookup_pair_table),
+    crate::bind("vcu", LOCK_MAX, "CScratchSim::LockMax", lock_max),
+    crate::bind("vcu", DIFF_LOCKS, "CScratchSim::DiffLocks", diff_locks),
+    crate::bind("vcu", REV_LIMIT_CUT, "CScratchSim::RevLimitCut", rev_limit_cut),
+    crate::bind("vcu", CHECK_SLIP, "CScratchSim::CheckSlip", check_slip),
+    crate::bind("vcu", GEARBOX_UPDATE, "CScratchSim::GearboxUpdate", gearbox_update),
+    crate::bind("vcu", LAUNCH_CLUTCH, "CScratchSim::LaunchClutch", launch_clutch),
+    crate::bind("vcu", STEP, "CScratchSim::Step", step_full),
+    crate::bind("vcu", STEP_BASIC, "CScratchSim::StepBasic", step_basic),
+    crate::bind("vcu", 0x536f70, "CScratchSim::NopA", nop_a),
+    crate::bind("vcu", FLAG_DISPATCH, "CScratchSim::FlagDispatch", flag_dispatch),
+    crate::bind("vcu", READ_PACKET, "CScratchSim::ReadPacket", read_packet),
+    crate::bind("vcu", QUERY_SLIP, "CVehicleControlUnit::E50_QuerySlip", query_slip),
+    crate::bind("vcu", 0x537c90, "CScratchSim::CopyDef", copy_def),
 ];
 
 /// `CScratchSim::NopA(dt)` (0x536f70, thiscall, `ret 4`): does nothing; eax is the caller's.

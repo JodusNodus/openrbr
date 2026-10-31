@@ -20,6 +20,6 @@ fn push_2d(ctx: &mut Ctx, r: &Regs) -> Result<Return, Decline> {
 }
 
 pub static BINDINGS: [Binding; 2] = [
-    Binding { addr: 0x494cf0, name: "CGraph1D::Push", subsystem: "graph", run: push_1d },
-    Binding { addr: 0x495090, name: "CGraph2D::Push", subsystem: "graph", run: push_2d },
+    crate::bind("graph", 0x494cf0, "CGraph1D::Push", push_1d),
+    crate::bind("graph", 0x495090, "CGraph2D::Push", push_2d),
 ];

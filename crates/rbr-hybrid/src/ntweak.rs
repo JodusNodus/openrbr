@@ -13,12 +13,12 @@ use crate::rigid_body::OPERATOR_NEW;
 use crate::{Binding, Ctx, Decline, Host, Regs, Return};
 
 pub static BINDINGS: [Binding; 6] = [
-    Binding { addr: 0x52f450, name: "NTweak::CBase::SetDirty", subsystem: "ntweak", run: set_dirty },
-    Binding { addr: 0x52f090, name: "NTweak::CBase::CBase", subsystem: "ntweak", run: construct_base },
-    Binding { addr: 0x52f480, name: "NTweak::CBase::Unk44", subsystem: "ntweak", run: crate::entities::empty_hook_run },
-    Binding { addr: 0x52f0c0, name: "NTweak::CBase::Parse", subsystem: "ntweak", run: parse },
-    Binding { addr: 0x52ec80, name: "NTweak::CTokenCursor::Tokenize", subsystem: "ntweak", run: tokenize },
-    Binding { addr: 0x473a70, name: "E11_StackAlloc", subsystem: "ntweak", run: stack_alloc },
+    crate::bind("ntweak", 0x52f450, "NTweak::CBase::SetDirty", set_dirty),
+    crate::bind("ntweak", 0x52f090, "NTweak::CBase::CBase", construct_base),
+    crate::bind("ntweak", 0x52f480, "NTweak::CBase::Unk44", crate::entities::empty_hook_run),
+    crate::bind("ntweak", 0x52f0c0, "NTweak::CBase::Parse", parse),
+    crate::bind("ntweak", 0x52ec80, "NTweak::CTokenCursor::Tokenize", tokenize),
+    crate::bind("ntweak", 0x473a70, "E11_StackAlloc", stack_alloc),
 ];
 
 /// The classes `Parse` walks, by vtable (each is a vtable whose slot 2 is `Parse`, named by its RTTI), as the key table
