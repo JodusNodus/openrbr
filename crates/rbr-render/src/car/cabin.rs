@@ -243,16 +243,17 @@ pub fn bake(
     Some(sun_in)
 }
 
-/// How light gets into the cabin (ours), means over the interior set's opaque faces by area: the sun on each by the
-/// sun's direction in the car's model space, `n.l` where the sun reaches it past the car's opaque faces, measured at
-/// load for [`SUN_DIRECTIONS`] directions over the sphere from [`SUN_FACES`] of the faces, with the share of the sun the
-/// glass lets through from each (its panes weighed by their area toward the sun, [`pane_through`]; 1 with no glass
-/// that way, an open cockpit); the share of the sky each
-/// sees and where it sees it ([`Grid::sky`]); and their linear albedo per channel, the texel at the face's middle times
-/// its vertex colour as `shader.wgsl` shades it. The light that comes in lights the rest of the cabin back off its faces
-/// (`cabin.wgsl`): the roof lining over a sunlit dash or seat, the footwells. The albedo weighs each face by how far it
-/// is inside the cabin ([`inside`]): the interior set holds the body seen through the glass too, the BMW M3 E30's half
-/// of its area in its green livery, which turned the bounce teal.
+/// How light gets into the cabin (ours), means over the interior set's opaque faces by area, each weighed by how far it
+/// is inside the cabin ([`inside`]): the sun on each by the sun's direction in the car's model space, `n.l` where the
+/// sun reaches it past the car's opaque faces, measured at load for [`SUN_DIRECTIONS`] directions over the sphere from
+/// [`SUN_FACES`] of the faces, with the share of the sun the glass lets through from each (its panes weighed by their
+/// area toward the sun, [`pane_through`]; 1 with no glass that way, an open cockpit); the share of the sky each sees
+/// and where it sees it ([`Grid::sky`]); and their linear albedo per channel, the texel at the face's middle times its
+/// vertex colour as `shader.wgsl` shades it. The light that comes in lights the rest of the cabin back off its faces
+/// (`cabin.wgsl`): the roof lining over a sunlit dash or seat, the footwells. The interior set holds the body seen
+/// through the glass too, which takes in light the cabin does not: counted, it took the Clio Rally3's sky share from
+/// 0.055 to 0.361, the bounce 1.5 to 2.7 stops too bright; the BMW M3 E30's green livery, half of its area, turned
+/// the bounce teal.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SunIn {
     directions: Vec<Vec3>,
@@ -310,7 +311,7 @@ impl SunIn {
             let at = (y * w + x) * 4;
             Some(Vec3::new(rgba[at] as f32, rgba[at + 1] as f32, rgba[at + 2] as f32) / 255.0)
         };
-        let (mut area, mut sky, mut seen, mut albedo, mut within) = (0.0, 0.0, Vec3::ZERO, Vec3::ZERO, 0.0);
+        let (mut area, mut sky, mut seen, mut albedo) = (0.0, 0.0, Vec3::ZERO, Vec3::ZERO);
         let mut first = 0;
         for mesh in interior {
             for draw in mesh.draws.iter().filter(|draw| opaque(draw)) {
@@ -330,11 +331,11 @@ impl SunIn {
                     let linear = colour.powf(2.2).min(Vec3::splat(ALBEDO_MOST));
                     let [sa, sb, sc] = t.map(|i| skies[first + i as usize]);
                     let share = (sa.0 + sb.0 + sc.0) / 3.0;
+                    let size = size * inside(share);
                     area += size;
                     sky += size * share;
                     seen += size * (sa.1 + sb.1 + sc.1) / 3.0;
-                    within += size * inside(share);
-                    albedo += size * inside(share) * linear;
+                    albedo += size * linear;
                 }
             }
             first += mesh.vertices.len();
@@ -342,7 +343,7 @@ impl SunIn {
         if area <= 0.0 {
             return (0.0, Vec3::ZERO, Vec3::ZERO);
         }
-        (sky / area, seen / area, albedo / f32::max(within, 1e-6))
+        (sky / area, seen / area, albedo / area)
     }
 
     fn measure(
@@ -353,19 +354,22 @@ impl SunIn {
         textures: &BTreeMap<TextureRef, StageTexture>,
     ) -> SunIn {
         let (sky, seen, albedo) = SunIn::incoming(interior, skies, textures);
-        let faces: Vec<(Vec3, Vec3, f32)> = interior
-            .iter()
-            .flat_map(|mesh| {
-                let vertex = |i: u32| &mesh.vertices[i as usize];
-                mesh.draws.iter().filter(|draw| opaque(draw)).flat_map(move |draw| {
-                    mesh.indices[draw.indices.clone()].chunks_exact(3).map(move |t| {
-                        let [a, b, c] = [t[0], t[1], t[2]].map(|i| Vec3::from(vertex(i).position));
-                        let normal = t.iter().map(|&i| Vec3::from(vertex(i).normal)).sum::<Vec3>().normalize_or_zero();
-                        ((a + b + c) / 3.0, normal, 0.5 * (b - a).cross(c - a).length())
-                    })
-                })
-            })
-            .collect();
+        // The faces inside the cabin by area ([`inside`]): the body seen through the glass takes in light the cabin does
+        // not.
+        let mut faces: Vec<(Vec3, Vec3, f32)> = Vec::new();
+        let mut first = 0;
+        for mesh in interior {
+            let vertex = |i: u32| &mesh.vertices[i as usize];
+            for draw in mesh.draws.iter().filter(|draw| opaque(draw)) {
+                for t in mesh.indices[draw.indices.clone()].chunks_exact(3) {
+                    let [a, b, c] = [t[0], t[1], t[2]].map(|i| Vec3::from(vertex(i).position));
+                    let normal = t.iter().map(|&i| Vec3::from(vertex(i).normal)).sum::<Vec3>().normalize_or_zero();
+                    let share = t.iter().map(|&i| skies[first + i as usize].0).sum::<f32>() / 3.0;
+                    faces.push(((a + b + c) / 3.0, normal, inside(share) * 0.5 * (b - a).cross(c - a).length()));
+                }
+            }
+            first += mesh.vertices.len();
+        }
         let faces: Vec<_> = faces.iter().step_by(faces.len().div_ceil(SUN_FACES).max(1)).copied().collect();
         let area: f32 = faces.iter().map(|f| f.2).sum();
         let directions: Vec<Vec3> = (0..SUN_DIRECTIONS)
