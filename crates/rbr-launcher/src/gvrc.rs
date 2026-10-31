@@ -191,12 +191,7 @@ pub(crate) fn fetch(agent: &ureq::Agent, url: &str, dest: &Path, count: &mut Cou
 }
 
 /// Downloads NGP's package (named by the list at `list`) into the folder `dir`: its path.
-fn download_package_from(
-    list: &str,
-    dir: &Path,
-    report: Report<'_>,
-    cancel: &AtomicBool,
-) -> Result<PathBuf, Fail> {
+fn download_package_from(list: &str, dir: &Path, report: Report<'_>, cancel: &AtomicBool) -> Result<PathBuf, Fail> {
     report(&Progress { step: "Reading the car list", ..Progress::default() });
     let url = read_list(list)?.ngp.ok_or("gvrc.de's list names no NGP package")?;
     let package = dir.join(file_name(&url).ok_or("a bad NGP link")?);
@@ -208,22 +203,13 @@ fn download_package_from(
 }
 
 /// Downloads NGP's package into the folder `dir`: its path (for `disc_install`'s setup, which reads it).
-pub fn download_ngp_package(
-    dir: &Path,
-    report: Report<'_>,
-    cancel: &AtomicBool,
-) -> Result<PathBuf, Fail> {
+pub fn download_ngp_package(dir: &Path, report: Report<'_>, cancel: &AtomicBool) -> Result<PathBuf, Fail> {
     download_package_from(LIST_URL, dir, report, cancel)
 }
 
 /// Downloads NGP's package (named by the list at `list`) and installs it into the game folder `game`
 /// (`ngp_install::add_ngp`); the number of files written.
-fn download_ngp_from(
-    list: &str,
-    game: &Path,
-    report: Report<'_>,
-    cancel: &AtomicBool,
-) -> Result<usize, Fail> {
+fn download_ngp_from(list: &str, game: &Path, report: Report<'_>, cancel: &AtomicBool) -> Result<usize, Fail> {
     ngp_install::check_game_folder(game)?;
     let temp = Temp::create(game, "downloading")?;
     let package = download_package_from(list, &temp.0, report, cancel)?;

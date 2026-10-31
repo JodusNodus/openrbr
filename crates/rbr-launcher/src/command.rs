@@ -631,8 +631,7 @@ impl Form {
         let upscale = (self.upscale_textures && self.upscaler)
             .then(|| ["--upscale-textures".to_owned(), self.upscaler_dir().display().to_string()]);
         // The loading screen names the stage and the car.
-        let map =
-            self.catalog.map(stage.map).map_or(stage.name.clone(), catalog::Map::name);
+        let map = self.catalog.map(stage.map).map_or(stage.name.clone(), catalog::Map::name);
         let title = ["--title".to_owned(), format!("{map} · {}", car.name)];
         // The car's lock, the wheel's rotation when it is per car.
         let lock = self.setup.steering_lock().map(rbr_render::wheel_rotation::car_degrees);

@@ -744,10 +744,7 @@ impl Form {
         let car = pick_car(&catalog.cars, settings.car.iter().chain(&settings.recent_cars));
         let season_pick = pick_car(&catalog.cars, settings.season_cars.last.iter().chain(&settings.car));
         let default_map = catalog.maps.iter().position(|map| catalog.availability(&season, map).is_ok()).unwrap_or(0);
-        let map = settings
-            .map
-            .and_then(|number| catalog.map_index(number))
-            .unwrap_or(default_map);
+        let map = settings.map.and_then(|number| catalog.map_index(number)).unwrap_or(default_map);
         let aids = DriverAids::default();
         // A specific row launches like Random with that row; a section that is not this map's falls back to Good.
         let (mut preset, mut weather_row) =

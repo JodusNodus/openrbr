@@ -104,12 +104,7 @@ pub fn check_game_folder(game: &Path) -> Result<(), Fail> {
 /// `Plugins/` and `AudioFMOD/`, and `physics.rbz` in place of the retail one, which is kept as `physics.rbz.bak`.
 /// Nothing is written unless the package is NGP 7.4.778's (its `NGP.dll` is checked), and `physics.rbz` goes last, so
 /// that an interrupted install does not look like NGP. The number of files written.
-pub fn add_ngp(
-    package: &Path,
-    game: &Path,
-    report: Report<'_>,
-    cancel: &AtomicBool,
-) -> Result<usize, Fail> {
+pub fn add_ngp(package: &Path, game: &Path, report: Report<'_>, cancel: &AtomicBool) -> Result<usize, Fail> {
     check_game_folder(game)?;
     let mut reporter = Reporter::new(report, cancel);
     reporter.step("Reading NGP")?;
@@ -147,12 +142,7 @@ pub(crate) fn supported_dll(files: &[(String, Vec<u8>)]) -> Result<&[u8], Fail> 
 
 /// Writes only the `NGP.dll` and `physics.rbz` of the NGP package at `package` into the folder `to`, when it is NGP
 /// 7.4.778's: for a game folder that keeps its own NGP (RallySimFans', or another version), which is left as it is.
-pub fn add_ngp_to(
-    package: &Path,
-    to: &Path,
-    report: Report<'_>,
-    cancel: &AtomicBool,
-) -> Result<(), Fail> {
+pub fn add_ngp_to(package: &Path, to: &Path, report: Report<'_>, cancel: &AtomicBool) -> Result<(), Fail> {
     let mut reporter = Reporter::new(report, cancel);
     reporter.step("Reading NGP")?;
     let Package { files, physics, .. } = read_ngp(package)?;

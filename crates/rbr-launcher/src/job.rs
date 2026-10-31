@@ -42,9 +42,7 @@ pub struct Job<T> {
 
 impl<T: Send + 'static> Job<T> {
     /// Runs `work` with its progress report and its cancel flag.
-    pub fn start(
-        work: impl FnOnce(Report<'_>, &AtomicBool) -> Result<T, Fail> + Send + 'static,
-    ) -> Job<T> {
+    pub fn start(work: impl FnOnce(Report<'_>, &AtomicBool) -> Result<T, Fail> + Send + 'static) -> Job<T> {
         let progress = Arc::new(Mutex::new(Progress::default()));
         let cancel = Arc::new(AtomicBool::new(false));
         let (shared, stop) = (progress.clone(), cancel.clone());
