@@ -355,7 +355,7 @@ impl Renderer {
                         Image::Shadow { width, height, pixels } => {
                             luminance_texture(&device, &queue, *width, *height, pixels)
                         }
-                        Image::Dial { base, glow } => {
+                        Image::Dial { base, glow, .. } => {
                             let target =
                                 dials::gpu::Target::new(&device, dds_texture(&device, &queue, &dds::parse(base).ok()?));
                             if let Some(mask) = glow.as_deref().and_then(|bytes| dds::parse(bytes).ok()) {

@@ -275,8 +275,11 @@ pub enum Image {
     Shadow { width: u32, height: u32, pixels: Vec<u8> },
     /// A block-compressed `.dds` the dials draw on ([`crate::dials`]): the renderer keeps it as their base and samples
     /// a render target made from it ([`crate::renderer::Renderer::draw_dials`]). `glow` is the gauge's emissive mask, a
-    /// `.dds` whose alpha is how much of each texel glows by night (`shader.wgsl`, `DIAL_GLOW`).
-    Dial { base: Vec<u8>, glow: Option<Vec<u8>> },
+    /// `.dds` whose alpha is how much of each texel glows by night (`shader.wgsl`, `DIAL_GLOW`). `texels` is the size
+    /// the dials place their elements in (the base as loaded, before [`crate::upscale`]), `art` the size of the detail
+    /// it holds (the car's own texture, which a larger gauge pack's base is a resize of), which the upscaler starts
+    /// from.
+    Dial { base: Vec<u8>, glow: Option<Vec<u8>>, texels: (u32, u32), art: (u32, u32) },
 }
 
 /// Byte offsets, within a geometry vertex, of what the renderer reads for one render slot

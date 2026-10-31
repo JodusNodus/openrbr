@@ -22,10 +22,12 @@ pub struct Sprite {
 }
 
 /// One face's redraw: the textures it draws on, its atlas, the texel rects (x0, y0, x1, y1) restored and redrawn, and
-/// all its sprites.
+/// all its sprites. Rects and sprites are in texels of the face's base as the dials loaded it (`size`); a target
+/// upscaled since ([`crate::upscale`]) takes them scaled to its own size.
 pub struct Draw {
     pub keys: Vec<TextureRef>,
     pub atlas: Arc<Rgba>,
+    pub size: (u32, u32),
     pub rects: Vec<[u32; 4]>,
     pub sprites: Vec<Sprite>,
 }
@@ -40,10 +42,11 @@ struct Vertex {
     _pad: u32,
 }
 
-/// A dial texture and the base it is restored from.
+/// A dial texture, a view of each of its levels, and the base it is restored from.
 pub(crate) struct Target {
     base: wgpu::TextureView,
     texture: wgpu::Texture,
+    levels: Vec<wgpu::TextureView>,
 }
 
 impl Target {
@@ -59,7 +62,16 @@ impl Target {
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         });
-        Target { base: base.create_view(&Default::default()), texture }
+        let levels = (0..texture.mip_level_count())
+            .map(|level| {
+                texture.create_view(&wgpu::TextureViewDescriptor {
+                    base_mip_level: level,
+                    mip_level_count: Some(1),
+                    ..Default::default()
+                })
+            })
+            .collect();
+        Target { base: base.create_view(&Default::default()), texture, levels }
     }
 
     pub(crate) fn view(&self) -> wgpu::TextureView {
@@ -208,10 +220,11 @@ impl Pass {
                     })
                 });
                 let size = target.texture.size();
+                let scale = [size.width as f32 / draw.size.0 as f32, size.height as f32 / draw.size.1 as f32];
                 for level in 0..target.texture.mip_level_count() {
                     let (w, h) = ((size.width >> level).max(1), (size.height >> level).max(1));
                     let ndc =
-                        |[x, y]: [f32; 2]| [2.0 * x / size.width as f32 - 1.0, 1.0 - 2.0 * y / size.height as f32];
+                        |[x, y]: [f32; 2]| [2.0 * x / draw.size.0 as f32 - 1.0, 1.0 - 2.0 * y / draw.size.1 as f32];
                     let first = vertices.len() as u32;
                     // The restore: a triangle over the whole level, cut to the rects by the scissor.
                     for position in [[-1.0, -1.0], [3.0, -1.0], [-1.0, 3.0]] {
@@ -230,8 +243,11 @@ impl Pass {
                     }
                     let scissors: Vec<[u32; 4]> = (draw.rects.iter())
                         .map(|&[x0, y0, x1, y1]| {
-                            let up = |v: u32, max: u32| v.div_ceil(1 << level).min(max);
-                            [x0 >> level, y0 >> level, up(x1, w), up(y1, h)]
+                            // In the target's texels, then the level's.
+                            let low = |v: u32, s: f32| (v as f32 * s) as u32 >> level;
+                            let up =
+                                |v: u32, s: f32, max: u32| ((v as f32 * s).ceil() as u32).div_ceil(1 << level).min(max);
+                            [low(x0, scale[0]), low(y0, scale[1]), up(x1, scale[0], w), up(y1, scale[1], h)]
                         })
                         .filter(|[x0, y0, x1, y1]| x0 < x1 && y0 < y1)
                         .collect();
@@ -257,15 +273,10 @@ impl Pass {
             if scissors.is_empty() {
                 continue;
             }
-            let view = target.texture.create_view(&wgpu::TextureViewDescriptor {
-                base_mip_level: level,
-                mip_level_count: Some(1),
-                ..Default::default()
-            });
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("dials"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view: &target.levels[level as usize],
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
