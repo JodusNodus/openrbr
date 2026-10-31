@@ -96,6 +96,56 @@ pub fn round24(x: f64) -> f64 {
     f64::from_bits(kept)
 }
 
+/// The x87 "real indefinite" (the default NaN, negative), which an invalid x87 operation gives.
+const X87_INDEFINITE: f64 = f64::from_bits(0xfff8_0000_0000_0000);
+
+/// An x87 scalar add at the thread's [`precision`]: the invalid case (`inf + -inf`) is the indefinite NaN, as on
+/// the x87. The operands are f32-valued or 53-bit results, so f64 holds each result before [`round_x87`] rounds it;
+/// unlike f32 the x87 keeps an extended exponent, so a value past f32's range stays finite until it is stored.
+pub(crate) fn x87_add(a: f64, b: f64) -> f64 {
+    if a.is_infinite() && b.is_infinite() && a.is_sign_negative() != b.is_sign_negative() {
+        return X87_INDEFINITE;
+    }
+    round_x87(a + b)
+}
+
+/// An x87 scalar subtract at the thread's [`precision`]: the invalid case (`inf - inf`) is the indefinite NaN.
+pub(crate) fn x87_sub(a: f64, b: f64) -> f64 {
+    if a.is_infinite() && b.is_infinite() && a.is_sign_negative() == b.is_sign_negative() {
+        return X87_INDEFINITE;
+    }
+    round_x87(a - b)
+}
+
+/// An x87 scalar product at the thread's [`precision`]: the invalid case (`0 * inf`) is the indefinite NaN.
+pub(crate) fn x87_mul(a: f64, b: f64) -> f64 {
+    if (a == 0.0 && b.is_infinite()) || (a.is_infinite() && b == 0.0) {
+        return X87_INDEFINITE;
+    }
+    round_x87(a * b)
+}
+
+/// An x87 scalar quotient at the thread's [`precision`]: the invalid cases (`0 / 0`, `inf / inf`) are the indefinite
+/// NaN.
+pub(crate) fn x87_div(a: f64, b: f64) -> f64 {
+    if (a == 0.0 && b == 0.0) || (a.is_infinite() && b.is_infinite()) {
+        return X87_INDEFINITE;
+    }
+    round_x87(a / b)
+}
+
+/// An x87 product of two f32 values at the thread's [`precision`], stored as f32: an invalid product (0 * inf) is
+/// the negative indefinite NaN, as the instruction does. This is not `x87_mul(a.into(), b.into()) as f32`: narrowing
+/// the indefinite to f32 with `as` is a host fold (`0x7fc00000` for the constant) or the host convert instruction,
+/// so the constant is written out instead.
+pub(crate) fn x87_mul_f32(a: f32, b: f32) -> f32 {
+    let product = x87_mul(f64::from(a), f64::from(b));
+    if product.is_nan() && !a.is_nan() && !b.is_nan() {
+        return f32::from_bits(0xffc0_0000);
+    }
+    product as f32
+}
+
 /// The x86 "integer indefinite": what `cvttss2si`/`cvtss2si` and x87 `fistp` store for NaN or an out-of-range value.
 pub const INT_INDEFINITE: i32 = i32::MIN;
 

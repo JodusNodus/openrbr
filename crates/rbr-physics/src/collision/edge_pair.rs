@@ -3,45 +3,11 @@
 //! precision (`fpu::round_x87`: 24 bits in 1.02, 53 under NGP); the SSE ops go through `math::sse`. Each sum is in
 //! the original's order.
 
-use crate::fpu::round_x87;
+use crate::fpu::{x87_add, x87_div, x87_mul, x87_sub};
 use crate::math::sse;
 use crate::math::vec::{Vec3, Vec4};
 
 use super::face_sweep::table_index;
-
-/// The x87 "real indefinite" (the default NaN, negative), which an invalid x87 operation gives.
-const X87_INDEFINITE: f64 = f64::from_bits(0xfff8_0000_0000_0000);
-
-/// The x87 works in f64 here: the operands are f32-valued or 53-bit results, so f64 holds each result before
-/// `round_x87` rounds it to the thread's precision. Unlike f32 the x87 keeps an extended exponent, so a value past
-/// f32's range stays finite until it is stored (`as f32` rounds it to infinity, as `fstps` does).
-fn x87_add(a: f64, b: f64) -> f64 {
-    if a.is_infinite() && b.is_infinite() && a.is_sign_negative() != b.is_sign_negative() {
-        return X87_INDEFINITE;
-    }
-    round_x87(a + b)
-}
-
-fn x87_sub(a: f64, b: f64) -> f64 {
-    if a.is_infinite() && b.is_infinite() && a.is_sign_negative() == b.is_sign_negative() {
-        return X87_INDEFINITE;
-    }
-    round_x87(a - b)
-}
-
-fn x87_mul(a: f64, b: f64) -> f64 {
-    if (a == 0.0 && b.is_infinite()) || (a.is_infinite() && b == 0.0) {
-        return X87_INDEFINITE;
-    }
-    round_x87(a * b)
-}
-
-fn x87_div(a: f64, b: f64) -> f64 {
-    if (a == 0.0 && b == 0.0) || (a.is_infinite() && b.is_infinite()) {
-        return X87_INDEFINITE;
-    }
-    round_x87(a / b)
-}
 
 /// The grid reads the search makes: a row is two vertex slots, a slot names a vertex, and the sample data is a table
 /// of byte pairs, the table sizes, the two byte tables and the sample index of each vertex.
