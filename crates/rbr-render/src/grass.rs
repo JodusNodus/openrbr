@@ -19,6 +19,7 @@
 //! them ([`Light`]).
 
 use crate::foliage::test_texels;
+use crate::parallel::in_parallel;
 use crate::puddles::{self, GROUND_MARK};
 use crate::stage::{
     Address, Anchor, Bounds, Draw, DrawState, Image, Layer, Lod, Mesh, Stage, StageTexture, TextureName, TextureRef,
@@ -27,7 +28,7 @@ use crate::stage::{
 use bytemuck::Zeroable;
 use glam::{Vec2, Vec3, Vec3Swizzles, Vec4Swizzles};
 use rbr_formats::dds;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
 /// The grass texture's file name in [`Stage::texture_names`] (not a game file: [`texture`] draws it).
@@ -226,12 +227,23 @@ pub fn add(stage: &mut Stage) -> Option<Field> {
     let texture = TextureRef { set: TextureSet::Stage, index: index.map(|t| t.index + 1).max().unwrap_or(0) };
     let (bytes, mean) = self::texture();
     let line = Line::new(&stage.driveline);
+    // The ground draws' textures' texels, made over the load's threads (one after another they took 0.7 s on 580),
+    // numbered as the draws below first use them.
+    let ground =
+        stage.meshes.iter().flat_map(|m| m.draws.iter().filter(|d| d.lod != Lod::Far && puddles::ground(m, d)));
+    let wanted: BTreeSet<TextureRef> = ground
+        .flat_map(|d| [d.state.textures[0], d.state.textures[1].filter(|_| d.state.second_texture)])
+        .flatten()
+        .collect();
+    let wanted: Vec<TextureRef> = wanted.into_iter().collect();
+    let made = in_parallel(&wanted, |&t| Texels::of(stage, t));
+    let mut made: HashMap<TextureRef, Texels> =
+        wanted.into_iter().zip(made).filter_map(|(t, texels)| Some((t, texels?))).collect();
     let mut textures = Vec::new();
     let mut texture_index: HashMap<TextureRef, Option<u32>> = HashMap::new();
     let mut texels = |t: Option<TextureRef>| {
         *texture_index.entry(t?).or_insert_with(|| {
-            let found = Texels::of(stage, t?)?;
-            textures.push(found);
+            textures.push(made.remove(&t?)?);
             Some(textures.len() as u32 - 1)
         })
     };
