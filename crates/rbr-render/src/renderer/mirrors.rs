@@ -18,6 +18,8 @@ pub(super) const REACH: f32 = 300.0;
 /// samples: `glass.wgsl`).
 const LAYERS: usize = MOST_MIRRORS + 1;
 const WINDSCREEN: usize = MOST_MIRRORS;
+/// Each layer's span in `--profile`.
+const LABELS: [&str; LAYERS] = ["mirror 1", "mirror 2", "mirror 3", "mirror 4", "windscreen reflection"];
 
 /// One mirror's view in `mirrors.wgsl`'s `MirrorViews`.
 #[derive(Debug, Clone, Copy, Default, Pod, Zeroable)]
@@ -181,6 +183,7 @@ impl Renderer {
             let Some(view) = mirrors::view(view_projection, sky_view_projection, self.depth_size, &placed) else {
                 continue;
             };
+            let layer = mark(profiler, &mut encoder);
             let mut targets = m.targets.borrow_mut();
             let target = match &targets[k] {
                 Some(target) if target.size == view.size => target,
@@ -227,6 +230,7 @@ impl Renderer {
                 },
                 wgpu::Extent3d { width: view.size.0, height: view.size.1, depth_or_array_layers: 1 },
             );
+            span(profiler, &mut encoder, LABELS[k], layer);
             let done = std::mem::replace(&mut encoder, self.device.create_command_encoder(&Default::default()));
             self.queue.submit([done.finish()]);
             held[k] = Some(Held { view_projection: view.view_projection, size: view.size, body });

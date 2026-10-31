@@ -833,6 +833,9 @@ launcher "Mirrors" (default every frame). Off: no passes, the frame byte-identic
   in the shared shader it cost 1.1 ms a frame at 1440p (M-series).
 - Cost over Off, Evo X R4 cockpit, min of 5 (2026-10-19): every frame +0.66-0.82 ms at 1080p, +0.71-0.75 at 1440p,
   +0.71-1.13 at 4K; every 2nd +0.29-0.45; every 3rd +0.18-0.34.
+- `--profile` times each layer (`mirror 1` to `4`, `windscreen reflection`). RX 9060 XT, 1080p ultra cockpits
+  (2026-10-31): the windscreen's 1.2-1.5 ms every frame, the mirrors' 0.4-1.0 each; the stage in the windscreen's
+  only 0.3 (the cabin hides it, a reach of 10 m costs as 300), the rain in it 0.07.
 
 ### Cost on an M3 Pro (2026-10-29)
 
