@@ -148,10 +148,8 @@ impl<'a> Reader<'a> {
 /// are read until the parts read (children included) reach the header count, and a block is read
 /// whole. Use [`node_count`] to count parts with their children.
 pub fn parse(text: &str) -> Result<Vec<Part>, Error> {
-    let words = tokens(text);
-    let header: usize = words.first().and_then(|t| t.parse().ok()).ok_or(Error::BadCount)?;
-    let mut reader = Reader { tokens: tokens::Reader::new(words), found: 0 };
-    let _ = reader.next(); // The header read above.
+    let mut reader = Reader { tokens: tokens::Reader::new(tokens(text)), found: 0 };
+    let header: usize = reader.tokens.next().and_then(|t| t.parse().ok()).ok_or(Error::BadCount)?;
     let mut parts = Vec::new();
     while reader.found < header {
         if reader.peek().is_none() {
