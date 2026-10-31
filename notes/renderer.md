@@ -61,6 +61,11 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   on too (Delta cockpit 1080p, M3 Pro, 2026-10-31). The turn is undone on the model-space point before the car's
   motion: a separate wheel-to-previous matrix changed Metal's fast-math code for the car's pixels (a chase still by
   up to 2/255).
+  Glass over the car (the dash below the windscreen, the cabin behind the windows, lamp lenses) gathers as the rest:
+  the mask takes the frame new only where the stage is behind the glass (2026-10-31). The lower windscreen (alpha about
+  0.9 at its grazing angle) was taken new every frame, its dash edges and reflected cabin never smoothed; its
+  frame-to-frame change halves (Fiesta Rally3 cockpit), rain drops and wipers as before. All 34 shots change: cockpits'
+  lower windscreens, chase views' rear windows and tail lights smoother, the view through them slightly softer.
   Dark specks on the car's silhouette in a still chase view (3 pixels over 20 luma below their neighbours; 34 with
   off) are the thin dark sliver's real coverage, not a history lock: the raw jittered frames alternate dark and
   bright at those pixels.
@@ -903,6 +908,10 @@ launcher "Mirrors" (default every frame). Off: no passes, the frame byte-identic
 - View: `crop * VP * R`, R the reflection across the glass, crop the glass's screen box with x flipped, z row for an
   oblique near plane 1 cm past the glass. Image about 1:1 with the glass, 32 px steps, at most 1024 x 512. Rates take
   turns between mirrors.
+- Under TAA each image is drawn with its own sub-texel jitter (Halton by the layer's draws), which the glass samples it
+  by, so the main view's resolve gathers its edges (2026-10-31, no cost). The windscreen's curve shears its image low on
+  the pane: an edge along a texel row showed as fins about 10 texels long, halved by a 2048 image (tried for Ultra,
+  +1 ms) and only softened by a blur or FXAA; the jitter with TAA's glass-over-the-car rule removes them at 1024.
 - Passes draw the stage to 300 m, sky, fog, the car, ghosts, the game's particles, rain and lamps, with the frame's
   sun cascades and exposure; no prepass, light shafts, cubes or bloom. Only the glass's pipelines have `MIRRORS`: on
   in the shared shader it cost 1.1 ms a frame at 1440p (M-series).

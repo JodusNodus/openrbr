@@ -12,7 +12,8 @@
 //     after a reset (a cut, a resize).
 // The car's glass (its blended draws, the panes' mud) moves with the car and what shows through it with the stage: its
 // opacity in the frame's alpha (`pipelines::alpha_writes`) is a mask, kept in the history's alpha, and where the
-// glass is opaque now or was there the frame is taken new.
+// glass is opaque now or was there the frame is taken new; not where the car is behind it (the dash below the
+// windscreen, the cabin behind the rear window, a lamp's housing), which moves with the glass and what it reflects.
 // The result goes to the post pass's scene and to the next frame's history.
 
 struct Taa {
@@ -139,9 +140,10 @@ fn on_wheel(p: vec3<f32>) -> bool {
     return w.z > depth.x && w.z < depth.y;
 }
 
-// Where the point seen at `uv` (clip `here`) was in the previous frame, uv.
-fn previous_uv(uv: vec2<f32>, here: vec4<f32>) -> vec2<f32> {
+// Where the point seen at `uv` (clip `here`) was in the previous frame, uv, and z 1 if it is in the car's box.
+fn previous_uv(uv: vec2<f32>, here: vec4<f32>) -> vec3<f32> {
     var clip = t.view_to_prev * here;
+    var car = 0.0;
     if (t.car_low.w > 0.5 && all(uv >= t.car_rect.xy) && all(uv <= t.car_rect.zw)) {
         let local = t.car_to_local * here;
         // The sky (at infinity, w 0) is in no box.
@@ -153,10 +155,11 @@ fn previous_uv(uv: vec2<f32>, here: vec4<f32>) -> vec2<f32> {
                 turned = t.wheel_turn * local;
             }
             clip = t.car_to_prev * turned;
+            car = 1.0;
         }
     }
     let ndc = clip.xy / max(clip.w, 1.0e-6);
-    return vec2<f32>(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+    return vec3<f32>(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5, car);
 }
 
 @fragment
@@ -184,7 +187,8 @@ fn fs_taa(in: Out) -> Resolved {
     // The pixel's centre, unjittered: the history has no jitter, so a still view keeps it in place.
     let ndc = vec2<f32>(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
     let here = vec4<f32>(ndc, textureLoad(depth, pixel, 0), 1.0);
-    let prev = previous_uv(uv, here);
+    let previous = previous_uv(uv, here);
+    let prev = previous.xy;
     let motion = prev - uv;
     if (t.params.w > 0.5) {
         let c = vec4<f32>(abs(motion) * 50.0, 0.0, mask);
@@ -202,8 +206,9 @@ fn fs_taa(in: Out) -> Resolved {
     let moved = length((clipped - held) / max(m1.x, 0.02));
     let speed = length(motion * t.size.xy);
     var share = clamp(t.params.x + 0.25 * clamp(moved, 0.0, 1.0) + 0.1 * clamp(speed / 16.0, 0.0, 1.0), 0.03, 1.0);
-    // Clean glass (alpha below GLASS.x) gathers as the rest; mud and drops (GLASS.y) are taken new.
-    share = max(share, smoothstep(GLASS.x, GLASS.y, max(mask, kept.a)));
+    // Clean glass (alpha below GLASS.x) gathers as the rest; mud and drops (GLASS.y) are taken new, but not over the car,
+    // which moves with them.
+    share = max(share, smoothstep(GLASS.x, GLASS.y, max(mask, kept.a)) * (1.0 - previous.z));
     let c = vec4<f32>(untone(mix(from_ycocg(clipped), s0, share)), mask);
     return Resolved(c, c);
 }

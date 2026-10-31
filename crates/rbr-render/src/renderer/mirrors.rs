@@ -7,6 +7,7 @@ use super::Renderer;
 use crate::mirrors::{self, Placed, Rate, MOST, MOST_MIRRORS};
 use crate::post::SCENE_FORMAT;
 use crate::profile::Profiler;
+use crate::taa;
 use bytemuck::{bytes_of, Pod, Zeroable};
 use glam::Mat4;
 use std::cell::{Cell, RefCell};
@@ -32,13 +33,14 @@ struct ViewUniform {
     scale: [f32; 4],
 }
 
-/// The image a mirror's layer holds: the view it was drawn with, its size and the car body's model space to stage
-/// space then.
+/// The image a mirror's layer holds: the view it was drawn with, its size, the car body's model space to stage
+/// space then, and the layer's draws before it (its jitter's phase).
 #[derive(Debug, Clone, Copy)]
 struct Held {
     view_projection: Mat4,
     size: (u32, u32),
     body: Mat4,
+    draws: u32,
 }
 
 /// A mirror's pass's targets at one size: the image it draws and its depth, the image copied into the mirror's layer,
@@ -191,6 +193,15 @@ impl Renderer {
             let Some(view) = mirrors::view(view_projection, sky_view_projection, self.depth_size, &placed) else {
                 continue;
             };
+            // Under the temporal anti-aliasing each image is drawn with a sub-texel jitter of its own, which the glass
+            // samples it by, so that the main view's resolve gathers its edges over the draws.
+            let draws = held[k].map_or(0, |held| held.draws.wrapping_add(1));
+            let shift = self.taa.as_ref().map_or(Mat4::IDENTITY, |_| taa::shift(taa::jitter(draws, false), view.size));
+            let view = mirrors::View {
+                view_projection: shift * view.view_projection,
+                sky_view_projection: shift * view.sky_view_projection,
+                ..view
+            };
             let layer = mark(profiler, &mut encoder);
             let mut targets = m.targets.borrow_mut();
             let target = match &targets[k] {
@@ -241,7 +252,7 @@ impl Renderer {
             span(profiler, &mut encoder, LABELS[k], layer);
             let done = std::mem::replace(&mut encoder, self.device.create_command_encoder(&Default::default()));
             self.queue.submit([done.finish()]);
-            held[k] = Some(Held { view_projection: view.view_projection, size: view.size, body });
+            held[k] = Some(Held { view_projection: view.view_projection, size: view.size, body, draws });
             drawn = true;
         }
         if let Some(t) = t {
