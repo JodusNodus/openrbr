@@ -814,6 +814,25 @@ fn pane_drops(
     drops.extend(glass.drops.iter().map(|d| {
         let centre = to_stage.transform_point3(place(d.at, LIFT));
         let run = d.velocity.length();
+        // A ribbon: its middle, half as long as its span (and its ends' roundness more), as wide as its radius.
+        if d.kind == Kind::Trail && d.span != Vec2::ZERO {
+            let centre = to_stage.transform_point3(place(d.at + d.span * 0.5, LIFT));
+            let to = |c: Vec2| across * c.x + up * c.y;
+            let along = d.span.normalize_or_zero();
+            return gpu::Drop {
+                centre: centre.to_array(),
+                kind: 7.0,
+                axis_u: (to(Vec2::new(-along.y, along.x)) * d.radius).to_array(),
+                seed: d.seed,
+                axis_v: (to(along) * (d.span.length() * 0.5 + d.radius)).to_array(),
+                alpha: d.left.min(1.0),
+                color: [1.0; 4],
+                normal: [0.0; 4],
+                far: [0.0; 3],
+                tint: [0; 4],
+                edge: [0; 4],
+            };
+        }
         let (u, v) = if run > 0.0 {
             let along = d.velocity / run;
             let side = Vec2::new(-along.y, along.x);

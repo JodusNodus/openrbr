@@ -1,7 +1,7 @@
 // The windscreen's drops, flakes and bugs (`glass/gpu.rs`): one instance each, a quad on the glass. Water drops are
 // lenses: they show the frame behind them upside down and squeezed (sampled from the resolved frame about the drop's
 // centre, mirrored), darker at the rim, with a highlight. Flakes and bugs are opaque splats with ragged edges, lit by
-// the stage's light. Kind 4 is a patch of the wet film: the frame behind it blurred, streaked along the airflow. Kind 5
+// the stage's light. Kind 4 is a blotch of the wet film: the frame behind it blurred, streaked along the airflow. Kind 5
 // is mud seen from inside: its shaded side with the outside's light through its thin rim. Kind 6 is a cell of the pane
 // itself seen from inside, drawn first: its reflection loss, dust, specks and wiper scratches (`pane`). Ours.
 
@@ -90,6 +90,10 @@ struct Out {
     @location(11) @interpolate(flat) tint: vec4<u32>,
     // How far a pane cell's corners lie inside the glass's outline, over `PANE_EDGE` (low, right, top, far).
     @location(12) @interpolate(flat) edge: vec4<f32>,
+    // The quad's two half axes on screen, pixels (y down): a pixel's offset from the centre is `u * local.x + v * local.y`.
+    @location(13) @interpolate(flat) pixels: vec4<f32>,
+    // Its half sizes in stage space, metres (a trail's ribbon, kind 7).
+    @location(14) @interpolate(flat) metres: vec2<f32>,
 };
 
 fn to_screen(clip: vec4<f32>) -> vec2<f32> {
@@ -120,6 +124,10 @@ fn vs_main(@builtin(vertex_index) corner: u32, instance: Instance) -> Out {
     let up = to_screen(frame.view_projection * vec4<f32>(instance.centre + instance.axis_v, 1.0));
     let along = normalize((up - c) * aspect + vec2<f32>(0.0, 1e-6));
     out.axes = vec4<f32>(along.y, -along.x, along);
+    let su = (to_screen(edge) - c) * frame.screen.xy;
+    let sv = (up - c) * frame.screen.xy;
+    out.pixels = vec4<f32>(su, sv);
+    out.metres = vec2<f32>(length(instance.axis_u), length(instance.axis_v));
     out.kind = i32(instance.kind + 0.5);
     out.seed = instance.seed;
     out.alpha = instance.alpha;
@@ -140,9 +148,6 @@ fn ragged(local: vec2<f32>, seed: f32, amount: f32) -> f32 {
     return 1.0 - amount * (0.5 + 0.25 * sin(a * 3.0 + k) + 0.15 * sin(a * 7.0 + k * 1.7) + 0.1 * sin(a * 13.0 + k * 2.3));
 }
 
-// How far the lens looks out, in drop radii: the scene seen through a drop spans this much more than the drop.
-const LENS: f32 = 6.0;
-
 // At night a drop or flake is lit by what lies in front of the car rather than by the dark sky: the frame's light
 // around it (the mean of a ring of samples `NIGHT_REACH` of the screen out, so drops over the beam-lit road glow and
 // those against the dark trees stay faint), and the headlights' glow scattered back (`Frame::night`).
@@ -157,12 +162,6 @@ fn night_light(centre: vec2<f32>) -> vec3<f32> {
     }
     return sum / 8.0;
 }
-
-// The wet film (ours): how far its blur reaches, in screen heights, its taps (a sunflower disc, so that the image
-// is softened rather than doubled) and its most cover, on the thickest film.
-const FILM_BLUR: f32 = 0.005;
-const FILM_TAPS: i32 = 12;
-const FILM_COVER: f32 = 0.45;
 
 // The film's wet layer seen from outside (ours): at a distance its drops and beads are under a pixel, and what the
 // eye sees of a wet pane is a soft mottled sheen, streaked up the glass. A value noise over the pane's cells (the
@@ -207,15 +206,58 @@ fn wet_layer(in: Out, film: f32) -> vec4<f32> {
 // or two across reads as a speck of light, not a lens).
 const DETAIL: vec2<f32> = vec2<f32>(1.5, 5.0);
 
-// The most of a drop's lower rim that shows the sky, and the sky's light over the light on the glass.
-const DROP_SKY: f32 = 0.5;
-const DROP_SKY_LIGHT: f32 = 1.2;
+// The water lens (ours): what a drop, bead or ribbon of water on the glass shows. The frame behind it is seen
+// mirrored through its centre, `mag` times as far out as the pixel's offset from it (a drop sees a wide field upside
+// down), the more toward its rim where the surface turns away; the rim bends the view out of the eye, a dark outline
+// that narrows to a line on the small ones; a tiny highlight where its crown faces the light. `q` is the pixel in the
+// lens's unit disc (y up), `o` its offset from the centre in pixels (y down), `size` the lens's radius in pixels,
+// `centre` its middle on the screen (0 to 1). Linear colour.
+const LENS_MAG: f32 = 3.0;
+const DROP_RIM: f32 = 0.55;
+
+// `weight` is how much of a lens a thing of water is: 1 a drop, less a thin ribbon (more of the view straight behind
+// it, a fainter outline).
+fn lens(q: vec2<f32>, o: vec2<f32>, look: vec2<f32>, size: f32, centre: vec2<f32>, mag: f32, spec: f32, weight: f32) -> vec3<f32> {
+    let r = min(length(q), 1.0);
+    let bend = mag * (1.0 + 0.6 * r * r);
+    let uv = clamp(centre - look * bend * frame.screen.zw, vec2<f32>(0.0), vec2<f32>(1.0));
+    // What it sees is softened over its field: four more taps spread over it.
+    var through = textureSampleLevel(scene, scene_sampler, uv, 0.0).rgb;
+    if (size > 2.0) {
+        let spread = size * mag * 0.3 * frame.screen.zw;
+        through = through * 0.4
+            + 0.15 * (textureSampleLevel(scene, scene_sampler, clamp(uv + vec2<f32>(spread.x, spread.y), vec2<f32>(0.0), vec2<f32>(1.0)), 0.0).rgb
+            + textureSampleLevel(scene, scene_sampler, clamp(uv + vec2<f32>(-spread.x, spread.y), vec2<f32>(0.0), vec2<f32>(1.0)), 0.0).rgb
+            + textureSampleLevel(scene, scene_sampler, clamp(uv + vec2<f32>(spread.x, -spread.y), vec2<f32>(0.0), vec2<f32>(1.0)), 0.0).rgb
+            + textureSampleLevel(scene, scene_sampler, clamp(uv + vec2<f32>(-spread.x, -spread.y), vec2<f32>(0.0), vec2<f32>(1.0)), 0.0).rgb);
+    }
+    // Mostly clear water: the view straight behind it still shows through.
+    let direct = textureSampleLevel(scene, scene_sampler, clamp(centre + o * frame.screen.zw, vec2<f32>(0.0), vec2<f32>(1.0)), 0.0).rgb;
+    through = mix(direct, through, 0.4 * weight);
+    // A drop of a pixel or two shows no outline or highlight (`DETAIL`).
+    let detail = smoothstep(DETAIL.x * 0.5, DETAIL.y, size);
+    // The rim bends the view out of the eye: a thin dark outline, darker on the lower side, where the light from above
+    // is bent away.
+    let rim = smoothstep(0.62, 1.0, r);
+    let dark = min(mix(0.2, DROP_RIM, detail) * weight * rim * (1.0 + 0.35 * clamp(-q.y, -1.0, 1.0)), 0.7);
+    var colour = through * (1.0 - dark);
+    let nz = sqrt(max(1.0 - r * r, 0.0));
+    let n = normalize(vec3<f32>(q, nz * 1.3 + 0.05));
+    let h = normalize(vec3<f32>(-0.4, 0.6, 1.0));
+    colour += linear(frame.light.rgb) * pow(max(dot(n, h), 0.0), 100.0) * spec * smoothstep(0.7, 2.5, size);
+    if (frame.night.w != 0.0) {
+        // At night the rim also catches the lamps the lens sees, and a little of the headlights' glow.
+        colour += (through * 0.9 + linear(frame.night.rgb) * 0.15) * rim * detail * weight;
+    }
+    return colour;
+}
 
 // The beads (ours): the small drops the film holds, too many to be drops of their own. Each film cell is `BEADS`
-// squares a side, each with a bead at a hashed place when a hash is under the film's thickness, of a hashed size up to
-// `BEAD_SIZE` of the square; drawn as small lenses, like the drops.
+// squares a side, each with a bead at a hashed place when a hash is under the film's thickness (`BEAD_FILL` of it), of
+// a hashed size up to `BEAD_SIZE` of the square; drawn as small lenses, like the drops.
 const BEADS: f32 = 5.0;
-const BEAD_SIZE: vec2<f32> = vec2<f32>(0.18, 0.45);
+const BEAD_SIZE: vec2<f32> = vec2<f32>(0.18, 0.48);
+const BEAD_FILL: f32 = 0.7;
 
 // Four numbers in [0, 1) from `n` (PCG steps).
 fn hash4(n: u32) -> vec4<f32> {
@@ -231,14 +273,14 @@ fn beads(in: Out, film: f32, per_pixel: mat2x2<f32>) -> vec4<f32> {
     let square = floor(grid);
     let pane = select(0u, 1u, in.seed < 0.0);
     let h = hash4(((u32(in.alpha) * 2u + pane) * 64u + u32(square.y) * 8u + u32(square.x)));
-    if (h.x >= film) {
+    if (h.x >= sqrt(film) * BEAD_FILL) {
         return vec4<f32>(0.0);
     }
-    let radius = mix(BEAD_SIZE.x, BEAD_SIZE.y, h.y);
+    let radius = mix(BEAD_SIZE.x, BEAD_SIZE.y, h.y * h.y);
     let centre = square + radius + (1.0 - 2.0 * radius) * h.zw;
     // The pixel's offset from the bead's centre, in pixels (the inverse of the local units per pixel).
-    let local = (grid - centre) * (2.0 / BEADS);
     let to_pixels = inverse2(per_pixel);
+    let local = (grid - centre) * (2.0 / BEADS);
     let offset = to_pixels * local;
     let size = length(to_pixels * vec2<f32>(radius * 2.0 / BEADS, 0.0));
     let r = length(grid - centre) / radius;
@@ -246,18 +288,64 @@ fn beads(in: Out, film: f32, per_pixel: mat2x2<f32>) -> vec4<f32> {
     if (cover <= 0.0) {
         return vec4<f32>(0.0);
     }
-    let nz = sqrt(max(1.0 - r * r, 0.0));
-    let at = (in.position.xy - offset * (1.0 + LENS)) * frame.screen.zw;
-    var through = textureSampleLevel(scene, scene_sampler, clamp(at, vec2<f32>(0.0), vec2<f32>(1.0)), 0.0).rgb;
-    let detail = smoothstep(DETAIL.x * 0.5, DETAIL.y, size);
-    through = through * mix(1.0, (0.2 + 0.8 * sqrt(nz)) * 1.15, detail);
-    let crescent = smoothstep(0.2, 0.85, -local.y / max(radius * 2.0 / BEADS, 1e-6)) * smoothstep(0.4, 0.85, r);
-    through = mix(through, linear(frame.light.rgb) * DROP_SKY_LIGHT, crescent * DROP_SKY * detail * (1.0 - frame.night.w));
-    let n = normalize(vec3<f32>(local / max(radius * 2.0 / BEADS, 1e-6), nz * 1.2));
-    let hl = normalize(vec3<f32>(-0.35, 0.55, 1.0));
-    let shine = pow(max(dot(n, hl), 0.0), 60.0) * 0.7 * frame.light.rgb * detail;
-    let colour = through * (1.0 - smoothstep(0.7, 1.0, r) * 0.45 * detail) + linear(shine);
+    let q = vec2<f32>(offset.x, -offset.y) / max(size, 1e-3);
+    let colour = lens(q, offset, offset, size, (in.position.xy - offset) * frame.screen.zw, LENS_MAG, 0.5, 0.8);
     return vec4<f32>(colour * cover, cover);
+}
+
+// A cell of wet film (kind 4): the frame behind it seen through a wavy sheet of water, as thick as its corners' film
+// (`color`) blended across it; patchy, the thin film breaking up. The sheet's waves shift the view a few pixels and
+// streak it along the airflow (`seed`: the streak's length over the blur's width, up the pane, or across it when
+// negative). No sheen: added light lifted the dark trim behind the glass's edges to grey.
+const FILM_WARP: f32 = 2.0;
+const FILM_BLUR: f32 = 0.0022;
+const FILM_COVER: f32 = 0.7;
+
+fn film_cell(in: Out, per_pixel: mat2x2<f32>) -> vec4<f32> {
+    let t = in.local * 0.5 + 0.5;
+    let film = mix(mix(in.color.x, in.color.y, t.x), mix(in.color.z, in.color.w, t.x), t.y);
+    let index = u32(in.alpha);
+    let pane = select(0.0, 1.0, in.seed < 0.0);
+    let cell = vec2<f32>(f32(index % u32(FILM_COLUMNS)), f32(index / u32(FILM_COLUMNS))) + t;
+    // The waves: a noise over the film, its slope the shift.
+    let p = vec2<f32>(cell.x * 2.0, cell.y * 2.0);
+    let n0 = wet_noise(p, pane + 4.0);
+    let slope = vec2<f32>(wet_noise(p + vec2<f32>(0.25, 0.0), pane + 4.0) - n0, (wet_noise(p + vec2<f32>(0.0, 0.25), pane + 4.0) - n0)) * 4.0;
+    let blotch = wet_noise(vec2<f32>(cell.x * 1.3, cell.y * 1.3 / WET_STREAK), pane + 8.0);
+    let cover = film * FILM_COVER * smoothstep(0.25, 0.6, blotch * 0.8 + film * 0.55);
+    let at = (in.position.xy + slope * film * FILM_WARP) * frame.screen.zw;
+    let to_uv = vec2<f32>(frame.screen.y * frame.screen.z, 1.0) * FILM_BLUR;
+    let stretch = select(vec2<f32>(1.0, in.seed), vec2<f32>(-in.seed, 1.0), in.seed < 0.0);
+    var sum = vec3<f32>(0.0);
+    for (var k = 0; k < 4; k++) {
+        let a = f32(k) * 2.3999632 + 0.7;
+        let d = sqrt((f32(k) + 0.5) / 4.0);
+        let offset = (in.axes.xy * cos(a) * stretch.x + in.axes.zw * sin(a) * stretch.y) * d * to_uv;
+        sum += textureSampleLevel(scene, scene_sampler, clamp(at + offset, vec2<f32>(0.0), vec2<f32>(1.0)), 0.0).rgb;
+    }
+    let colour = sum * 0.25;
+    let bead = beads(in, film, per_pixel);
+    let layer = wet_layer(in, film);
+    let under = vec4<f32>(bead.rgb + colour * cover * (1.0 - bead.a), bead.a + cover * (1.0 - bead.a));
+    return vec4<f32>(layer.rgb + under.rgb * (1.0 - layer.a), layer.a + under.a * (1.0 - layer.a));
+}
+
+// A ribbon of water a running drop left (kind 7): a thin capsule of water along its quad's second axis, as wide as
+// the first, `alpha` its wetness. It bends the view like a cylinder of water, with a dark line along each edge.
+fn ribbon(in: Out) -> vec4<f32> {
+    let half_width = in.metres.x;
+    let spine = max(in.metres.y - half_width, 0.0);
+    let p = vec2<f32>(in.local.x * half_width, in.local.y * in.metres.y);
+    let q = vec2<f32>(p.x, p.y - clamp(p.y, -spine, spine)) / half_width;
+    let r = length(q);
+    if (r > 1.0) {
+        discard;
+    }
+    let size = max(length(in.pixels.xy), 0.5);
+    let o = in.pixels.xy * q.x + in.pixels.zw * q.y * (half_width / max(in.metres.y, 1e-6));
+    let colour = lens(q, o, o, size, (in.position.xy - o) * frame.screen.zw, LENS_MAG * 0.4, 0.0, 0.3);
+    let alpha = (1.0 - smoothstep(1.0 - 0.8 / size, 1.0, r)) * in.alpha;
+    return vec4<f32>(colour * alpha, alpha);
 }
 
 fn inverse2(m: mat2x2<f32>) -> mat2x2<f32> {
@@ -274,57 +362,26 @@ fn fs_main(in: Out) -> @location(0) vec4<f32> {
         return pane(in, per_pixel);
     }
     if (in.kind == 4) {
-        // A cell of wet film: the frame behind it softened, as thick as its corners' film (`color`) blended across
-        // it. No sheen: added light lifted the dark trim behind the glass's edges to grey.
-        let t = in.local * 0.5 + 0.5;
-        let film = mix(mix(in.color.x, in.color.y, t.x), mix(in.color.z, in.color.w, t.x), t.y);
-        let at = in.position.xy * frame.screen.zw;
-        let to_uv = vec2<f32>(frame.screen.y * frame.screen.z, 1.0) * FILM_BLUR;
-        var sum = vec3<f32>(0.0);
-        for (var k = 0; k < FILM_TAPS; k++) {
-            let a = f32(k) * 2.3999632;
-            let d = sqrt((f32(k) + 0.5) / f32(FILM_TAPS));
-            // Streaked along the airflow (`seed`: the streak's length over the blur's width, up the pane, or across it
-            // when negative).
-            let stretch = select(vec2<f32>(1.0, in.seed), vec2<f32>(-in.seed, 1.0), in.seed < 0.0);
-            let offset = (in.axes.xy * cos(a) * stretch.x + in.axes.zw * sin(a) * stretch.y) * d * to_uv;
-            sum += textureSampleLevel(scene, scene_sampler, clamp(at + offset, vec2<f32>(0.0), vec2<f32>(1.0)), 0.0).rgb;
-        }
-        let colour = sum / f32(FILM_TAPS);
-        let alpha = film * FILM_COVER;
-        let bead = beads(in, film, per_pixel);
-        let layer = wet_layer(in, film);
-        let under = vec4<f32>(bead.rgb + colour * alpha * (1.0 - bead.a), bead.a + alpha * (1.0 - bead.a));
-        return vec4<f32>(layer.rgb + under.rgb * (1.0 - layer.a), layer.a + under.a * (1.0 - layer.a));
+        return film_cell(in, per_pixel);
+    }
+    if (in.kind == 7) {
+        return ribbon(in);
     }
     if (in.kind == 0) {
-        if (r > 1.0) {
+        // A drop: its outline wavers (more on the larger ones), the lens inside it.
+        let size = max(length(in.pixels.xy), 0.5);
+        let edge = ragged(in.local, in.seed, mix(0.04, 0.2, smoothstep(2.0, 6.0, size)));
+        let q = in.local / edge;
+        let rr = length(q);
+        if (rr > 1.0) {
             discard;
         }
-        let nz = sqrt(max(1.0 - r * r, 0.0));
-        // Through the lens: the frame about the drop, mirrored through its centre.
-        let aspect = vec2<f32>(frame.screen.y * frame.screen.z, 1.0);
-        let uv = in.centre.xy - in.local * vec2<f32>(1.0, -1.0) * in.centre.z * LENS * aspect;
-        var through = textureSampleLevel(scene, scene_sampler, clamp(uv, vec2<f32>(0.0), vec2<f32>(1.0)), 0.0).rgb;
-        // Darker toward the rim, where the lens bends the light away; a sky highlight up and to the left. A drop of a
-        // pixel or two shows neither (`DETAIL`).
-        let detail = smoothstep(DETAIL.x, DETAIL.y, in.centre.z * frame.screen.y);
-        through = through * mix(1.0, (0.2 + 0.8 * sqrt(nz)) * 1.15, detail);
-        // A drop's lens takes in a wide field, upside down: a crescent along its lower rim shows the sky above the car.
-        let crescent = smoothstep(-0.2, -0.85, in.local.y) * smoothstep(0.4, 0.85, r);
-        through = mix(through, linear(frame.light.rgb) * DROP_SKY_LIGHT, crescent * DROP_SKY * detail * (1.0 - frame.night.w));
-        let n = normalize(vec3<f32>(in.local.x, in.local.y, nz * 1.2));
-        let h = normalize(vec3<f32>(-0.35, 0.55, 1.0));
-        let shine = (pow(max(dot(n, h), 0.0), 60.0) * 0.7 + pow(max(dot(n, h * vec3<f32>(-1.0, -1.0, 1.0)), 0.0), 8.0) * 0.08) * frame.light.rgb * detail;
-        let rim = smoothstep(0.7, 1.0, r) * 0.45 * detail;
-        var colour = through * (1.0 - rim) + linear(shine);
-        if (frame.night.w != 0.0) {
-            // The rim and the highlight catch what the drop sees (its lens's light: a drop over the lit road glows, one
-            // against the dark trees stays dark) and a little of the headlights' glow.
-            let caught = (smoothstep(0.5, 0.95, r) + pow(max(dot(n, h), 0.0), 60.0)) * detail;
-            colour += (through * 1.5 + linear(frame.night.rgb) * 0.3) * caught;
-        }
-        let alpha = (1.0 - smoothstep(0.85, 1.0, r)) * in.alpha;
+        // A running drop is longer than it is wide, but its lens looks about as far out each way.
+        let run = max(length(in.pixels.zw) / size, 1.0);
+        let o = in.pixels.xy * q.x + in.pixels.zw * q.y;
+        let look = in.pixels.xy * q.x + in.pixels.zw * (q.y / run);
+        let colour = lens(q, o, look, size, in.centre.xy, LENS_MAG, 0.6, 1.0);
+        let alpha = (1.0 - smoothstep(1.0 - 0.8 / size, 1.0, rr)) * in.alpha;
         return vec4<f32>(colour * alpha, alpha);
     }
     let edge = ragged(in.local, in.seed, select(0.35, 0.25, in.kind == 1));
