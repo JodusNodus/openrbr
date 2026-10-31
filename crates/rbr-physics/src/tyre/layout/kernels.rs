@@ -157,270 +157,6 @@ pub fn value8_clear<S: TyreStore>(mem: &mut S, this: u32) {
     }
 }
 
-/// The scratch words the tyre step reads and writes, each as `kind offset field`, in the order `store_frame`
-/// writes them; `load_frame` reads the same words (reads have no order). The kinds are plain `f32` and `u32`
-/// words, four-lane `vec4` vectors, the `material` block at `+0x1a0`, the seven-word `indentation` solve at `+0x32c`,
-/// the three-lane `contact_velocity` at the slip velocity, the eight sector `wear` weights at the wear table, the
-/// 24-word noise `signal` block and the three `debug_words`.
-///
-/// The material block comes first: ten of its words alias the scalar fields below, so the block's copy must land
-/// before the scalars overwrite them. `wet_damping` (`+0x4ec`) is stored before `ngp_heat_power` (`+0x4e8`), as the
-/// original writes them. The contact point, the contact frame and the dirty words are stored last.
-macro_rules! scratch_words {
-    ($m:ident, $($ctx:tt)*) => {
-        $m!($($ctx)*; material);
-        $m!($($ctx)*; f32 0x1E8 static_friction);
-        $m!($($ctx)*; f32 0x1F8 kinetic_friction);
-        $m!($($ctx)*; f32 0x208 static_friction_soil);
-        $m!($($ctx)*; f32 0x218 kinetic_friction_soil);
-        $m!($($ctx)*; f32 0x228 sink_factor);
-        $m!($($ctx)*; f32 0x258 soil_thickness);
-        $m!($($ctx)*; f32 0x288 water_factor);
-        $m!($($ctx)*; f32 0x298 rolling_resistance);
-        $m!($($ctx)*; f32 0x300 lateral_deflection_ratio);
-        $m!($($ctx)*; f32 0x304 camber_radius);
-        $m!($($ctx)*; f32 0x308 tread_contact_area);
-        $m!($($ctx)*; f32 0x30C patch_length);
-        $m!($($ctx)*; f32 0x310 contact_pressure);
-        $m!($($ctx)*; f32 0x314 normal_force);
-        $m!($($ctx)*; f32 0x318 carcass_force);
-        $m!($($ctx)*; f32 0x31C tread_force);
-        $m!($($ctx)*; f32 0x324 total_force_ratio);
-        $m!($($ctx)*; f32 0x328 tread_force_share);
-        $m!($($ctx)*; indentation);
-        $m!($($ctx)*; f32 0x348 soil_drag);
-        $m!($($ctx)*; f32 0x34C lateral_soil_force);
-        $m!($($ctx)*; f32 0x350 longitudinal_soil_force);
-        $m!($($ctx)*; f32 0x354 lateral_soil_flow);
-        $m!($($ctx)*; f32 0x358 soil_flow_aligned);
-        $m!($($ctx)*; f32 0x35C soil_flow_opposed);
-        $m!($($ctx)*; f32 SPEED speed);
-        $m!($($ctx)*; f32 SPEED_SQ speed_sq);
-        $m!($($ctx)*; contact_velocity);
-        $m!($($ctx)*; f32 LONG_CONTACT_VEL long_slip_velocity);
-        $m!($($ctx)*; f32 SPIN spin);
-        $m!($($ctx)*; f32 SLIP_RATIO_TERM spin_slip);
-        $m!($($ctx)*; f32 0x380 low_speed_a);
-        $m!($($ctx)*; f32 0x384 low_speed_b);
-        $m!($($ctx)*; f32 0x388 slip_phase);
-        $m!($($ctx)*; f32 0x38C cornering_stiffness);
-        $m!($($ctx)*; f32 0x390 traction_stiffness);
-        $m!($($ctx)*; f32 0x394 lateral_stiffness);
-        $m!($($ctx)*; f32 0x398 torsional_stiffness);
-        $m!($($ctx)*; f32 0x39C lateral_force);
-        $m!($($ctx)*; f32 0x3A0 longitudinal_force);
-        $m!($($ctx)*; f32 0x3A4 torsion_torque);
-        $m!($($ctx)*; f32 0x3A8 hub_height);
-        $m!($($ctx)*; f32 0x3AC inclination_sin);
-        $m!($($ctx)*; f32 0x3B0 inclination_cos);
-        $m!($($ctx)*; f32 0x3B4 stiffness_factor);
-        $m!($($ctx)*; f32 0x3B8 pneumatic_trail);
-        $m!($($ctx)*; f32 0x3BC tread_remaining);
-        $m!($($ctx)*; f32 0x3C4 wet_term);
-        $m!($($ctx)*; f32 0x3C8 rolling_torque);
-        $m!($($ctx)*; f32 0x3CC extra_force);
-        $m!($($ctx)*; f32 0x3D0 extra_axle_torque);
-        $m!($($ctx)*; f32 0x3D4 extra_term);
-        $m!($($ctx)*; f32 0x3D8 slip_area_scale);
-        $m!($($ctx)*; f32 0x3DC sliding_weight);
-        $m!($($ctx)*; f32 0x3E0 lateral_phase);
-        $m!($($ctx)*; f32 0x3E4 longitudinal_phase);
-        $m!($($ctx)*; f32 0x3E8 sliding_deflection);
-        $m!($($ctx)*; f32 0x3EC sliding_torsion);
-        $m!($($ctx)*; f32 0x3F0 sticking_weight);
-        $m!($($ctx)*; f32 0x3F4 stick_phase_a);
-        $m!($($ctx)*; f32 0x3F8 stick_phase_b);
-        $m!($($ctx)*; f32 0x3FC sticking_deflection);
-        $m!($($ctx)*; f32 0x400 sticking_torsion);
-        $m!($($ctx)*; f32 0x404 abrasion_rate);
-        $m!($($ctx)*; wear);
-        $m!($($ctx)*; signal);
-        $m!($($ctx)*; u32 0x480 in_contact);
-        $m!($($ctx)*; u32 0x484 sector_copy);
-        $m!($($ctx)*; vec4 0x490 contact_point_copy);
-        $m!($($ctx)*; vec4 0x4A0 motion_copy);
-        $m!($($ctx)*; u32 0x4B0 soil_flow_copy);
-        $m!($($ctx)*; u32 0x4B4 long_slip_velocity_copy);
-        $m!($($ctx)*; u32 0x4B8 longitudinal_velocity_copy);
-        $m!($($ctx)*; f32 0x4BC temperature_grip);
-        $m!($($ctx)*; f32 0x4C0 lateral_friction_force);
-        $m!($($ctx)*; f32 0x4C4 longitudinal_friction_force);
-        $m!($($ctx)*; debug_words);
-        $m!($($ctx)*; f32 0x4E0 surface_heat_loss);
-        $m!($($ctx)*; f32 0x4E4 frictional_power);
-        $m!($($ctx)*; f32 0x4EC wet_damping);
-        $m!($($ctx)*; f32 0x4E8 ngp_heat_power);
-        $m!($($ctx)*; f32 0x504 smoothed_soil_drag);
-        $m!($($ctx)*; f32 0x508 smoothed_drag_weight);
-        $m!($($ctx)*; f32 0x50C smoothed_furrow_ratio);
-        $m!($($ctx)*; vec4 0x160 contact_point);
-        $m!($($ctx)*; contact_frame);
-        $m!($($ctx)*; u32 0x1E4 static_friction_dirty);
-        $m!($($ctx)*; u32 0x1F4 kinetic_friction_dirty);
-        $m!($($ctx)*; u32 0x3C0 sector);
-    };
-}
-
-/// Assigns one [`scratch_words!`] entry of `target` (`mem` the memory, `base` the scratch, `wear` its wear
-/// table). The offsets below appear only here; `load_frame` reads them, `store_frame` writes them back.
-macro_rules! load_scratch_into {
-    ($mem:tt $base:ident $wear:ident $it:ident ; material) => {
-        $it.material = $mem.load_material($base + 0x1A0);
-    };
-    ($mem:tt $base:ident $wear:ident $it:ident ; f32 $off:tt $field:ident) => {
-        $it.$field = $mem.f32($base + $off);
-    };
-    ($mem:tt $base:ident $wear:ident $it:ident ; u32 $off:tt $field:ident) => {
-        $it.$field = $mem.u32($base + $off);
-    };
-    ($mem:tt $base:ident $wear:ident $it:ident ; vec4 $off:tt $field:ident) => {
-        $it.$field = Vec4::load($mem, $base + $off);
-    };
-    ($mem:tt $base:ident $wear:ident $it:ident ; indentation) => {
-        $it.indentation = Indentation::from_words($mem.f32s($base + 0x32C));
-    };
-    ($mem:tt $base:ident $wear:ident $it:ident ; contact_velocity) => {
-        $it.contact_velocity = $mem.f32s($base + SLIP_X);
-    };
-    ($mem:tt $base:ident $wear:ident $it:ident ; wear) => {
-        $it.wear = $mem.f32s($wear);
-    };
-    ($mem:tt $base:ident $wear:ident $it:ident ; signal) => {
-        $it.signal = std::array::from_fn(|k| $mem.u32($base + 0x420 + 4 * k as u32));
-    };
-    ($mem:tt $base:ident $wear:ident $it:ident ; debug_words) => {
-        $it.debug_words = std::array::from_fn(|k| $mem.u32($base + 0x4C8 + 4 * k as u32));
-    };
-    ($mem:tt $base:ident $wear:ident $it:ident ; contact_frame) => {
-        $it.contact_frame = ContactFrame {
-            lateral: Vec4::load($mem, $base + SLIP_MATRIX),
-            rolling: Vec4::load($mem, $base + SLIP_MATRIX + 0x10),
-            normal: Vec4::load($mem, $base + SLIP_MATRIX + 0x20),
-        };
-    };
-}
-
-/// Writes one [`scratch_words!`] entry of `src` (`mem` the memory, `base` the scratch, `wear` its wear table).
-macro_rules! store_scratch_word {
-    ($mem:tt $base:ident $wear:ident $src:ident ; material) => {
-        $mem.store_material($base + 0x1A0, &$src.material);
-    };
-    ($mem:tt $base:ident $wear:ident $src:ident ; f32 $off:tt $field:ident) => {
-        $mem.set_f32($base + $off, $src.$field);
-    };
-    ($mem:tt $base:ident $wear:ident $src:ident ; u32 $off:tt $field:ident) => {
-        $mem.set_u32($base + $off, $src.$field);
-    };
-    ($mem:tt $base:ident $wear:ident $src:ident ; vec4 $off:tt $field:ident) => {
-        $src.$field.store($mem, $base + $off);
-    };
-    ($mem:tt $base:ident $wear:ident $src:ident ; indentation) => {
-        store_floats($mem, $base + 0x32C, &$src.indentation.to_words());
-    };
-    ($mem:tt $base:ident $wear:ident $src:ident ; contact_velocity) => {
-        store_floats($mem, $base + SLIP_X, &$src.contact_velocity);
-    };
-    ($mem:tt $base:ident $wear:ident $src:ident ; wear) => {
-        store_floats($mem, $wear, &$src.wear);
-    };
-    ($mem:tt $base:ident $wear:ident $src:ident ; signal) => {
-        for (k, word) in $src.signal.iter().enumerate() {
-            $mem.set_u32($base + 0x420 + 4 * k as u32, *word);
-        }
-    };
-    ($mem:tt $base:ident $wear:ident $src:ident ; debug_words) => {
-        for (k, word) in $src.debug_words.iter().enumerate() {
-            $mem.set_u32($base + 0x4C8 + 4 * k as u32, *word);
-        }
-    };
-    ($mem:tt $base:ident $wear:ident $src:ident ; contact_frame) => {
-        $src.contact_frame.lateral.store($mem, $base + SLIP_MATRIX);
-        $src.contact_frame.rolling.store($mem, $base + SLIP_MATRIX + 0x10);
-        $src.contact_frame.normal.store($mem, $base + SLIP_MATRIX + 0x20);
-    };
-}
-
-/// The state words the tyre step reads and writes, each as `kind offset field`, in the order `store_frame` writes
-/// them; `load_frame` reads the same words. Besides plain `f32` and `u32` words and four-lane `vec4` vectors, the
-/// kinds are the three-word `seg` search results and the two words of each twelve-byte surface-temperature entry
-/// (`sector_temps`: the eight surface temperatures, then the entries' other two words in order, without the last
-/// entry's second word, which is the tread temperature).
-macro_rules! state_words {
-    ($m:ident, $($ctx:tt)*) => {
-        $m!($($ctx)*; u32 0x0C active);
-        $m!($($ctx)*; u32 0x28 started_dirty);
-        $m!($($ctx)*; u32 0x2C started);
-        $m!($($ctx)*; vec4 0x30 last_point);
-        $m!($($ctx)*; f32 0x40 lateral_deflection);
-        $m!($($ctx)*; f32 0x44 torsion_angle);
-        $m!($($ctx)*; f32 0x48 penetration_depth);
-        $m!($($ctx)*; f32 STATE_EFFECTIVE_RADIUS effective_radius);
-        $m!($($ctx)*; f32 0x50 vertical_stiffness);
-        $m!($($ctx)*; f32 0x54 tread_elasticity);
-        $m!($($ctx)*; f32 STATE_LERP_WEIGHT tread_coverage);
-        $m!($($ctx)*; u32 0x5C grip_clamped);
-        $m!($($ctx)*; f32 0x68 air_pressure);
-        $m!($($ctx)*; u32 0x70 tread_engaged);
-        $m!($($ctx)*; u32 0x74 carcass_engaged);
-        $m!($($ctx)*; vec4 0x80 hold_direction);
-        $m!($($ctx)*; seg 0x90 pressure_segment);
-        $m!($($ctx)*; seg 0x9C load_segment);
-        $m!($($ctx)*; seg 0xA8 surface_temperature_segment);
-        $m!($($ctx)*; seg 0xB4 tread_temperature_segment);
-        $m!($($ctx)*; seg 0xC0 contact_pressure_segment);
-        $m!($($ctx)*; sector_temps);
-        $m!($($ctx)*; f32 0x12C tread_temperature);
-        $m!($($ctx)*; f32 0x130 carcass_temperature);
-        $m!($($ctx)*; u32 0x134 sector);
-    };
-}
-
-/// Assigns one [`state_words!`] entry of `target` (`mem` the memory, `base` the state, `entry` reads word `word`
-/// of entry `k` of the surface-temperature table).
-macro_rules! load_state_into {
-    ($mem:tt $base:ident $entry:ident $it:ident ; f32 $off:tt $field:ident) => {
-        $it.$field = $mem.f32($base + $off);
-    };
-    ($mem:tt $base:ident $entry:ident $it:ident ; u32 $off:tt $field:ident) => {
-        $it.$field = $mem.u32($base + $off);
-    };
-    ($mem:tt $base:ident $entry:ident $it:ident ; vec4 $off:tt $field:ident) => {
-        $it.$field = Vec4::load($mem, $base + $off);
-    };
-    ($mem:tt $base:ident $entry:ident $it:ident ; seg $off:tt $field:ident) => {
-        $it.$field = $mem.load_segment($base + $off);
-    };
-    ($mem:tt $base:ident $entry:ident $it:ident ; sector_temps) => {
-        $it.surface_temperature = std::array::from_fn(|k| $entry(k as u32, 0));
-        // The entries' second and third words in order; the last third word is the tread temperature.
-        $it.sector_spare = std::array::from_fn(|i| $entry(i as u32 / 2, 1 + i as u32 % 2));
-    };
-}
-
-/// Writes one [`state_words!`] entry of `src` (`mem` the memory, `base` the state).
-macro_rules! store_state_word {
-    ($mem:tt $base:ident $src:ident ; f32 $off:tt $field:ident) => {
-        $mem.set_f32($base + $off, $src.$field);
-    };
-    ($mem:tt $base:ident $src:ident ; u32 $off:tt $field:ident) => {
-        $mem.set_u32($base + $off, $src.$field);
-    };
-    ($mem:tt $base:ident $src:ident ; vec4 $off:tt $field:ident) => {
-        $src.$field.store($mem, $base + $off);
-    };
-    ($mem:tt $base:ident $src:ident ; seg $off:tt $field:ident) => {
-        $mem.store_segment($base + $off, &$src.$field);
-    };
-    ($mem:tt $base:ident $src:ident ; sector_temps) => {
-        for (k, temperature) in $src.surface_temperature.iter().enumerate() {
-            $mem.set_f32($base + 0xD0 + 12 * k as u32, *temperature);
-        }
-        for (i, word) in $src.sector_spare.iter().enumerate() {
-            $mem.set_f32($base + 0xD0 + 12 * (i as u32 / 2) + 4 + 4 * (i as u32 % 2), *word);
-        }
-    };
-}
-
 /// The Mem store: the bodies are the layout's reads and writes.
 impl TyreStore for Mem {
     /// Loads a [`Segment`] at `at`: `lo`, `hi` and `frac` in three words.
@@ -452,15 +188,137 @@ impl TyreStore for Mem {
         let def = self.u32(this + DEF);
         let record = self.u32(this + 0x410);
         let wear = self.u32(this + 0x414);
+        let f = |off: u32| self.f32(this + off);
+        let scratch = Scratch {
+            contact_point: Vec4::load(self, this + 0x160),
+            contact_frame: ContactFrame {
+                lateral: Vec4::load(self, this + SLIP_MATRIX),
+                rolling: Vec4::load(self, this + SLIP_MATRIX + 0x10),
+                normal: Vec4::load(self, this + SLIP_MATRIX + 0x20),
+            },
+            material: self.load_material(this + 0x1A0),
+            static_friction_dirty: self.u32(this + 0x1E4),
+            static_friction: f(0x1E8),
+            kinetic_friction_dirty: self.u32(this + 0x1F4),
+            kinetic_friction: f(0x1F8),
+            static_friction_soil: f(0x208),
+            kinetic_friction_soil: f(0x218),
+            sink_factor: f(0x228),
+            soil_thickness: f(0x258),
+            water_factor: f(0x288),
+            rolling_resistance: f(0x298),
+            lateral_deflection_ratio: f(0x300),
+            camber_radius: f(0x304),
+            tread_contact_area: f(0x308),
+            patch_length: f(0x30C),
+            contact_pressure: f(0x310),
+            normal_force: f(0x314),
+            carcass_force: f(0x318),
+            tread_force: f(0x31C),
+            total_force_ratio: f(0x324),
+            tread_force_share: f(0x328),
+            indentation: Indentation::from_words(self.f32s(this + 0x32C)),
+            soil_drag: f(0x348),
+            lateral_soil_force: f(0x34C),
+            longitudinal_soil_force: f(0x350),
+            lateral_soil_flow: f(0x354),
+            soil_flow_aligned: f(0x358),
+            soil_flow_opposed: f(0x35C),
+            speed: f(SPEED),
+            speed_sq: f(SPEED_SQ),
+            contact_velocity: self.f32s(this + SLIP_X),
+            long_slip_velocity: f(LONG_CONTACT_VEL),
+            spin: f(SPIN),
+            spin_slip: f(SLIP_RATIO_TERM),
+            low_speed_a: f(0x380),
+            low_speed_b: f(0x384),
+            slip_phase: f(0x388),
+            cornering_stiffness: f(0x38C),
+            traction_stiffness: f(0x390),
+            lateral_stiffness: f(0x394),
+            torsional_stiffness: f(0x398),
+            lateral_force: f(0x39C),
+            longitudinal_force: f(0x3A0),
+            torsion_torque: f(0x3A4),
+            hub_height: f(0x3A8),
+            inclination_sin: f(0x3AC),
+            inclination_cos: f(0x3B0),
+            stiffness_factor: f(0x3B4),
+            pneumatic_trail: f(0x3B8),
+            tread_remaining: f(0x3BC),
+            sector: self.u32(this + 0x3C0),
+            wet_term: f(0x3C4),
+            rolling_torque: f(0x3C8),
+            extra_force: f(0x3CC),
+            extra_axle_torque: f(0x3D0),
+            extra_term: f(0x3D4),
+            slip_area_scale: f(0x3D8),
+            sliding_weight: f(0x3DC),
+            lateral_phase: f(0x3E0),
+            longitudinal_phase: f(0x3E4),
+            sliding_deflection: f(0x3E8),
+            sliding_torsion: f(0x3EC),
+            sticking_weight: f(0x3F0),
+            stick_phase_a: f(0x3F4),
+            stick_phase_b: f(0x3F8),
+            sticking_deflection: f(0x3FC),
+            sticking_torsion: f(0x400),
+            abrasion_rate: f(0x404),
+            contact_angle: self.f32(record + 0x5AC),
+            wear: self.f32s(wear),
+            signal: std::array::from_fn(|k| self.u32(this + 0x420 + 4 * k as u32)),
+            in_contact: self.u32(this + 0x480),
+            sector_copy: self.u32(this + 0x484),
+            contact_point_copy: Vec4::load(self, this + 0x490),
+            motion_copy: Vec4::load(self, this + 0x4A0),
+            soil_flow_copy: self.u32(this + 0x4B0),
+            long_slip_velocity_copy: self.u32(this + 0x4B4),
+            longitudinal_velocity_copy: self.u32(this + 0x4B8),
+            temperature_grip: f(0x4BC),
+            lateral_friction_force: f(0x4C0),
+            longitudinal_friction_force: f(0x4C4),
+            debug_words: std::array::from_fn(|k| self.u32(this + 0x4C8 + 4 * k as u32)),
+            surface_heat_loss: f(0x4E0),
+            frictional_power: f(0x4E4),
+            wet_damping: f(0x4EC),
+            ngp_heat_power: f(0x4E8),
+            smoothed_soil_drag: f(0x504),
+            smoothed_drag_weight: f(0x508),
+            smoothed_furrow_ratio: f(0x50C),
+        };
+        let st = |off: u32| self.f32(state + off);
         let entry = |k: u32, word: u32| self.f32(state + 0xD0 + 12 * k + 4 * word);
-        // The shared word lists (`scratch_words!`, `state_words!`) hold every offset<->field pair once, in the
-        // order `store_frame` writes them; the load reads the same words. Only the contact angle (read from the
-        // record, never stored) and the read-only setup are assigned here.
-        let mut scratch = Scratch::default();
-        scratch_words!(load_scratch_into, self this wear scratch);
-        scratch.contact_angle = self.f32(record + 0x5AC);
-        let mut state_words = StateWords::default();
-        state_words!(load_state_into, self state entry state_words);
+        let surface_temperature = std::array::from_fn(|k| entry(k as u32, 0));
+        // The entries' second and third words in order; the last third word is the tread temperature.
+        let sector_spare = std::array::from_fn(|i| entry(i as u32 / 2, 1 + i as u32 % 2));
+        let state_words = StateWords {
+            active: self.u32(state + 0x0C),
+            started_dirty: self.u32(state + 0x28),
+            started: self.u32(state + 0x2C),
+            last_point: Vec4::load(self, state + 0x30),
+            lateral_deflection: st(0x40),
+            torsion_angle: st(0x44),
+            penetration_depth: st(0x48),
+            effective_radius: st(STATE_EFFECTIVE_RADIUS),
+            vertical_stiffness: st(0x50),
+            tread_elasticity: st(0x54),
+            tread_coverage: st(STATE_LERP_WEIGHT),
+            grip_clamped: self.u32(state + 0x5C),
+            air_pressure: st(0x68),
+            tread_engaged: self.u32(state + 0x70),
+            carcass_engaged: self.u32(state + 0x74),
+            hold_direction: Vec4::load(self, state + 0x80),
+            pressure_segment: self.load_segment(state + 0x90),
+            load_segment: self.load_segment(state + 0x9C),
+            surface_temperature_segment: self.load_segment(state + 0xA8),
+            tread_temperature_segment: self.load_segment(state + 0xB4),
+            contact_pressure_segment: self.load_segment(state + 0xC0),
+            surface_temperature,
+            sector_spare,
+            tread_temperature: entry(7, 2),
+            carcass_temperature: st(0x130),
+            sector: self.u32(state + 0x134),
+        };
         let setup = Setup {
             debug_id: self.u32(def + DEF_DEBUG_ID),
             pressure_ratio: self.f32(def + 0x2C),
@@ -504,11 +362,141 @@ impl TyreStore for Mem {
         let state = self.u32(this + STATE);
         let wear = self.u32(this + 0x414);
         let s = &frame.scratch;
-        // Every pair once: `scratch_words!` lists the words in this order (the material block first, then the
-        // scalars over it; `+0x4ec` before `+0x4e8`; the contact frame and the dirty words last).
-        scratch_words!(store_scratch_word, self this wear s);
+        // The material block first: ten of its words are scalars below, which hold the frame's latest values.
+        self.store_material(this + 0x1A0, &s.material);
+        self.set_f32(this + 0x1E8, s.static_friction);
+        self.set_f32(this + 0x1F8, s.kinetic_friction);
+        self.set_f32(this + 0x208, s.static_friction_soil);
+        self.set_f32(this + 0x218, s.kinetic_friction_soil);
+        self.set_f32(this + 0x228, s.sink_factor);
+        self.set_f32(this + 0x258, s.soil_thickness);
+        self.set_f32(this + 0x288, s.water_factor);
+        self.set_f32(this + 0x298, s.rolling_resistance);
+        self.set_f32(this + 0x300, s.lateral_deflection_ratio);
+        self.set_f32(this + 0x304, s.camber_radius);
+        self.set_f32(this + 0x308, s.tread_contact_area);
+        self.set_f32(this + 0x30C, s.patch_length);
+        self.set_f32(this + 0x310, s.contact_pressure);
+        self.set_f32(this + 0x314, s.normal_force);
+        self.set_f32(this + 0x318, s.carcass_force);
+        self.set_f32(this + 0x31C, s.tread_force);
+        self.set_f32(this + 0x324, s.total_force_ratio);
+        self.set_f32(this + 0x328, s.tread_force_share);
+        store_floats(self, this + 0x32C, &s.indentation.to_words());
+        self.set_f32(this + 0x348, s.soil_drag);
+        self.set_f32(this + 0x34C, s.lateral_soil_force);
+        self.set_f32(this + 0x350, s.longitudinal_soil_force);
+        self.set_f32(this + 0x354, s.lateral_soil_flow);
+        self.set_f32(this + 0x358, s.soil_flow_aligned);
+        self.set_f32(this + 0x35C, s.soil_flow_opposed);
+        self.set_f32(this + SPEED, s.speed);
+        self.set_f32(this + SPEED_SQ, s.speed_sq);
+        store_floats(self, this + SLIP_X, &s.contact_velocity);
+        self.set_f32(this + LONG_CONTACT_VEL, s.long_slip_velocity);
+        self.set_f32(this + SPIN, s.spin);
+        self.set_f32(this + SLIP_RATIO_TERM, s.spin_slip);
+        self.set_f32(this + 0x380, s.low_speed_a);
+        self.set_f32(this + 0x384, s.low_speed_b);
+        self.set_f32(this + 0x388, s.slip_phase);
+        self.set_f32(this + 0x38C, s.cornering_stiffness);
+        self.set_f32(this + 0x390, s.traction_stiffness);
+        self.set_f32(this + 0x394, s.lateral_stiffness);
+        self.set_f32(this + 0x398, s.torsional_stiffness);
+        self.set_f32(this + 0x39C, s.lateral_force);
+        self.set_f32(this + 0x3A0, s.longitudinal_force);
+        self.set_f32(this + 0x3A4, s.torsion_torque);
+        self.set_f32(this + 0x3A8, s.hub_height);
+        self.set_f32(this + 0x3AC, s.inclination_sin);
+        self.set_f32(this + 0x3B0, s.inclination_cos);
+        self.set_f32(this + 0x3B4, s.stiffness_factor);
+        self.set_f32(this + 0x3B8, s.pneumatic_trail);
+        self.set_f32(this + 0x3BC, s.tread_remaining);
+        self.set_f32(this + 0x3C4, s.wet_term);
+        self.set_f32(this + 0x3C8, s.rolling_torque);
+        self.set_f32(this + 0x3CC, s.extra_force);
+        self.set_f32(this + 0x3D0, s.extra_axle_torque);
+        self.set_f32(this + 0x3D4, s.extra_term);
+        self.set_f32(this + 0x3D8, s.slip_area_scale);
+        self.set_f32(this + 0x3DC, s.sliding_weight);
+        self.set_f32(this + 0x3E0, s.lateral_phase);
+        self.set_f32(this + 0x3E4, s.longitudinal_phase);
+        self.set_f32(this + 0x3E8, s.sliding_deflection);
+        self.set_f32(this + 0x3EC, s.sliding_torsion);
+        self.set_f32(this + 0x3F0, s.sticking_weight);
+        self.set_f32(this + 0x3F4, s.stick_phase_a);
+        self.set_f32(this + 0x3F8, s.stick_phase_b);
+        self.set_f32(this + 0x3FC, s.sticking_deflection);
+        self.set_f32(this + 0x400, s.sticking_torsion);
+        self.set_f32(this + 0x404, s.abrasion_rate);
+        store_floats(self, wear, &s.wear);
+        for (k, word) in s.signal.iter().enumerate() {
+            self.set_u32(this + 0x420 + 4 * k as u32, *word);
+        }
+        self.set_u32(this + 0x480, s.in_contact);
+        self.set_u32(this + 0x484, s.sector_copy);
+        s.contact_point_copy.store(self, this + 0x490);
+        s.motion_copy.store(self, this + 0x4A0);
+        self.set_u32(this + 0x4B0, s.soil_flow_copy);
+        self.set_u32(this + 0x4B4, s.long_slip_velocity_copy);
+        self.set_u32(this + 0x4B8, s.longitudinal_velocity_copy);
+        self.set_f32(this + 0x4BC, s.temperature_grip);
+        self.set_f32(this + 0x4C0, s.lateral_friction_force);
+        self.set_f32(this + 0x4C4, s.longitudinal_friction_force);
+        for (k, word) in s.debug_words.iter().enumerate() {
+            self.set_u32(this + 0x4C8 + 4 * k as u32, *word);
+        }
+        self.set_f32(this + 0x4E0, s.surface_heat_loss);
+        self.set_f32(this + 0x4E4, s.frictional_power);
+        self.set_f32(this + 0x4EC, s.wet_damping);
+        self.set_f32(this + 0x4E8, s.ngp_heat_power);
+        self.set_f32(this + 0x504, s.smoothed_soil_drag);
+        self.set_f32(this + 0x508, s.smoothed_drag_weight);
+        self.set_f32(this + 0x50C, s.smoothed_furrow_ratio);
+        s.contact_point.store(self, this + 0x160);
+        s.contact_frame.lateral.store(self, this + SLIP_MATRIX);
+        s.contact_frame.rolling.store(self, this + SLIP_MATRIX + 0x10);
+        s.contact_frame.normal.store(self, this + SLIP_MATRIX + 0x20);
+        self.set_u32(this + 0x1E4, s.static_friction_dirty);
+        self.set_u32(this + 0x1F4, s.kinetic_friction_dirty);
+        self.set_u32(this + 0x3C0, s.sector);
+
         let st = &frame.state;
-        state_words!(store_state_word, self state st);
+        self.set_u32(state + 0x0C, st.active);
+        self.set_u32(state + 0x28, st.started_dirty);
+        self.set_u32(state + 0x2C, st.started);
+        st.last_point.store(self, state + 0x30);
+        store_floats(
+            self,
+            state + 0x40,
+            &[
+                st.lateral_deflection,
+                st.torsion_angle,
+                st.penetration_depth,
+                st.effective_radius,
+                st.vertical_stiffness,
+                st.tread_elasticity,
+            ],
+        );
+        self.set_f32(state + STATE_LERP_WEIGHT, st.tread_coverage);
+        self.set_u32(state + 0x5C, st.grip_clamped);
+        self.set_f32(state + 0x68, st.air_pressure);
+        self.set_u32(state + 0x70, st.tread_engaged);
+        self.set_u32(state + 0x74, st.carcass_engaged);
+        st.hold_direction.store(self, state + 0x80);
+        self.store_segment(state + 0x90, &st.pressure_segment);
+        self.store_segment(state + 0x9C, &st.load_segment);
+        self.store_segment(state + 0xA8, &st.surface_temperature_segment);
+        self.store_segment(state + 0xB4, &st.tread_temperature_segment);
+        self.store_segment(state + 0xC0, &st.contact_pressure_segment);
+        for (k, temperature) in st.surface_temperature.iter().enumerate() {
+            self.set_f32(state + 0xD0 + 12 * k as u32, *temperature);
+        }
+        for (i, word) in st.sector_spare.iter().enumerate() {
+            self.set_f32(state + 0xD0 + 12 * (i as u32 / 2) + 4 + 4 * (i as u32 % 2), *word);
+        }
+        self.set_f32(state + 0x12C, st.tread_temperature);
+        self.set_f32(state + 0x130, st.carcass_temperature);
+        self.set_u32(state + 0x134, st.sector);
     }
 
     /// Loads the copied words of the block at `at`.
