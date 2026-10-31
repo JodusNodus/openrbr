@@ -14,7 +14,8 @@ use std::collections::BTreeMap;
 use egui::{Align2, Color32, FontId, Pos2, Rect, RichText, Sense, Stroke};
 
 use crate::browser::{
-    block, favourite_button, header_line, items, side_row, top_line, Keys, Line, Nav, DIM, GREY, ROW, STAR,
+    block, favourite_button, header_line, items, key_action, list_rows, paint_selection, paint_star, random_row,
+    row_slot, side_list, step_nav, top_line, Line, Nav, SideEntry, DIM, GREY,
 };
 use crate::catalog::Map;
 use crate::pages::{combo, ACCENT};
@@ -449,24 +450,15 @@ impl StageBrowser {
     /// Draws the browser in `ui`; what the player asked for.
     pub fn ui(&mut self, ui: &mut egui::Ui, mut env: Env) -> Option<Action> {
         self.refresh(env.favourites, env.recent);
-        let mut action = None;
-        // The arrow keys, Enter and Escape belong to the list, not to the search box or the Start button.
-        let keys = Keys::take(ui);
-        let by = keys.movement();
-        if by != 0 {
-            self.nav.step(&self.lines, by);
-        }
-        if let Some(row) = self.rows.get(self.nav.cursor) {
-            if keys.enter && row.startable() {
-                action = Some(Action::Choose(row.index));
-            }
-            if keys.favourite {
-                action = Some(Action::Favourite(row.number));
-            }
-        }
-        if keys.escape {
-            action = Some(Action::Back);
-        }
+        let keys = step_nav(ui, &mut self.nav, &self.lines);
+        let mut action = key_action(
+            &self.nav,
+            &self.rows,
+            &keys,
+            |row| row.startable().then_some(Action::Choose(row.index)),
+            |row| Action::Favourite(row.number),
+            Action::Back,
+        );
 
         let mut random = false;
         let hint = "Search all stages: name, country, author, map number";
@@ -503,37 +495,30 @@ impl StageBrowser {
 
     /// A random stage of the list as filtered becomes the highlighted one.
     fn random(&mut self) {
-        let rows: Vec<usize> = items(&self.lines).filter(|&k| self.rows[k].startable()).collect();
-        if rows.is_empty() {
-            return;
+        if let Some(k) = random_row(&self.lines, |k| self.rows[k].startable()) {
+            self.nav.show(k);
         }
-        let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.subsec_nanos());
-        self.nav.show(rows[nanos as usize % rows.len()]);
     }
 
     fn sidebar(&mut self, ui: &mut egui::Ui, favourites: &[u32], recent: &[u32]) {
         let all = collections(&self.rows, favourites, recent);
-        for (n, (collection, name, count)) in all.iter().enumerate() {
-            // The headers: where the countries start, and the stages that cannot start.
-            if n == 3 {
-                ui.add_space(10.0);
-                ui.label(RichText::new("COUNTRIES").size(11.5).color(GREY).strong());
-                ui.add_space(2.0);
-            } else if *collection == Collection::CannotStart {
-                ui.add_space(10.0);
-            } else if n == 0 {
-                ui.add_space(6.0);
-            }
-            let icon = match collection {
-                Collection::Favourites => "★",
-                Collection::Recent | Collection::All | Collection::Country(_) => "",
-                Collection::CannotStart => "⚠",
-            };
-            let grey = *collection == Collection::CannotStart;
-            if side_row(ui, icon, name, *count, self.collection == *collection, grey).clicked() {
-                self.collection = collection.clone();
-                self.filter.query.clear();
-            }
+        let entries: Vec<SideEntry> = all
+            .iter()
+            .map(|(collection, name, count)| SideEntry {
+                icon: match collection {
+                    Collection::Favourites => "★",
+                    Collection::Recent | Collection::All | Collection::Country(_) => "",
+                    Collection::CannotStart => "⚠",
+                },
+                name,
+                count: *count,
+                selected: self.collection == *collection,
+                grey: *collection == Collection::CannotStart,
+            })
+            .collect();
+        if let Some(n) = side_list(ui, &entries, (3, "COUNTRIES")) {
+            self.collection = all[n].0.clone();
+            self.filter.query.clear();
         }
     }
 
@@ -552,7 +537,7 @@ impl StageBrowser {
             ui.label(RichText::new("Length").color(GREY));
             combo(ui, "length", 80.0, &mut self.filter.length, &Length::ALL, Length::label);
         });
-        let count = self.lines.iter().filter(|l| matches!(l, Line::Row(_))).count();
+        let count = items(&self.lines).count();
         ui.horizontal(|ui| {
             let what = if self.filter.query.trim().is_empty() {
                 match &self.collection {
@@ -598,48 +583,32 @@ impl StageBrowser {
             ui.add_space(10.0);
             ui.label(RichText::new(hint).color(GREY));
         }
-        // The keys line sits below the list; it keeps its room.
-        let keys_room = 34.0;
-        let height = (ui.available_height() - keys_room).max(ROW * 3.0);
-        let area = self.nav.area("stages", height, self.nav.position(&self.lines));
-        let output = ui.scope(|ui| {
-            ui.spacing_mut().item_spacing.y = 0.0;
-            area.show_rows(ui, ROW, self.lines.len(), |ui, range| {
-                for at in range {
-                    let k = match &self.lines[at] {
-                        Line::Header(name) => {
-                            header_line(ui, name);
-                            continue;
-                        }
-                        Line::Row(k) => *k,
-                    };
-                    let row = &self.rows[k];
-                    let (rect, response) =
-                        ui.allocate_exact_size(egui::vec2(ui.available_width(), ROW), Sense::click());
-                    let star_rect =
-                        Rect::from_center_size(Pos2::new(rect.left() + 18.0, rect.center().y), egui::vec2(28.0, ROW));
-                    let star = ui.interact(star_rect, ui.scope_id().with(("star", k)), Sense::click());
-                    let favourite = favourites.contains(&row.number);
-                    draw_row(ui, rect, row, by_country, k == self.nav.cursor, response.hovered(), favourite);
-                    let response = match &row.problem {
-                        Some(problem) => response.on_hover_text(format!("cannot start: {problem}")),
-                        None => response,
-                    };
-                    if star.clicked() {
-                        action = Some(Action::Favourite(row.number));
-                    } else if response.double_clicked() && row.startable() {
-                        action = Some(Action::Choose(row.index));
-                    } else if response.clicked() {
-                        self.nav.point(k);
+        list_rows(ui, &mut self.nav, "stages", &self.lines, |ui, nav, range| {
+            for at in range {
+                let k = match &self.lines[at] {
+                    Line::Header(name) => {
+                        header_line(ui, name);
+                        continue;
                     }
+                    Line::Row(k) => *k,
+                };
+                let row = &self.rows[k];
+                let (rect, response, star) = row_slot(ui, k);
+                let favourite = favourites.contains(&row.number);
+                draw_row(ui, rect, row, by_country, k == nav.cursor, response.hovered(), favourite);
+                let response = match &row.problem {
+                    Some(problem) => response.on_hover_text(format!("cannot start: {problem}")),
+                    None => response,
+                };
+                if star.clicked() {
+                    action = Some(Action::Favourite(row.number));
+                } else if response.double_clicked() && row.startable() {
+                    action = Some(Action::Choose(row.index));
+                } else if response.clicked() {
+                    nav.point(k);
                 }
-            })
+            }
         });
-        let output = output.inner;
-        self.nav.scrolled(&output);
-        ui.add_space(10.0);
-        let keys = "⏶⏷ move    Enter choose    Ctrl+D favourite    Esc back";
-        ui.label(RichText::new(keys).size(12.0).color(DIM));
         action
     }
 
@@ -694,23 +663,9 @@ fn draw_row(ui: &egui::Ui, rect: Rect, row: &StageRow, by_country: bool, cursor:
     let p = ui.painter();
     let c = columns(rect.left());
     let y = rect.center().y;
-    if cursor {
-        p.rect_filled(rect, 4.0, ui.visuals().selection.bg_fill.gamma_multiply(0.55));
-        p.rect_filled(
-            Rect::from_min_size(rect.min, egui::vec2(3.0, rect.height())),
-            1.0,
-            ui.visuals().selection.bg_fill,
-        );
-    } else if hovered {
-        p.rect_filled(rect, 4.0, ui.visuals().widgets.hovered.weak_bg_fill);
-    }
+    paint_selection(ui, rect, cursor, hovered);
     let text = if row.startable() { ui.visuals().strong_text_color() } else { DIM };
-    let (star, colour) = match (favourite, hovered || cursor) {
-        (true, _) => ("★", STAR),
-        (false, true) => ("☆", Color32::from_gray(170)),
-        (false, false) => ("☆", Color32::from_gray(70)),
-    };
-    p.text(Pos2::new(c[0] + 6.0, y), Align2::CENTER_CENTER, star, FontId::proportional(16.0), colour);
+    paint_star(p, Pos2::new(c[0] + 6.0, y), favourite, hovered || cursor);
     let name = p.layout_no_wrap(row.name.clone(), FontId::proportional(15.0), text);
     let room = Rect::from_min_max(Pos2::new(c[1], rect.top()), Pos2::new(c[1] + NAME_WIDTH, rect.bottom()));
     p.with_clip_rect(room).galley(Pos2::new(c[1], y - name.size().y / 2.0), name, text);
