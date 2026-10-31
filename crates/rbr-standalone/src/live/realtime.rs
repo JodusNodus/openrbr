@@ -311,9 +311,10 @@ pub fn serve_frames<'a>(
 }
 
 /// How `--replay` runs the drive's frames.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Pace {
     /// On the clock, as the drive ran them: the viewer watches.
+    #[default]
     Clock,
     /// Back to back, as fast as the answers are read (a video's offline render); the output ends with the frames.
     Free,

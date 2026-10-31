@@ -9,6 +9,7 @@ use rbr_gameplay::race_options::{ChampionshipOptions, DamageLevel, DriverAids, S
 use crate::{autopilot, live};
 
 /// The command line. `--live` takes no value; the other flags take one.
+#[derive(Default)]
 pub struct Args {
     pub recording: Option<PathBuf>,
     pub live: bool,
@@ -95,6 +96,11 @@ pub struct Args {
     pub ffb_settings: rbr_gameplay::ffb::Settings,
 }
 
+/// `value` for `flag` as a number: the flag names a bad value.
+fn parsed<T: std::str::FromStr>(flag: &str, value: &str) -> Result<T, String> {
+    value.parse().map_err(|_| format!("{flag} {value}"))
+}
+
 /// An aid's `on` or `off`.
 fn on_off(flag: &str, value: &str) -> Result<bool, String> {
     match value {
@@ -124,37 +130,15 @@ pub fn args() -> Result<Args, String> {
 
 /// `args()` of `argv`: the command line as `Args`.
 fn parse(mut it: impl Iterator<Item = String>) -> Result<Args, String> {
-    let mut recording = None;
-    let mut live = false;
-    let mut autopilot = None;
-    let mut pilot = None;
-    let (mut frames_out, mut frames) = (None, None);
-    let (mut replay_out, mut replay, mut replay_pace) = (None, None, live::Pace::Clock);
-    let mut top_speed = None;
-    let mut aim = None;
-    let mut boot = false;
-    let mut snapshots = vec![];
-    let mut stage = None;
-    let (mut stage_dir, mut rsf_stage) = (None, None);
+    // The command line so far; the stage, the data and the championship options are computed below.
+    let mut args = Args { steps: 30, direct: true, ..Args::default() };
+    let mut stage: Option<String> = None;
+    let (mut stage_dir, mut rsf_stage): (Option<PathBuf>, Option<u32>) = (None, None);
     let mut rsf_root = std::env::var_os("RBR_RSF").map(PathBuf::from);
     let mut data = std::env::var_os("RBR_DATA").map(PathBuf::from);
-    let mut car = None;
-    let mut steps = 30;
-    let mut read_set = None;
-    let mut marker_settings = MarkerSettings::default();
-    let mut dump_image = None;
-    let mut twin = None;
-    let (mut weather, mut tyre, mut wear, mut season_row, mut setup) = (None, None, None, None, None);
-    let mut wetness = None;
-    let (mut ngp_physics, mut rsf_car, mut ffb_sensitivity, mut head_gasket_durability) = (None, None, None, None);
-    let (mut damage_in, mut damage_out, mut result_out) = (None, None, None);
-    let (mut saves, mut profile, mut events_out) = (None, None, None);
-    let (mut recorded_payload, mut trace_out, mut extra_payloads, mut wall_clock) = (false, None, None, None);
-    let (mut rand_seed, mut damage, mut auto_gears, mut aids) = (None, None, None, DriverAids::default());
-    let (mut skill, mut championship_damage, mut false_starts, mut start_time) = (None, None, None, None);
-    let mut rally_next = None;
-    let mut ffb_settings = None;
-    let mut direct = true;
+    let (mut skill, mut championship_damage): (Option<Skill>, Option<DamageLevel>) = (None, None);
+    let mut false_starts: Option<u8> = None;
+    let mut ffb_settings: Option<rbr_gameplay::ffb::Settings> = None;
     while let Some(flag) = it.next() {
         if flag == "--help" || flag == "-h" {
             println!("{USAGE}");
@@ -165,54 +149,54 @@ fn parse(mut it: impl Iterator<Item = String>) -> Result<Args, String> {
             std::process::exit(0);
         }
         if flag == "--live" || flag == "--boot" {
-            live |= flag == "--live";
-            boot |= flag == "--boot";
+            args.live |= flag == "--live";
+            args.boot |= flag == "--boot";
             continue;
         }
         if flag == "--recorded-payload" {
-            recorded_payload = true;
+            args.recorded_payload = true;
             continue;
         }
         let value = it.next().ok_or(format!("{flag}: no value"))?;
         match flag.as_str() {
-            "--recording" => recording = Some(PathBuf::from(value)),
-            "--autopilot" => autopilot = Some(PathBuf::from(value)),
-            "--pilot" => pilot = Some(value),
-            "--frames-out" => frames_out = Some(PathBuf::from(value)),
-            "--frames" => frames = Some(value),
-            "--replay-out" => replay_out = Some(PathBuf::from(value)),
-            "--replay" => replay = Some(PathBuf::from(value)),
+            "--recording" => args.recording = Some(PathBuf::from(value)),
+            "--autopilot" => args.autopilot = Some(PathBuf::from(value)),
+            "--pilot" => args.pilot = Some(value),
+            "--frames-out" => args.frames_out = Some(PathBuf::from(value)),
+            "--frames" => args.frames = Some(value),
+            "--replay-out" => args.replay_out = Some(PathBuf::from(value)),
+            "--replay" => args.replay = Some(PathBuf::from(value)),
             "--replay-pace" => {
-                replay_pace = match value.as_str() {
+                args.replay_pace = match value.as_str() {
                     "clock" => live::Pace::Clock,
                     "free" => live::Pace::Free,
                     _ => return Err(format!("--replay-pace {value}: clock or free")),
                 }
             }
             "--dispatch" => {
-                direct = match value.as_str() {
+                args.direct = match value.as_str() {
                     "pure" => false,
                     "direct" => true,
                     _ => return Err(format!("--dispatch {value}: pure or direct")),
                 }
             }
-            "--top-speed" => top_speed = Some(value.parse().map_err(|_| format!("--top-speed {value}"))?),
-            "--aim" => aim = Some(value.parse()?),
-            "--snapshot" => snapshots.push(value),
+            "--top-speed" => args.top_speed = Some(parsed("--top-speed", &value)?),
+            "--aim" => args.aim = Some(value.parse()?),
+            "--snapshot" => args.snapshots.push(value),
             "--stage" => stage = Some(value),
             "--stage-dir" => stage_dir = Some(PathBuf::from(value)),
-            "--rsf-stage" => rsf_stage = Some(value.parse::<u32>().map_err(|_| format!("--rsf-stage {value}"))?),
+            "--rsf-stage" => rsf_stage = Some(parsed("--rsf-stage", &value)?),
             "--rsf-root" => rsf_root = Some(PathBuf::from(value)),
             "--data" => data = Some(PathBuf::from(value)),
-            "--car" => car = Some(value.parse().map_err(|_| format!("--car {value}"))?),
-            "--read-set" => read_set = Some(PathBuf::from(value)),
-            "--dump-image" => dump_image = Some(PathBuf::from(value)),
-            "--twin" => twin = Some(crate::twin::Kind::parse(&value)?),
-            "--steps" => steps = value.parse().map_err(|_| format!("--steps {value}"))?,
-            "--weather" => weather = Some(value.parse().map_err(|_| format!("--weather {value}"))?),
-            "--tyre" => tyre = Some(value.parse().map_err(|_| format!("--tyre {value}"))?),
+            "--car" => args.car = Some(parsed("--car", &value)?),
+            "--read-set" => args.read_set = Some(PathBuf::from(value)),
+            "--dump-image" => args.dump_image = Some(PathBuf::from(value)),
+            "--twin" => args.twin = Some(crate::twin::Kind::parse(&value)?),
+            "--steps" => args.steps = parsed("--steps", &value)?,
+            "--weather" => args.weather = Some(parsed("--weather", &value)?),
+            "--tyre" => args.tyre = Some(parsed("--tyre", &value)?),
             "--wear" => {
-                wear = Some(
+                args.wear = Some(
                     ["new", "normal", "worn"]
                         .iter()
                         .position(|w| *w == value)
@@ -220,42 +204,42 @@ fn parse(mut it: impl Iterator<Item = String>) -> Result<Args, String> {
                 )
             }
             "--wetness" => {
-                wetness = Some(
+                args.wetness = Some(
                     ["dry", "damp", "wet"]
                         .iter()
                         .position(|w| *w == value)
                         .ok_or(format!("--wetness {value}: dry, damp or wet"))? as u32,
                 )
             }
-            "--setup" => setup = Some(PathBuf::from(value)),
-            "--ngp-physics" => ngp_physics = Some(PathBuf::from(value)),
-            "--rsf-car" => rsf_car = Some(value),
+            "--setup" => args.setup = Some(PathBuf::from(value)),
+            "--ngp-physics" => args.ngp_physics = Some(PathBuf::from(value)),
+            "--rsf-car" => args.rsf_car = Some(value),
             "--ffb-sensitivity" => {
-                ffb_sensitivity =
+                args.ffb_sensitivity =
                     Some(percentages(&value).ok_or(format!("--ffb-sensitivity {value}: three percentages, G,T,S"))?)
             }
             "--head-gasket-durability" => {
-                head_gasket_durability =
+                args.head_gasket_durability =
                     Some(value.parse().map_err(|_| format!("--head-gasket-durability {value}: an integer"))?)
             }
-            "--damage-in" => damage_in = Some(PathBuf::from(value)),
-            "--damage-out" => damage_out = Some(PathBuf::from(value)),
-            "--result-out" => result_out = Some(PathBuf::from(value)),
-            "--saves" => saves = Some(PathBuf::from(value)),
-            "--profile" => profile = Some(value.to_owned()),
-            "--events-out" => events_out = Some(PathBuf::from(value)),
-            "--trace-out" => trace_out = Some(PathBuf::from(value)),
+            "--damage-in" => args.damage_in = Some(PathBuf::from(value)),
+            "--damage-out" => args.damage_out = Some(PathBuf::from(value)),
+            "--result-out" => args.result_out = Some(PathBuf::from(value)),
+            "--saves" => args.saves = Some(PathBuf::from(value)),
+            "--profile" => args.profile = Some(value.to_owned()),
+            "--events-out" => args.events_out = Some(PathBuf::from(value)),
+            "--trace-out" => args.trace_out = Some(PathBuf::from(value)),
             "--ffb-settings" => {
                 ffb_settings = Some(ffb_settings_of(&value).ok_or(format!(
                     "--ffb-settings {value}: ENABLED,STRENGTH,INVERSE,DEAD_ZONE,THRESHOLD (0 or 1, then numbers)"
                 ))?)
             }
-            "--extra-payloads" => extra_payloads = Some(PathBuf::from(value)),
-            "--wall-clock" => wall_clock = Some(PathBuf::from(value)),
-            "--season-row" => season_row = Some(value.parse().map_err(|_| format!("--season-row {value}"))?),
-            "--rand-seed" => rand_seed = Some(value.parse().map_err(|_| format!("--rand-seed {value}"))?),
+            "--extra-payloads" => args.extra_payloads = Some(PathBuf::from(value)),
+            "--wall-clock" => args.wall_clock = Some(PathBuf::from(value)),
+            "--season-row" => args.season_row = Some(parsed("--season-row", &value)?),
+            "--rand-seed" => args.rand_seed = Some(parsed("--rand-seed", &value)?),
             "--damage" => {
-                damage = Some(
+                args.damage = Some(
                     DamageLevel::from_name(&value)
                         .ok_or(format!("--damage {value}: off, safe, reduced or realistic"))?,
                 )
@@ -276,103 +260,98 @@ fn parse(mut it: impl Iterator<Item = String>) -> Result<Args, String> {
                 false_starts =
                     Some(value.parse::<u8>().map_err(|e| format!("--championship-false-starts {value}: {e}"))?)
             }
-            "--start-time" => start_time = Some(clock_time(&value).ok_or(format!("--start-time {value}: H:MM"))?),
+            "--start-time" => args.start_time = Some(clock_time(&value).ok_or(format!("--start-time {value}: H:MM"))?),
             "--rally-next" => {
-                rally_next =
+                args.rally_next =
                     Some(live::RallyNext::parse(&value).ok_or(format!("--rally-next {value}: stage, service or end"))?)
             }
-            "--auto-gears" => auto_gears = Some(on_off(&flag, &value)?),
-            "--gear-guard" => aids.gear_guard = on_off(&flag, &value)?,
-            "--neutral-lock" => aids.neutral_lock = on_off(&flag, &value)?,
-            "--clutch-help" => aids.clutch_help = on_off(&flag, &value)?,
-            "--callout-distance" => {
-                marker_settings.callout_distance = value.parse().map_err(|_| format!("--callout-distance {value}"))?
-            }
-            "--marker-threshold" => {
-                marker_settings.marker_threshold = value.parse().map_err(|_| format!("--marker-threshold {value}"))?
-            }
+            "--auto-gears" => args.auto_gears = Some(on_off(&flag, &value)?),
+            "--gear-guard" => args.aids.gear_guard = on_off(&flag, &value)?,
+            "--neutral-lock" => args.aids.neutral_lock = on_off(&flag, &value)?,
+            "--clutch-help" => args.aids.clutch_help = on_off(&flag, &value)?,
+            "--callout-distance" => args.marker_settings.callout_distance = parsed("--callout-distance", &value)?,
+            "--marker-threshold" => args.marker_settings.marker_threshold = parsed("--marker-threshold", &value)?,
             _ => return Err(format!("unknown argument {flag}")),
         }
     }
-    match (live, recording.is_some(), snapshots.len()) {
-        _ if boot && !snapshots.is_empty() => return Err("--boot takes no --snapshot".into()),
+    match (args.live, args.recording.is_some(), args.snapshots.len()) {
+        _ if args.boot && !args.snapshots.is_empty() => return Err("--boot takes no --snapshot".into()),
         (true, true, _) => return Err("--live takes no --recording".into()),
         (true, false, 1) => {}
-        (true, false, 0) if boot => {}
+        (true, false, 0) if args.boot => {}
         (true, false, _) => return Err("--live takes one --snapshot".into()),
-        (false, false, _) if !(boot && autopilot.is_some()) => return Err("--recording is required".into()),
+        (false, false, _) if !(args.boot && args.autopilot.is_some()) => return Err("--recording is required".into()),
         (false, false, _) => {}
         (false, true, _) => {}
     }
-    if autopilot.is_some() && (live || snapshots.len() != usize::from(!boot)) {
+    if args.autopilot.is_some() && (args.live || args.snapshots.len() != usize::from(!args.boot)) {
         return Err("--autopilot takes one --snapshot or --boot, and no --live".into());
     }
-    if setup.is_some() && !boot {
-        return Err("--setup needs --boot".into());
+    // Flags that only make sense with `--boot`, in the order their errors used to read.
+    for (flag, present) in [("--setup", args.setup.is_some()), ("--ngp-physics", args.ngp_physics.is_some())] {
+        if present && !args.boot {
+            return Err(format!("{flag} needs --boot"));
+        }
     }
-    if ngp_physics.is_some() && !boot {
-        return Err("--ngp-physics needs --boot".into());
-    }
-    if boot && ngp_physics.is_none() {
+    if args.boot && args.ngp_physics.is_none() {
         return Err("--boot needs --ngp-physics FILE (NGP's physics.rbz): ReRBR steps NGP physics only".into());
     }
-    if rsf_car.is_some() && !boot {
-        return Err("--rsf-car needs --boot".into());
+    for (flag, present) in [
+        ("--rsf-car", args.rsf_car.is_some()),
+        ("--ffb-sensitivity", args.ffb_sensitivity.is_some()),
+        ("--head-gasket-durability", args.head_gasket_durability.is_some()),
+        ("--damage-in", args.damage_in.is_some()),
+        ("--championship", skill.is_some()),
+    ] {
+        if present && !args.boot {
+            return Err(format!("{flag} needs --boot"));
+        }
     }
-    if ffb_sensitivity.is_some() && !boot {
-        return Err("--ffb-sensitivity needs --boot".into());
-    }
-    if head_gasket_durability.is_some() && !boot {
-        return Err("--head-gasket-durability needs --boot".into());
-    }
-    if damage_in.is_some() && !boot {
-        return Err("--damage-in needs --boot".into());
-    }
-    if (damage_out.is_some() || result_out.is_some()) && autopilot.is_none() && !(live && boot) {
+    if (args.damage_out.is_some() || args.result_out.is_some()) && args.autopilot.is_none() && !(args.live && args.boot)
+    {
         return Err("--damage-out and --result-out need --autopilot or --live --boot".into());
     }
-    if (championship_damage.is_some() || false_starts.is_some() || rally_next.is_some()) && skill.is_none() {
+    if (championship_damage.is_some() || false_starts.is_some() || args.rally_next.is_some()) && skill.is_none() {
         return Err("--championship-damage, --championship-false-starts and --rally-next need --championship".into());
-    }
-    if skill.is_some() && !boot {
-        return Err("--championship needs --boot".into());
     }
     let championship = skill.map(|skill| ChampionshipOptions {
         skill,
         damage: championship_damage.unwrap_or(ChampionshipOptions::default().damage),
     });
-    if events_out.is_some() && (live || !boot || recording.is_none() || autopilot.is_some()) {
+    if args.events_out.is_some() && (args.live || !args.boot || args.recording.is_none() || args.autopilot.is_some()) {
         return Err("--events-out needs --boot and --recording, and no --live or --autopilot".into());
     }
-    if (recorded_payload || trace_out.is_some()) && (live || recording.is_none() || autopilot.is_some()) {
+    if (args.recorded_payload || args.trace_out.is_some())
+        && (args.live || args.recording.is_none() || args.autopilot.is_some())
+    {
         return Err("--recorded-payload and --trace-out need --recording, and no --live or --autopilot".into());
     }
-    if ffb_settings.is_some() && trace_out.is_none() {
+    if ffb_settings.is_some() && args.trace_out.is_none() {
         return Err("--ffb-settings needs --trace-out".into());
     }
-    if (extra_payloads.is_some() || wall_clock.is_some()) && !recorded_payload {
+    if (args.extra_payloads.is_some() || args.wall_clock.is_some()) && !args.recorded_payload {
         return Err("--extra-payloads and --wall-clock need --recorded-payload".into());
     }
-    if pilot.is_some() && !live {
+    if args.pilot.is_some() && !args.live {
         return Err("--pilot needs --live".into());
     }
-    if (frames_out.is_some() || frames.is_some()) && !live {
+    if (args.frames_out.is_some() || args.frames.is_some()) && !args.live {
         return Err("--frames-out and --frames need --live".into());
     }
-    if frames.is_some() && frames_out.is_some() {
+    if args.frames.is_some() && args.frames_out.is_some() {
         return Err("--frames takes no --frames-out (the frames are given)".into());
     }
-    if (replay_out.is_some() || replay.is_some()) && !live {
+    if (args.replay_out.is_some() || args.replay.is_some()) && !args.live {
         return Err("--replay-out and --replay need --live".into());
     }
-    let logs = [frames_out.is_some(), frames.is_some(), replay_out.is_some(), replay.is_some()];
+    let logs = [args.frames_out.is_some(), args.frames.is_some(), args.replay_out.is_some(), args.replay.is_some()];
     if logs.into_iter().filter(|&on| on).count() > 1 {
         return Err("one of --frames-out, --frames, --replay-out and --replay".into());
     }
-    if replay.is_some() && pilot.is_some() {
+    if args.replay.is_some() && args.pilot.is_some() {
         return Err("--replay takes no --pilot (the replay drives)".into());
     }
-    if aim.is_some() && autopilot.is_none() {
+    if args.aim.is_some() && args.autopilot.is_none() {
         return Err("--aim needs --autopilot".into());
     }
     let rsf = match (&stage, stage_dir, rsf_stage) {
@@ -388,62 +367,17 @@ fn parse(mut it: impl Iterator<Item = String>) -> Result<Args, String> {
     if let Some(problem) = rsf.as_ref().and_then(|s| s.problem.as_ref()) {
         return Err(format!("RSF stage {}: {problem}", rsf.as_ref().map_or(0, |s| s.id)));
     }
-    if rsf.is_some() && stage.is_none() && !boot {
+    if rsf.is_some() && stage.is_none() && !args.boot {
         return Err("--stage-dir and --rsf-stage need --boot (the weather picks the variant)".into());
     }
     Ok(Args {
-        recording,
-        live,
-        autopilot,
-        pilot,
-        frames_out,
-        frames,
-        replay_out,
-        replay,
-        replay_pace,
-        top_speed,
-        aim,
-        boot,
         stage: stage.unwrap_or_default(),
         rsf,
         data: data.ok_or("--data or RBR_DATA is required")?,
-        car,
-        snapshots,
-        steps,
-        read_set,
-        marker_settings,
-        dump_image,
-        twin,
-        weather,
-        tyre,
-        wear,
-        wetness,
-        season_row,
-        rand_seed,
-        damage,
         championship,
         false_starts: false_starts.unwrap_or(0),
-        start_time,
-        rally_next,
-        direct,
-        auto_gears,
-        aids,
-        setup,
-        ngp_physics,
-        rsf_car,
-        ffb_sensitivity,
-        head_gasket_durability,
-        damage_in,
-        damage_out,
-        result_out,
-        saves,
-        profile,
-        events_out,
-        recorded_payload,
-        extra_payloads,
-        wall_clock,
-        trace_out,
         ffb_settings: ffb_settings.unwrap_or_default(),
+        ..args
     })
 }
 
