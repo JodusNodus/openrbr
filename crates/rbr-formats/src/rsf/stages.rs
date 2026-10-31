@@ -355,7 +355,7 @@ pub type ListEntry = HashMap<String, String>;
 pub fn stage_list(root: &Path) -> HashMap<u32, ListEntry> {
     let Some(path) = stage_files::in_dir(root, "rsfdata\\cache\\stages_data.json") else { return HashMap::new() };
     let text = std::fs::read_to_string(path).unwrap_or_default();
-    flat_objects(&text).into_iter().filter_map(|o| Some((o.get("id")?.parse().ok()?, o))).collect()
+    super::json::rows(&text).into_iter().filter_map(|o| Some((o.get("id")?.parse().ok()?, o))).collect()
 }
 
 /// The RSF root of a stage folder (`<root>/Maps/<folder>`).
@@ -404,77 +404,6 @@ pub fn find(root: &Path, id: u32) -> Result<Stage, String> {
     Stage::open(&folder, &stage_list(root))
 }
 
-/// The objects of a JSON array of flat objects whose values are strings, numbers or `null` (RSF's cache files); a
-/// `null` value is left out. Anything else ends the parse with what was read.
-pub fn flat_objects(text: &str) -> Vec<HashMap<String, String>> {
-    let mut out = Vec::new();
-    let mut chars = text.chars().peekable();
-    let skip_ws = |c: &mut std::iter::Peekable<std::str::Chars>| {
-        while c.peek().is_some_and(|ch| ch.is_whitespace() || *ch == ',') {
-            c.next();
-        }
-    };
-    let string = |c: &mut std::iter::Peekable<std::str::Chars>| -> Option<String> {
-        let mut s = String::new();
-        while let Some(ch) = c.next() {
-            match ch {
-                '"' => return Some(s),
-                '\\' => match c.next()? {
-                    'n' => s.push('\n'),
-                    't' => s.push('\t'),
-                    'u' => {
-                        let hex: String = c.by_ref().take(4).collect();
-                        s.push(u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32).unwrap_or('?'));
-                    }
-                    other => s.push(other),
-                },
-                _ => s.push(ch),
-            }
-        }
-        None
-    };
-    skip_ws(&mut chars);
-    if chars.next() != Some('[') {
-        return out;
-    }
-    loop {
-        skip_ws(&mut chars);
-        if chars.next() != Some('{') {
-            return out;
-        }
-        let mut object = HashMap::new();
-        loop {
-            skip_ws(&mut chars);
-            match chars.next() {
-                Some('}') => break,
-                Some('"') => {}
-                _ => return out,
-            }
-            let Some(key) = string(&mut chars) else { return out };
-            skip_ws(&mut chars);
-            if chars.next() != Some(':') {
-                return out;
-            }
-            skip_ws(&mut chars);
-            let value = match chars.peek() {
-                Some('"') => {
-                    chars.next();
-                    string(&mut chars)
-                }
-                _ => {
-                    let word: String = std::iter::from_fn(|| chars.next_if(|c| !matches!(c, ',' | '}'))).collect();
-                    let word = word.trim().to_owned();
-                    (word != "null").then_some(word)
-                }
-            };
-            if let Some(value) = value {
-                object.insert(key, value);
-            }
-        }
-        out.push(object);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -496,17 +425,6 @@ mod tests {
             assert_eq!(name.as_deref(), Some(section));
         }
         assert_eq!(WeatherRow::section_name(1, 3, 0, 10, 0), None);
-    }
-
-    #[test]
-    fn flat_json_objects() {
-        let text = r#"[{"id":"10","name":"Kaihuä","fattrib":null,"n":5},{"id":"101","author_note":"a, b"}]"#;
-        let objects = flat_objects(text);
-        assert_eq!(objects.len(), 2);
-        assert_eq!(objects[0]["name"], "Kaihuä");
-        assert!(!objects[0].contains_key("fattrib"));
-        assert_eq!(objects[0]["n"], "5");
-        assert_eq!(objects[1]["author_note"], "a, b");
     }
 
     /// A stage folder with a `Tracks<id>.ini`, a `TrackSettings<id>.ini` and variant `O`'s files, the `.col` encrypted.

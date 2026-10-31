@@ -9,6 +9,7 @@
 //! The car list comes from RSF's cache (`rsfdata/cache/`): `cars.json` (id, name, pack folder, model id, base group),
 //! `carmodels.json` (model folder, file name, fallback) and `cargroups.json` (group names).
 
+use super::json::{rows, Row};
 use crate::cars::{self, CarEntry};
 use crate::data::Data;
 use std::collections::HashMap;
@@ -65,101 +66,11 @@ pub struct ModelChoice {
     pub fallback: Option<String>,
 }
 
-/// A row of RSF's cache: an object of scalars, each kept as its text (`null` left out).
-pub(super) type Row = HashMap<String, String>;
-
 /// RSF's cache file at `path`: an array of flat objects (the only shape its `cars`, `carmodels` and `cargroups` files
 /// have).
 fn json(path: &Path) -> Result<Vec<Row>, String> {
     let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    rows(&text).ok_or(format!("{}: not an array of flat objects", path.display()))
-}
-
-/// Parses an array of flat JSON objects whose values are strings, numbers, booleans or `null`.
-pub(super) fn rows(text: &str) -> Option<Vec<Row>> {
-    let mut chars = text.trim_start_matches('\u{feff}').chars().peekable();
-    let rows = rows_of(&mut chars)?;
-    space(&mut chars);
-    chars.next().is_none().then_some(rows)
-}
-
-fn space(chars: &mut std::iter::Peekable<std::str::Chars>) {
-    while chars.next_if(|c| c.is_whitespace()).is_some() {}
-}
-
-fn expect(chars: &mut std::iter::Peekable<std::str::Chars>, want: char) -> Option<()> {
-    space(chars);
-    (chars.next()? == want).then_some(())
-}
-
-fn string(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<String> {
-    expect(chars, '"')?;
-    let mut out = String::new();
-    loop {
-        match chars.next()? {
-            '"' => return Some(out),
-            '\\' => match chars.next()? {
-                'u' => {
-                    let hex: String = (0..4).map(|_| chars.next()).collect::<Option<_>>()?;
-                    out.push(char::from_u32(u32::from_str_radix(&hex, 16).ok()?).unwrap_or('\u{fffd}'));
-                }
-                'n' => out.push('\n'),
-                't' => out.push('\t'),
-                'r' => out.push('\r'),
-                'b' | 'f' => {}
-                c => out.push(c),
-            },
-            c => out.push(c),
-        }
-    }
-}
-
-fn rows_of(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<Vec<Row>> {
-    expect(chars, '[')?;
-    let mut rows = Vec::new();
-    space(chars);
-    if chars.next_if_eq(&']').is_some() {
-        return Some(rows);
-    }
-    loop {
-        expect(chars, '{')?;
-        let mut row = Row::new();
-        space(chars);
-        if chars.next_if_eq(&'}').is_none() {
-            loop {
-                let key = string(chars)?;
-                expect(chars, ':')?;
-                space(chars);
-                if chars.peek() == Some(&'"') {
-                    row.insert(key, string(chars)?);
-                } else {
-                    let word: String =
-                        std::iter::from_fn(|| chars.next_if(|c| !matches!(c, ',' | '}') && !c.is_whitespace()))
-                            .collect();
-                    match word.as_str() {
-                        "" | "{" | "[" => return None,
-                        "null" => {}
-                        _ => {
-                            row.insert(key, word);
-                        }
-                    }
-                }
-                space(chars);
-                match chars.next()? {
-                    ',' => continue,
-                    '}' => break,
-                    _ => return None,
-                }
-            }
-        }
-        rows.push(row);
-        space(chars);
-        match chars.next()? {
-            ',' => continue,
-            ']' => return Some(rows),
-            _ => return None,
-        }
-    }
+    Ok(rows(&text))
 }
 
 fn text(row: &Row, key: &str) -> String {
@@ -557,21 +468,8 @@ mod tests {
     fn a_cars_drive_train_is_in_cars_data() {
         let data = rows(
             r#"[{"car_id":"8","drive_train":"AWD with torque split"},{"car_id":"9","drive_train":""},{"car_id":"10"}]"#,
-        )
-        .unwrap();
+        );
         assert_eq!(drive_trains(&data), HashMap::from([(8, "AWD with torque split".to_owned())]));
-    }
-
-    #[test]
-    fn cache_rows_are_flat_objects_of_scalars() {
-        let read = rows(r#" [{"id":"24","name":"Evo \/ IX \u00e9","audio":null,"n":5},{}] "#).unwrap();
-        assert_eq!(read.len(), 2);
-        assert_eq!(text(&read[0], "name"), "Evo / IX \u{e9}");
-        assert_eq!(number(&read[0], "id"), Some(24));
-        assert_eq!(number(&read[0], "n"), Some(5));
-        assert!(!read[0].contains_key("audio"));
-        assert!(rows(r#"[{"a":{"b":1}}]"#).is_none());
-        assert!(rows("[1]").is_none());
     }
 
     /// Every pack of `RBR_RSF` (an RSF install, or the samples) reads, and each cache car finds its pack or says why.

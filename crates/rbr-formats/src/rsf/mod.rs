@@ -5,6 +5,7 @@
 mod cars;
 pub mod codriver;
 pub mod gauges;
+mod json;
 pub mod pacenotes;
 pub mod settings;
 mod stages;
