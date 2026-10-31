@@ -495,14 +495,14 @@ impl Form {
         let draws = weather::Draws { row: Some(stage.row), wear: wear.max(1) };
         let found = weather::quick_race(&self.season, stage.map, Preset::Random, draws).and_then(|weather| {
             let name = stage.track();
-            let map = self.catalog.maps.iter().find(|m| m.number == stage.map);
+            let map = self.catalog.map(stage.map);
             let s =
                 map.and_then(|m| m.stages.iter().find(|s| s.name == name)).ok_or(format!("{name}: not installed"))?;
             Ok((s.clone(), weather))
         });
         match found {
             Ok((s, weather)) => {
-                self.map = self.catalog.maps.iter().position(|m| m.number == stage.map).unwrap_or(self.map);
+                self.map = self.catalog.map_index(stage.map).unwrap_or(self.map);
                 self.validate_weather_row();
                 // The setup row picked for the stage, on the stage's surface (`CSeasonChooseSetupUI`).
                 self.select_setup();
@@ -632,7 +632,7 @@ impl Form {
             .then(|| ["--upscale-textures".to_owned(), self.upscaler_dir().display().to_string()]);
         // The loading screen names the stage and the car.
         let map =
-            self.catalog.maps.iter().find(|m| m.number == stage.map).map_or(stage.name.clone(), catalog::Map::name);
+            self.catalog.map(stage.map).map_or(stage.name.clone(), catalog::Map::name);
         let title = ["--title".to_owned(), format!("{map} · {}", car.name)];
         // The car's lock, the wheel's rotation when it is per car.
         let lock = self.setup.steering_lock().map(rbr_render::wheel_rotation::car_degrees);
@@ -673,7 +673,7 @@ impl Form {
     pub fn stage_note_names(&self, stage: &catalog::Stage) -> Vec<String> {
         let rsf_root = self.rsf();
         let listed = stage_list(Path::new(rsf_root.trim())).remove(&stage.map).and_then(|mut e| e.remove("name"));
-        let map = self.catalog.maps.iter().find(|m| m.number == stage.map);
+        let map = self.catalog.map(stage.map);
         listed
             .into_iter()
             .chain(map.and_then(|m| m.rsf.as_ref()).map(|s| s.name.clone()))
@@ -1135,7 +1135,7 @@ mod tests {
         let start = start(here.join(SETTINGS_FILE), Some(PathBuf::from(&data)), Some(PathBuf::from(&patch)));
         let mut form = load(&start, Settings::parse("[launcher]\nmap = 54\n")).unwrap();
         form.read_only = true;
-        form.map = form.catalog.maps.iter().position(|m| m.number == 54).unwrap();
+        form.map = form.catalog.map_index(54).unwrap();
         let rows = {
             let map = &form.catalog.maps[form.map];
             catalog::environment_rows(&map.season(&form.season), map.number)

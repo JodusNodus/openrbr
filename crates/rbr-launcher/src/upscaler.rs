@@ -12,7 +12,7 @@ use std::sync::atomic::AtomicBool;
 use sha2::{Digest, Sha256};
 
 use crate::gvrc;
-use crate::job::{Counter, Job, Progress, Temp};
+use crate::job::{Counter, Job, Progress, Report, Temp};
 use crate::pages::{GOOD, WARN};
 use crate::Form;
 use rbr_formats::rbz;
@@ -76,7 +76,7 @@ fn check(path: &Path, sha256: &str) -> Result<(), Fail> {
 }
 
 /// Downloads the upscaler into the folder `dir`.
-pub fn download(dir: &Path, report: &(dyn Fn(&Progress) + Sync), cancel: &AtomicBool) -> Result<(), Fail> {
+pub fn download(dir: &Path, report: Report<'_>, cancel: &AtomicBool) -> Result<(), Fail> {
     let release = RELEASE.ok_or("Real-ESRGAN has no upscaler build for this platform")?;
     fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let temp = Temp::create(dir, "downloading")?;

@@ -985,7 +985,7 @@ impl Form {
         }
         self.cached_notes_map = map;
         self.cached_notes_dirty = false;
-        let found = self.catalog.maps.iter().find(|m| m.number == map);
+        let found = self.catalog.map(map);
         let names = found.and_then(|m| m.stages.first()).map(|stage| self.stage_note_names(stage));
         let stage = found.map(|m| m.name()).unwrap_or_default();
         let voice = self.codriver_mods.as_ref().and_then(|m| m.voice(self.codriver_voice.as_deref()));

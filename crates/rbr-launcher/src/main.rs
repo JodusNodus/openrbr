@@ -607,7 +607,8 @@ impl Form {
         self.rsf_scanned = self.rsf_root.clone();
         self.rescan_codrivers();
         let (catalog, season) = (&self.catalog, &self.season);
-        self.map = (catalog.maps.iter().position(|m| m.number == number))
+        self.map = catalog
+            .map_index(number)
             .or_else(|| catalog.maps.iter().position(|map| catalog.availability(season, map).is_ok()))
             .unwrap_or(0);
         self.validate_weather_row();

@@ -12,7 +12,7 @@ use rbr_formats::rbz;
 
 use crate::archive::{open_seven, safe_path};
 use crate::disc_install::{require, with_folders, write_to, Reporter};
-use crate::job::Progress;
+use crate::job::Report;
 
 /// A failed or cancelled install's message.
 type Fail = String;
@@ -107,7 +107,7 @@ pub fn check_game_folder(game: &Path) -> Result<(), Fail> {
 pub fn add_ngp(
     package: &Path,
     game: &Path,
-    report: &(dyn Fn(&Progress) + Sync),
+    report: Report<'_>,
     cancel: &AtomicBool,
 ) -> Result<usize, Fail> {
     check_game_folder(game)?;
@@ -150,7 +150,7 @@ pub(crate) fn supported_dll(files: &[(String, Vec<u8>)]) -> Result<&[u8], Fail> 
 pub fn add_ngp_to(
     package: &Path,
     to: &Path,
-    report: &(dyn Fn(&Progress) + Sync),
+    report: Report<'_>,
     cancel: &AtomicBool,
 ) -> Result<(), Fail> {
     let mut reporter = Reporter::new(report, cancel);

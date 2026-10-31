@@ -25,7 +25,7 @@ use std::sync::atomic::AtomicBool;
 use rbr_formats::rsf;
 
 use crate::archive::safe_folder;
-use crate::job::{Counter, Job, Progress, Temp};
+use crate::job::{Counter, Job, Report, Temp};
 use crate::pages::{GOOD, WARN};
 use crate::Form;
 
@@ -402,7 +402,7 @@ fn add_one(
 pub fn add_downloads(
     cars_dir: &Path,
     downloads: &[Download],
-    report: &(dyn Fn(&Progress) + Sync),
+    report: Report<'_>,
     cancel: &AtomicBool,
 ) -> Result<Vec<Added>, Fail> {
     fs::create_dir_all(cars_dir).map_err(|e| format!("{}: {e}", cars_dir.display()))?;
@@ -527,7 +527,7 @@ impl Form {
     /// Runs `work`, which adds cars, with its progress, Cancel and result line, unless adding or driving already.
     pub fn start_adding(
         &mut self,
-        work: impl FnOnce(&(dyn Fn(&Progress) + Sync), &AtomicBool) -> Result<Vec<Added>, Fail> + Send + 'static,
+        work: impl FnOnce(Report<'_>, &AtomicBool) -> Result<Vec<Added>, Fail> + Send + 'static,
     ) {
         if self.can_add_cars() {
             self.adding.status = None;
