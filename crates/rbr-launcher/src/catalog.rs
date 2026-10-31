@@ -277,6 +277,16 @@ impl Catalog {
         self.cars = ngp_offered(&self.all_cars, ngp_cars);
     }
 
+    /// The installed map with `number`.
+    pub fn map(&self, number: u32) -> Option<&Map> {
+        self.maps.iter().find(|m| m.number == number)
+    }
+
+    /// The maps list's row of `number`.
+    pub fn map_index(&self, number: u32) -> Option<usize> {
+        self.maps.iter().position(|m| m.number == number)
+    }
+
     /// Resolves the game's selected row (the random weather's from `draws`) to the installed stage variant and its
     /// wetness.
     pub fn stage_weather(
@@ -286,7 +296,7 @@ impl Catalog {
         preset: Preset,
         draws: weather::Draws,
     ) -> Result<(Stage, Weather), String> {
-        let entry = self.maps.iter().find(|m| m.number == map);
+        let entry = self.map(map);
         if let Some(problem) = entry.and_then(|m| m.rsf.as_ref()?.problem.as_ref()) {
             return Err(problem.clone());
         }
@@ -307,7 +317,7 @@ impl Catalog {
         map: u32,
         words: &rbr_formats::ghost::Weather,
     ) -> Option<(Stage, Weather)> {
-        let entry = self.maps.iter().find(|m| m.number == map)?;
+        let entry = self.map(map)?;
         if entry.rsf.as_ref().is_some_and(|r| r.problem.is_some()) {
             return None;
         }
@@ -317,7 +327,7 @@ impl Catalog {
 
     /// The installed stage of `map` that `weather` loads (its letter).
     pub fn stage_of(&self, map: u32, weather: &Weather) -> Option<Stage> {
-        let entry = self.maps.iter().find(|m| m.number == map);
+        let entry = self.map(map);
         let name = weather.stage();
         entry
             .and_then(|m| {
