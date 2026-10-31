@@ -1,6 +1,7 @@
-//! One VCU step. Step runs the gear logic first; both then set the clutch, cut the rev limit, route the pedals
-//! to the engine and the drive, set the brake and neutral lights, lock the diffs and decay the shift cooldown.
-//! The order follows `notes/physics/vcu.md`. Step without the gear logic keeps the clutch.
+//! One VCU step. [`step`] runs the gear logic first; both then set the clutch, cut the rev limit, route the pedals
+//! to the engine and the drive, set the brake and neutral lights, lock the diffs and decay the shift cooldown, in
+//! the original's order (rbr-recomp `notes/physics/vcu.md`, 3f). [`step_basic`] is [`step`] without the gear logic;
+//! it keeps the clutch.
 
 use super::clutch;
 use super::cut;
