@@ -874,6 +874,15 @@ that writes depth (the Clio Rally3's `CarPlastic` side windows) and the rear-vie
 seen in them takes the cabin's exposure (about 1.5 stops over on the Clio); the forest shots' door cards stay dark (5
 to 7 stops under the road, which their light is).
 
+Interior sheen (2026-10-31, `cabin_sheen`): every cabin face but paint open to the sky (the bonnet through the glass,
+`CABIN_OUT`) reflects as a low-gloss plastic, `environment_reflectance` at roughness 0.8 (2 to 3 %) of the cube's
+level 3, where the reflected ray leaves the car (`cabin_open`). A class with a Fresnel kept the paint's reflection: the
+Clio Rally3's dash is `CarPaintInt` with `Kf` 1 from `FresnelMin` 0 (9 installed cars; 70 have 0.21 / 0.44) and read
+as glass; the rest took a smooth F0 0.04, a third of the sky at a grazing angle. Mlynky 135 Clio cockpit 19:30: dash
+top 108 to 85 of 255 (no sheen 86). Cockpit reference shots 1 to 2.6 % RMSE by day (Fiesta's grey dash 6.5 %), nights
+0.02 to 0.04 %, outside shots byte-identical. The dash still reads blue-grey: near-black texels under the cabin's own
+exposure and the sky through the windscreen.
+
 The car's sun shadow (2026-10-30, `car_shadow`): a penumbra by the sun's disc and the casters' mean distance (3x3
 search, PCSS as the cascades), taps a texel apart, at most 9 a side and the range's reach. The fixed 4x4 taps 4 cm
 apart over 3 mm texels drew a 1 cm grid of steps where the sun came through the glass (208 binnacle, 19:30). 580 208
