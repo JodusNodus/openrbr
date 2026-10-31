@@ -1,5 +1,4 @@
-//! Collision events: their creation and the calls they make on their bodies (`E37EvOps`, `InitFull`, `E33MakeEvent`),
-//! generic over the store.
+//! Collision events: their creation and the queries and impulses they run on their bodies, generic over the store.
 
 use super::contact_solver;
 use super::layout::event_pool::partner_slot;
@@ -7,19 +6,18 @@ use super::store::{CollisionStore, Side};
 use crate::math::vec::{Vec3, Vec4};
 use crate::mem::Mem;
 
-/// The calls E37EvOps::Query4390 (0x4f4390) and Emit4DC0 (0x4f4dc0) make on the event's bodies. Each is entered at
-/// `sp`, the original's stack pointer for that call; `target` is the body's virtual slot (read from its vtable by the
-/// caller). Every virtual call returns its eax.
+/// The queries and impulses an event runs on its bodies. Each is entered at `sp`, the caller's frame pointer for
+/// that call; `target` is the body's virtual slot. Every call returns its result.
 pub trait EventBodyHost {
-    /// Slot 0x30 (`Vf30`) with no arguments: the body's own pointer in the CEntity tree (eax).
+    /// The body's own pointer in the entity tree.
     fn vf30(&mut self, sp: u32, target: u32, body: u32) -> u32;
-    /// `E43PairWalk::MB560` (0x51b560), thiscall on `event` with `(a, b, c)`.
+    /// The pair walk: combines `a` and `b` into the pair result at `out`.
     fn mb560(&mut self, sp: u32, event: u32, a: u32, b: u32, c: u32);
-    /// `ComposeA` (0x51b4c0), thiscall on `frame` with `(point, body, out)`.
+    /// Composes `point` with `body`'s frame into `out`.
     fn compose(&mut self, sp: u32, frame: u32, point: u32, body: u32, out: u32);
-    /// Slot 0x138 (`Vf138x`) with six arguments.
+    /// The body's six-word query over the composed frames and arguments.
     fn vf138x(&mut self, sp: u32, target: u32, body: u32, args: [u32; 6]) -> u32;
-    /// Slot 0x128 (`Vf128x`) with eight arguments.
+    /// The body's eight-word impulse query.
     fn vf128x(&mut self, sp: u32, target: u32, body: u32, args: [u32; 8]) -> u32;
 }
 
@@ -35,11 +33,8 @@ fn side_body<S: CollisionStore>(store: &S, event: u32, side: Side) -> u32 {
     }
 }
 
-/// E37EvOps::Query4390 (0x4f4390) (name ours), thiscall on the event with `(a, b, c, d, e)`, ret 0x14. `d` and `e` are
-/// zeroed, and each body (+0xa0, then +0x98) is walked by `a` and `b`, composed with the event's transform (+0x60) and
-/// passed to its `Vf138x` with the three temporaries. The frame is the original's: `frame` is `(esp - 4) & !0xf`, the
-/// temporaries sit below it, and every call is entered 0x48 to 0x5c bytes below it. Returns the second body's `Vf138x`
-/// eax.
+/// Queries both bodies of the event: zeroes `d` and `e`, then walks each body into temporaries, composes it with
+/// the event's transform, and queries it. Returns the second body's result.
 pub fn query_event_bodies<S: CollisionStore>(
     host: &mut impl EventBodyHost,
     store: &mut S,
@@ -54,8 +49,8 @@ pub fn query_event_bodies<S: CollisionStore>(
     query_body(host, store, event, Side::Partner, [a, b, c, d, e], frame)
 }
 
-/// One body of `query_event_bodies`: the walk of `a` into `tA` and of `b` into `tB`, the transform into `tC`, then
-/// `Vf138x` on the body. Returns its eax.
+/// One body of [`query_event_bodies`]: the walks of `a` and `b` into temporaries, the transform, then the body's
+/// six-word query. Returns its result.
 fn query_body<S: CollisionStore>(
     host: &mut impl EventBodyHost,
     store: &mut S,
@@ -77,10 +72,9 @@ fn query_body<S: CollisionStore>(
     host.vf138x(frame - 0x5c, store.vtable_slot(body, VF138X), body, [tc, ta, tb, c, d, e])
 }
 
-/// E37EvOps::Emit4DC0 (0x4f4dc0), thiscall on the event with `(a, b, c, d)`, ret 0x10. Unless the event's flags (+0xe4)
-/// carry 0x2000 or 0x4000, the first body (+0xa0) gets `Vf128x` with the partner slot, and the second (+0x98) gets it
-/// with `c` and `d` negated into the frame. Returns the flags word when suppressed, else the second body's eax (0
-/// without one).
+/// Applies the event's impulse to its bodies, unless the event's suppression flags are set (returning the flags word
+/// then). The first body gets the impulse with the partner slot; the second with `c` and `d` negated. Returns the
+/// second body's result (0 without one).
 pub fn apply_event_impulse<S: CollisionStore>(
     host: &mut impl EventBodyHost,
     store: &mut S,
@@ -112,21 +106,19 @@ pub fn apply_event_impulse<S: CollisionStore>(
     host.vf128x(frame - 0x54, store.vtable_slot(body_b, VF128X), body_b, args)
 }
 
-/// E33Vec4::Scaled (0x4e0700): stores the input vector times `scale` at `output`.
+/// Stores the input vector scaled by `scale` at `output`.
 fn scaled<S: CollisionStore>(store: &mut S, input: u32, output: u32, scale: f32) {
     let value = store.vec4(input).scale(scale);
     store.store_vec4(output, value);
 }
 
-/// The call out of E37EvOps::PlaneDiff (0x4f40f0), entered at `sp` as the original's: a side's slot 0x140 (`target`,
-/// `CSolid::E43Vf140` for a solid), thiscall on the body with `(point, out)`, the velocity of the body at `point`.
+/// A side's point-velocity query: the velocity of the body at `point`, written to `out`.
 pub trait PlaneDiffHost {
     fn point_velocity(&mut self, sp: u32, target: u32, body: u32, point: u32, out: u32);
 }
 
-/// E37EvOps::PlaneDiff (0x4f40f0) on the event at `event`: the velocity of the contact point (+0x60) on the body
-/// (+0xa0) less that on the partner (+0x98), x, y and z to `out` (its w is not written). Each velocity is the side's
-/// slot 0x140 into the original's frame below the entry stack pointer `esp`, or zero for a missing side. Returns `out`.
+/// The velocity of the contact point on the body less that on the partner, x, y and z to `out` (its w is not
+/// written). Each side's velocity is queried into a scratch frame, or zero for a missing side. Returns `out`.
 pub fn relative_point_velocity<S: CollisionStore>(
     host: &mut impl PlaneDiffHost,
     store: &mut S,
@@ -141,7 +133,7 @@ pub fn relative_point_velocity<S: CollisionStore>(
     out
 }
 
-/// One side of PlaneDiff: the side's slot 0x140 at the event's contact point into `at`, or `E09Vec4::Clear` of `at`.
+/// One side of [`relative_point_velocity`]: the side's point velocity at the event's contact point into `at`, or zero.
 fn side_velocity<S: CollisionStore>(
     host: &mut impl PlaneDiffHost,
     store: &mut S,
@@ -160,11 +152,8 @@ fn side_velocity<S: CollisionStore>(
     store.vec3(at)
 }
 
-/// CCollisionEvent::InitFull (0x4f50e0, thiscall on `event` with `(kind, body, point_a, point_b, payload, tag)`, ret
-/// 0x18): the event's fields in the original's order, the 16 payload words to +0x60, then the two contact points
-/// through the body's slot 0x30 (ComposeA to +0xc0, MB560 to +0xd0), and the global event count. Its calls enter 0x90
-/// below the aligned frame of the entry esp `esp`. The rest of the original (an E19 stream and a frame built from
-/// +0x70) writes only its own locals. Returns `event`.
+/// Initializes the event's fields in order with the 16 payload words, then resolves the two contact points through
+/// the body's tree pointer (compose and pair walk), and counts the event. Returns `event`.
 pub fn init_full<S: CollisionStore>(
     host: &mut impl EventBodyHost,
     store: &mut S,
@@ -186,12 +175,12 @@ pub fn init_full<S: CollisionStore>(
     event
 }
 
-/// Calls outside E36AllocEvent, currently the CRT allocator when the event pool is empty.
+/// Calls outside [`alloc_event`]: the fallback allocator when the pool is empty.
 pub trait AllocEventHost {
     fn operator_new(&mut self, size: u32) -> u32;
 }
 
-/// E36AllocEvent (0x4f4f10): take the free-list head or allocate a new event when the pool is empty.
+/// Takes the free-list head, or allocates a new event when the pool is empty.
 pub fn alloc_event<S: CollisionStore>(store: &mut S, size: u32, host: &mut impl AllocEventHost) -> u32 {
     let event = store.free_event();
     if event == 0 {
@@ -201,7 +190,7 @@ pub fn alloc_event<S: CollisionStore>(store: &mut S, size: u32, host: &mut impl 
     event
 }
 
-/// The nine cdecl words accepted by E33MakeEvent (0x4e0d00).
+/// The nine argument words the event builder accepts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MakeEventArgs {
     pub kind: u32,
@@ -215,7 +204,7 @@ pub struct MakeEventArgs {
     pub z2: u32,
 }
 
-/// Calls outside E33MakeEvent, owned by the body vtable and E37 event pool.
+/// Calls outside [`make_event`]: the body's grid lookup, the event allocator, and the full event initializer.
 pub trait MakeEventHost<S = Mem> {
     fn body_grid(&mut self, mem: &S, body: u32) -> u32;
     fn alloc_event(&mut self, size: u32) -> u32;
@@ -231,7 +220,7 @@ pub trait MakeEventHost<S = Mem> {
     ) -> u32;
 }
 
-/// E33MakeEvent's stack-resident payload, before E37::CCollisionEvent::InitFull copies it.
+/// The event builder's stack-resident payload, before the full event initialization copies it.
 pub fn payload<S: CollisionStore>(
     store: &mut S,
     args: MakeEventArgs,
@@ -240,7 +229,7 @@ pub fn payload<S: CollisionStore>(
 ) -> [u32; 16] {
     let mut data = [0; 16];
 
-    // CE36SubBlock::Init, followed by the two event flags.
+    // The sub-block header words and the two event flags, cleared.
     data[8] = 0;
     data[9] = 0;
     data[10] = 0;
@@ -267,7 +256,7 @@ pub fn payload<S: CollisionStore>(
     data
 }
 
-/// Builds an E33 collision event, leaving E37's full event initialization to `MakeEventHost`.
+/// Builds a collision event, leaving the full event initialization to `MakeEventHost`.
 pub fn make_event<S: CollisionStore>(
     store: &mut S,
     args: MakeEventArgs,
@@ -291,18 +280,18 @@ pub fn make_event<S: CollisionStore>(
     event
 }
 
-/// E33MakeEvent's frame (0x4e0d00) from the entry esp: `push ebp`, the alignment, the exception record, 0x48 bytes of
-/// locals and three saved registers. The payload InitFull copies is at +0x10; its last word (+0x4c) is never written.
+/// The builder frame aligned from the entry frame pointer: the payload the initializer copies starts after the
+/// header words, and its last word is never written.
 pub fn make_event_frame(esp: u32) -> u32 {
     ((esp - 4) & !0xf) - 0x60
 }
 
-/// The payload's place in E33MakeEvent's frame `s` (`make_event_frame`).
+/// The payload's address within the builder frame `s`.
 pub fn make_event_payload(s: u32) -> u32 {
     s + 0x10
 }
 
-/// E33MakeEvent (0x4e0d00, cdecl with nine words) through `make_event`, the payload's last word from the frame.
+/// Builds the event through [`make_event`], reading the payload's last word from the builder frame.
 pub fn make_event_at<S: CollisionStore>(
     host: &mut impl MakeEventHost<S>,
     store: &mut S,
