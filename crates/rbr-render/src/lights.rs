@@ -190,11 +190,11 @@ pub struct Switch {
 
 impl Switch {
     /// The switch of `part`, one of the car's `parts`, when it is a lamp's: by its switch box, or else by its name.
-    /// Ours: many RSF cars switch their rear lamps' lit parts on the `light` or `brake` box, or with
-    /// `Predicate = NotUsed`, so the game never draws them (the tail lamps of 43 installed cars, 2026-10-31). A rear
-    /// lamp's lit part, `e_light_lb_lit` and so on, that the game never draws follows its lamp, and so does its unlit
-    /// pair `e_light_lb` when that one's box does not switch it. A lit part the game always draws stays (the GC8's
-    /// is its reverse lamp's reflector, which glowed white).
+    /// Ours: many RSF cars switch their lamps' lit parts on the `light` or `brake` box, or with `Predicate = NotUsed`,
+    /// so the game never draws them (the tail lamps of 43 installed cars, the headlamps of 42, 2026-10-31). A lamp's
+    /// lit part, `e_light_lf_lit`, `e_light_lb_lit` and so on, that the game never draws follows its lamp, and so does
+    /// its unlit pair `e_light_lb` when that one's box does not switch it. A lit part the game always draws stays (the
+    /// GC8's `e_light_lb_lit` is its reverse lamp's reflector, which glowed white).
     pub fn of_part(part: &Section, parts: &[Section]) -> Option<Switch> {
         Switch::of_box(part).or_else(|| {
             let named = Switch::of_name(&part.name)?;
@@ -217,8 +217,9 @@ impl Switch {
         Some(Switch { kind, lamp, lit, glass, named: false })
     }
 
-    /// The rear lamp a part is by its name: `e_light_lb`, `e_light_rb` and `e_light_m` the tail lamps', with
-    /// `brake_` or `reverse_` after `e_light_` the brake or reverse lamps', and lit with `_lit` after.
+    /// The lamp a part is by its name: `e_light_lf` and `e_light_rf` the headlamps', `e_light_lb`, `e_light_rb` and
+    /// `e_light_m` the tail lamps', with `brake_` or `reverse_` after `e_light_` the brake or reverse lamps', and lit
+    /// with `_lit` after.
     fn of_name(name: &str) -> Option<Switch> {
         let name = name.to_ascii_lowercase();
         let (name, lit) = name.strip_suffix("_lit").map_or((name.as_str(), false), |name| (name, true));
@@ -228,10 +229,8 @@ impl Switch {
         } else {
             format!("light_{lamp}")
         };
-        match Kind::of_box(&lamp_box)? {
-            (Kind::Front, ..) => None,
-            (kind, lamp, _) => Some(Switch { kind, lamp, lit, glass: false, named: true }),
-        }
+        let (kind, lamp, _) = Kind::of_box(&lamp_box)?;
+        Some(Switch { kind, lamp, lit, glass: false, named: true })
     }
 
     /// Whether the part is drawn with `inputs`. The glass is whole unless the game says otherwise.
@@ -629,7 +628,7 @@ mod tests {
     }
 
     #[test]
-    fn rear_lamp_parts_the_game_never_lights_follow_their_lamp_by_name() {
+    fn lamp_parts_the_game_never_lights_follow_their_lamp_by_name() {
         let parts = sections(
             "[e_light_lb]\r\nSwitch = false\r\nSwitchBox = light\r\nPredicate = off\r\n\
              [e_light_lb_lit]\r\nSwitch = true\r\nSwitchBox = light_lb\r\nPredicate = NotUsed\r\n\
@@ -650,7 +649,7 @@ mod tests {
         assert_eq!(switch("e_light_rb_lit"), None, "the game always draws it");
         assert_eq!(switch("e_light_rb"), None, "its lit pair is always drawn");
         assert_eq!(switch("e_light_m"), None, "no lit pair");
-        assert_eq!(switch("e_light_lf_lit"), None, "the headlights keep their boxes");
+        assert_eq!(switch("e_light_lf_lit"), Some(Switch { kind: Kind::Front, ..tail }));
     }
 
     #[test]

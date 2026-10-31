@@ -357,9 +357,12 @@ swaps the `Predicate = on/off` parts and restarts the flare fade.
   lights).
 - Ours: only headlight records draw a flare; the rear lamps show as their lit parts, which glow (`LAMP_GLOW`) day
   and night. The game's rear sprites read as blobs by day.
-- Ours: a rear lamp's lit part the game never draws (on the `light` or `brake` box, or `Predicate = NotUsed`), named
-  `e_light_lb_lit`, `e_light_brake_lb_lit` and so on, follows its lamp by name, with its unlit pair `e_light_lb` when
-  that one's box does not switch it (`lights::Switch::of_part`, 2026-10-31). Tail and brake ones glow in the records'
+- Ours: a lamp's lit part the game never draws (on the `light` or `brake` box, or `Predicate = NotUsed`), named
+  `e_light_lf_lit`, `e_light_lb_lit`, `e_light_brake_lb_lit` and so on, follows its lamp by name, with its unlit pair
+  `e_light_lb` when that one's box does not switch it (`lights::Switch::of_part`, 2026-10-31; user: "whatever is
+  actually realistic"). Headlamps of 42 installed cars now glow from the front, by day too (M3 E30's dipped outer
+  lamps, Fiesta Rally2's units; day Gabiria M3 and golden Luceram Fiesta fly-bys 1.9 and 1.6 % RMSE, night front
+  views a white glare). Tail and brake ones glow in the records'
   red (`LAMP_RED`), not their texture's: the GC8's brake parts are white reflectors, the M3 E30's and 911 SC's lit
   textures light the indicator. 43 installed cars had dark tail lamps (night Sardian M3 chase); the GC8 brakes red
   (rain Sipirkakim chase 0.6 % RMSE), other reference shots byte-identical. A lit part the game always draws stays

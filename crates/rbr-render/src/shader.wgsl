@@ -1053,7 +1053,7 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         colour = colour + cabin_sheen(v, n, view);
     }
     colour = colour + glint;
-    // A lit lamp's part (`stage::Shade::glow`) glows (ours), a rear lamp's taken by its name in the lamp's red.
+    // A lit lamp's part (`stage::Shade::glow`) glows (ours), a tail or brake lamp's taken by name in the lamp's red.
     if (lit_class() == 3u) {
         colour = max(colour, first.rgb * LAMP_GLOW * select(vec3<f32>(1.0), LAMP_RED, mode.glow.w != 0.0));
     }
