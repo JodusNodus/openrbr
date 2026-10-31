@@ -182,3 +182,8 @@ pub fn chain(pure: &pure::Pure) -> String {
 pub fn on_big_stack<T: Send>(f: impl FnOnce() -> T + Send) -> std::thread::Result<T> {
     std::thread::scope(|s| std::thread::Builder::new().stack_size(1 << 28).spawn_scoped(s, f).expect("spawn").join())
 }
+
+/// `f` on the big stack, with a panic outside a step as its report: `{what} panicked outside a step`.
+pub fn run_guarded<T: Send>(what: &str, f: impl FnOnce() -> Result<T, String> + Send) -> Result<T, String> {
+    on_big_stack(f).unwrap_or_else(|e| Err(format!("{what} panicked outside a step: {}", why(&*e))))
+}

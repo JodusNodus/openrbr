@@ -30,7 +30,7 @@ use rbr_recording::{Frame, CONTROL_BYTES};
 
 use crate::args::Args;
 use crate::boot;
-use crate::physics::{boot_playback, chain, load_substeps, on_big_stack, sample, why, Pure, DT};
+use crate::physics::{boot_playback, chain, load_substeps, run_guarded, sample, why, Pure, DT};
 use crate::stage::StageData;
 use crate::twin::{self, Twin};
 
@@ -588,7 +588,7 @@ pub fn run_all(args: &Args, data: &Data, stage: &StageData, race: Option<&boot::
             Some(race) => Source::Boot(data, &args.stage, race, args.dump_image.as_deref()),
             None => Source::Snapshot(path),
         };
-        let r = on_big_stack(|| {
+        let r = run_guarded("the run", || {
             let extra = match &args.extra_payloads {
                 Some(path) => trace::read_extra(path)?,
                 None => Default::default(),
@@ -612,8 +612,7 @@ pub fn run_all(args: &Args, data: &Data, stage: &StageData, race: Option<&boot::
                 args.twin,
                 hooks,
             )
-        })
-        .unwrap_or_else(|e| Err(format!("the run panicked outside a step: {}", why(&*e))));
+        });
         match r {
             Ok(r) => ok &= report(path, &r, args, &mask, stage),
             Err(e) => {
