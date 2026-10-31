@@ -66,7 +66,7 @@ pub struct Vertex {
     pub bounce: [u32; 2],
     /// How much of the wet film the ground takes in wet and damp weather (ours, [`crate::puddles::mark_roads`]): by the
     /// collision surface under it, tarmac 1, gravel and dirt 0.5; 0 elsewhere. [`SNOW_MARK`](crate::puddles::SNOW_MARK) on snow
-    /// that takes no film. Dry too with the road scans, which take the loose and the paved roads and the snow by it ([`Stage::mark_dry_roads`](super::Stage::mark_dry_roads)).
+    /// that takes no film. Dry too with the road scans, which take the loose and the paved roads and the snow by it ([`Stage::mark_surfaces`](super::Stage::mark_surfaces)).
     pub wet: f32,
     /// How far the wet road's edge is from the vertex, metres, up to 8 (ours, [`crate::puddles::mark_roads`]); 0
     /// elsewhere; [`GROUND_MARK`](crate::puddles::GROUND_MARK) on the off-road ground with the ground scan

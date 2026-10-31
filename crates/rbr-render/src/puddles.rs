@@ -109,7 +109,7 @@ fn segment_distance(p: [f32; 3], a: [f32; 3], b: [f32; 3]) -> f32 {
 
 /// A ground triangle: its mesh, its vertex indices, its draw's first texture, its centre's height and the collision hit
 /// under its centre.
-struct GroundTriangle {
+pub(crate) struct GroundTriangle {
     m: usize,
     t: [usize; 3],
     texture: Option<TextureRef>,
@@ -119,7 +119,7 @@ struct GroundTriangle {
 
 /// The ground triangles of `meshes`, in order. The hits go over the machine's threads: a large stage has millions of
 /// triangles, each a lookup in the collision grid.
-fn ground_triangles(meshes: &[Mesh], collision: &Ground) -> Vec<GroundTriangle> {
+pub(crate) fn ground_triangles(meshes: &[Mesh], collision: &Ground) -> Vec<GroundTriangle> {
     let mut found = Vec::new();
     for (m, mesh) in meshes.iter().enumerate() {
         for draw in mesh.draws.iter().filter(|draw| ground(mesh, draw)) {
@@ -142,18 +142,18 @@ fn ground_triangles(meshes: &[Mesh], collision: &Ground) -> Vec<GroundTriangle> 
 }
 
 /// The ground vertices of `meshes` with their share of the wet film ([`film_by_name`], [`Vertex::wet`]): the most of
-/// their triangles', each by the collision surface under its centre. A road's edge vertices lie on the verge's
+/// their triangles' (`ground`, [`ground_triangles`]), each by the collision surface under its centre. A road's edge vertices lie on the verge's
 /// surface as often as on the road's; by the vertex, a road two triangles wide was half wet across. Then the road's
 /// edge: an edge of a film triangle that a ground triangle without film shares (by position, over all meshes), and
 /// each film vertex's distance to the nearest ([`Vertex::edge`]).
-pub(crate) fn mark_roads(meshes: &mut [Mesh], collision: &Ground) {
+pub(crate) fn mark_roads(meshes: &mut [Mesh], ground: &[GroundTriangle]) {
     // Each ground triangle with its texture and the share of the surface under it, and per texture how many film
     // triangles take each share: a stage may tag stretches of its tarmac as gravel (RSF Bois de Bie, 46000 of its 185000
     // road triangles), so a film triangle takes the share most of its texture's film triangles have.
-    let mut triangles = Vec::new();
+    let mut shares = Vec::new();
     let mut snowy = Vec::new();
     let mut votes: HashMap<Option<TextureRef>, HashMap<u32, u32>> = HashMap::new();
-    for GroundTriangle { m, t, texture, hit, .. } in ground_triangles(meshes, collision) {
+    for &GroundTriangle { m, t, texture, hit, .. } in ground {
         let surface = hit.map_or(0, |hit| hit.surface);
         let share = FILM.get(surface as usize).copied().unwrap_or(0.0);
         if share > 0.0 {
@@ -162,7 +162,7 @@ pub(crate) fn mark_roads(meshes: &mut [Mesh], collision: &Ground) {
         if SNOW.get(surface as usize).copied().unwrap_or(false) {
             snowy.push((m, t));
         }
-        triangles.push((m, t, texture, share));
+        shares.push((m, t, texture, share));
     }
     let most: HashMap<_, f32> = votes
         .into_iter()
@@ -173,7 +173,7 @@ pub(crate) fn mark_roads(meshes: &mut [Mesh], collision: &Ground) {
         .collect();
     // Per edge, the count of film triangles and of the others.
     let mut edges: HashMap<(Spot, Spot), [u32; 2]> = HashMap::new();
-    for (m, t, texture, share) in triangles {
+    for (m, t, texture, share) in shares {
         let share = if share > 0.0 { most.get(&texture).copied().unwrap_or(share) } else { share };
         let mesh = &mut meshes[m];
         for k in 0..3 {
@@ -226,12 +226,12 @@ pub(crate) fn mark_roads(meshes: &mut [Mesh], collision: &Ground) {
 const GROUND_REACH: f32 = 0.6;
 
 /// Marks the vertices of the off-road ground of `meshes` ([`Vertex::edge`] [`GROUND_MARK`]): the ground draws' triangles
-/// lying on a collision surface that is neither the road's (taking the film) nor snow, and whose vertices [`mark_roads`]
+/// (`ground`, [`ground_triangles`]) lying on a collision surface that is neither the road's (taking the film) nor snow, and whose vertices [`mark_roads`]
 /// left unmarked. Run after it (the ground scan, `Enhance::ground`). Returns whether the stage is a snow stage.
-pub(crate) fn mark_ground(meshes: &mut [Mesh], collision: &Ground) -> bool {
+pub(crate) fn mark_ground(meshes: &mut [Mesh], ground: &[GroundTriangle]) -> bool {
     let (mut snow_triangles, mut triangles) = (0, 0);
     let mut marked = Vec::new();
-    for GroundTriangle { m, t, y, hit, .. } in ground_triangles(meshes, collision) {
+    for &GroundTriangle { m, t, y, hit, .. } in ground {
         let Some(hit) = hit else { continue };
         let surface = hit.surface as usize;
         let snow = SNOW.get(surface).copied().unwrap_or(false);

@@ -507,7 +507,7 @@ pub fn load(maps: &Path, name: &str, selection: Selection) -> Result<Stage, Erro
     // stage, with no depth test, so everything drawn later covers them (`global_clouds`).
     let sky = selection.sky.and_then(|sky| sky.section(name));
     // Ours: in the wet and the damp the roads take the film by their surface ([`mark_roads`]); dry, only the road scans
-    // need them ([`Stage::mark_dry_roads`]).
+    // need them ([`Stage::mark_surfaces`]).
     if selection.weather != Weather::Dry {
         mark_roads(&mut meshes, maps, name, selection);
     }
@@ -532,40 +532,44 @@ pub fn load(maps: &Path, name: &str, selection: Selection) -> Result<Stage, Erro
     })
 }
 
-/// The points of `name`'s driveline (`.trk`, physics axes) in stage space; none when it does not load.
-/// Marks the roads of `meshes` by the collision surface under them (`puddles::mark_roads`, [`Vertex::wet`]), from the dry
-/// entry where the `.mat` has none for the weather (460M): only the kind of surface counts.
-fn mark_roads(meshes: &mut [Mesh], maps: &Path, name: &str, selection: Selection) {
+/// Stage `name`'s collision ground for marking its surfaces, from the dry entry where the `.mat` has none for the
+/// weather (460M): only the kind of surface counts.
+fn collision(maps: &Path, name: &str, selection: Selection) -> Option<crate::particles::ground::Ground> {
     let ground = |weather| crate::particles::load_ground(maps, name, Selection { weather, ..selection });
-    let collision = ground(selection.weather).filter(|g| g.has_surfaces()).or_else(|| ground(Weather::Dry));
-    if let Some(collision) = collision {
-        crate::puddles::mark_roads(meshes, &collision);
+    ground(selection.weather).filter(|g| g.has_surfaces()).or_else(|| ground(Weather::Dry))
+}
+
+/// Marks the roads of `meshes` by the collision surface under them (`puddles::mark_roads`, [`Vertex::wet`]).
+fn mark_roads(meshes: &mut [Mesh], maps: &Path, name: &str, selection: Selection) {
+    if let Some(collision) = collision(maps, name, selection) {
+        let triangles = crate::puddles::ground_triangles(meshes, &collision);
+        crate::puddles::mark_roads(meshes, &triangles);
     }
 }
 
 impl Stage {
-    /// Marks the roads in dry weather too, for the road scans (`Enhance::gravel`, `asphalt`, `snow`), which take the
-    /// loose and the paved ones and the snow by [`Vertex::wet`]; in the wet and the damp [`load`] has. Kept out of the dry load without it: about a second more
-    /// on the larger stages (621).
-    pub fn mark_dry_roads(&mut self, maps: &Path) {
-        if self.selection.weather == Weather::Dry {
-            mark_roads(&mut self.meshes, maps, &self.name, self.selection);
+    /// Marks the roads in dry weather too when `roads`, for the road scans (`Enhance::gravel`, `asphalt`, `snow`), which
+    /// take the loose and the paved ones and the snow by [`Vertex::wet`] (in the wet and the damp [`load`] has; kept out
+    /// of the dry load without them: about a second more on the larger stages, 621); then the off-road ground when
+    /// `ground`, for the ground scan (`Enhance::ground`, [`crate::puddles::mark_ground`]). One load of the collision
+    /// ground and one lookup of the surface under each ground triangle for both: each its own took 0.6 s more on 580.
+    pub fn mark_surfaces(&mut self, maps: &Path, roads: bool, ground: bool) {
+        let roads = roads && self.selection.weather == Weather::Dry;
+        if !(roads || ground) {
+            return;
+        }
+        let Some(collision) = collision(maps, &self.name, self.selection) else { return };
+        let triangles = crate::puddles::ground_triangles(&self.meshes, &collision);
+        if roads {
+            crate::puddles::mark_roads(&mut self.meshes, &triangles);
+        }
+        if ground {
+            self.snow_ground = crate::puddles::mark_ground(&mut self.meshes, &triangles);
         }
     }
 }
 
-impl Stage {
-    /// Marks the off-road ground for the ground scan (`Enhance::ground`, [`crate::puddles::mark_ground`]), after the
-    /// roads are marked.
-    pub fn mark_ground(&mut self, maps: &Path) {
-        let ground = |weather| crate::particles::load_ground(maps, &self.name, Selection { weather, ..self.selection });
-        let collision = ground(self.selection.weather).filter(|g| g.has_surfaces()).or_else(|| ground(Weather::Dry));
-        if let Some(collision) = collision {
-            self.snow_ground = crate::puddles::mark_ground(&mut self.meshes, &collision);
-        }
-    }
-}
-
+/// The points of `name`'s driveline (`.trk`, physics axes) in stage space; none when it does not load.
 fn driveline(maps: &Path, name: &str) -> Vec<Vec3> {
     let Some(trk) = std::fs::read(stage_files::file_in(maps, name, "trk")).ok().and_then(|b| trk::parse(&b).ok())
     else {

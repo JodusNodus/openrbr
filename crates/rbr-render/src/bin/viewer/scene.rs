@@ -200,12 +200,9 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
             progress(Step::Stage);
             let mut stage = stage::load(&maps, name, args.selection).map_err(|e| e.to_string())?;
             let grass = args.enhance.grass && args.enhance.lighting;
-            if args.enhance.gravel || args.enhance.asphalt || args.enhance.snow || args.enhance.ground || grass {
-                stage.mark_dry_roads(&maps);
-            }
-            if args.enhance.ground || grass {
-                stage.mark_ground(&maps);
-            }
+            let ground = args.enhance.ground || grass;
+            let roads = args.enhance.gravel || args.enhance.asphalt || args.enhance.snow || ground;
+            stage.mark_surfaces(&maps, roads, ground);
             stage.atmosphere.fog = args.fog;
             stage.atmosphere.clouds = args.clouds;
             // The rain or snow, decided once: `--precipitation`, else with `--enhance particles` ours by the road's
