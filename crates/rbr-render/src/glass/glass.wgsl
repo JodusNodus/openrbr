@@ -214,10 +214,13 @@ const DETAIL: vec2<f32> = vec2<f32>(1.5, 5.0);
 // `centre` its middle on the screen (0 to 1). Linear colour.
 const LENS_MAG: f32 = 3.0;
 const DROP_RIM: f32 = 0.55;
+// How much of itself a lens lays over what is already drawn behind it (the glass's own haze included) at its middle:
+// clear water, it lets the rest show through; at its rim, where it bends the view hardest, all of it.
+const LENS_BODY: f32 = 0.55;
 
 // `weight` is how much of a lens a thing of water is: 1 a drop, less a thin ribbon (more of the view straight behind
-// it, a fainter outline).
-fn lens(q: vec2<f32>, o: vec2<f32>, look: vec2<f32>, size: f32, centre: vec2<f32>, mag: f32, spec: f32, weight: f32) -> vec3<f32> {
+// it, a fainter outline). Premultiplied light over what lies behind it.
+fn lens(q: vec2<f32>, o: vec2<f32>, look: vec2<f32>, size: f32, centre: vec2<f32>, mag: f32, spec: f32, weight: f32) -> vec4<f32> {
     let r = min(length(q), 1.0);
     let bend = mag * (1.0 + 0.6 * r * r);
     let uv = clamp(centre - look * bend * frame.screen.zw, vec2<f32>(0.0), vec2<f32>(1.0));
@@ -231,33 +234,37 @@ fn lens(q: vec2<f32>, o: vec2<f32>, look: vec2<f32>, size: f32, centre: vec2<f32
             + textureSampleLevel(scene, scene_sampler, clamp(uv + vec2<f32>(spread.x, -spread.y), vec2<f32>(0.0), vec2<f32>(1.0)), 0.0).rgb
             + textureSampleLevel(scene, scene_sampler, clamp(uv + vec2<f32>(-spread.x, -spread.y), vec2<f32>(0.0), vec2<f32>(1.0)), 0.0).rgb);
     }
-    // Mostly clear water: the view straight behind it still shows through.
-    let direct = textureSampleLevel(scene, scene_sampler, clamp(centre + o * frame.screen.zw, vec2<f32>(0.0), vec2<f32>(1.0)), 0.0).rgb;
-    through = mix(direct, through, 0.4 * weight);
     // A drop of a pixel or two shows no outline or highlight (`DETAIL`).
     let detail = smoothstep(DETAIL.x * 0.5, DETAIL.y, size);
     // The rim bends the view out of the eye: a thin dark outline, darker on the lower side, where the light from above
     // is bent away.
     let rim = smoothstep(0.62, 1.0, r);
-    let dark = min(mix(0.2, DROP_RIM, detail) * weight * rim * (1.0 + 0.35 * clamp(-q.y, -1.0, 1.0)), 0.7);
-    var colour = through * (1.0 - dark);
+    let dark = min(mix(0.0, DROP_RIM, smoothstep(1.0, 3.0, size)) * weight * rim * (1.0 + 0.35 * clamp(-q.y, -1.0, 1.0)), 0.7);
+    // Lit from above and to the left: a lens is lighter on that side, darker on the other.
+    let lit = 1.0 + 0.3 * dot(q, vec2<f32>(-0.55, 0.83)) * smoothstep(0.8, 2.0, size) * weight;
+    var colour = through * (1.0 - dark) * lit;
     let nz = sqrt(max(1.0 - r * r, 0.0));
     let n = normalize(vec3<f32>(q, nz * 1.3 + 0.05));
     let h = normalize(vec3<f32>(-0.4, 0.6, 1.0));
-    colour += linear(frame.light.rgb) * pow(max(dot(n, h), 0.0), 100.0) * spec * smoothstep(0.7, 2.5, size);
+    var glint = linear(frame.light.rgb) * pow(max(dot(n, h), 0.0), 100.0) * spec * smoothstep(0.7, 2.5, size);
     if (frame.night.w != 0.0) {
         // At night the rim also catches the lamps the lens sees, and a little of the headlights' glow.
-        colour += (through * 0.9 + linear(frame.night.rgb) * 0.15) * rim * detail * weight;
+        glint += (through * 0.9 + linear(frame.night.rgb) * 0.15) * rim * detail * weight;
     }
-    return colour;
+    let alpha = mix(LENS_BODY, 1.0, rim) * mix(0.5, 1.0, weight) * mix(0.75, 1.0, detail);
+    return vec4<f32>(colour * alpha + glint, alpha);
 }
 
-// The beads (ours): the small drops the film holds, too many to be drops of their own. Each film cell is `BEADS`
-// squares a side, each with a bead at a hashed place when a hash is under the film's thickness (`BEAD_FILL` of it), of
-// a hashed size up to `BEAD_SIZE` of the square; drawn as small lenses, like the drops.
-const BEADS: f32 = 5.0;
-const BEAD_SIZE: vec2<f32> = vec2<f32>(0.18, 0.48);
-const BEAD_FILL: f32 = 0.7;
+// The beads (ours): the small drops the film holds, too many to be drops of their own. Each film cell is `squares` a side
+// in two layers, a fine one and a coarser one over it, each square with a bead at a hashed place when a hash is under
+// the layer's share of the film's thickness, of a hashed size from the layer's range (a share of the square); drawn as
+// small lenses, like the drops.
+const BEADS_FINE: f32 = 3.0;
+const BEADS_COARSE: f32 = 2.0;
+const BEAD_SIZE_FINE: vec2<f32> = vec2<f32>(0.18, 0.45);
+const BEAD_SIZE_COARSE: vec2<f32> = vec2<f32>(0.2, 0.42);
+const BEAD_FILL_FINE: f32 = 0.7;
+const BEAD_FILL_COARSE: f32 = 0.45;
 
 // Four numbers in [0, 1) from `n` (PCG steps).
 fn hash4(n: u32) -> vec4<f32> {
@@ -267,30 +274,36 @@ fn hash4(n: u32) -> vec4<f32> {
     return vec4<f32>(v >> vec4<u32>(8u)) / 16777216.0;
 }
 
-// The bead over this pixel of a film cell, premultiplied; `per_pixel` the cell's local units per pixel (x and y).
-fn beads(in: Out, film: f32, per_pixel: mat2x2<f32>) -> vec4<f32> {
-    let grid = (in.local * 0.5 + 0.5) * BEADS;
+// The bead of one layer over this pixel of a film cell, premultiplied; `per_pixel` the cell's local units per pixel (x and
+// y).
+fn bead_layer(in: Out, film: f32, per_pixel: mat2x2<f32>, squares: f32, sizes: vec2<f32>, fill: f32, salt: u32) -> vec4<f32> {
+    let grid = (in.local * 0.5 + 0.5) * squares;
     let square = floor(grid);
     let pane = select(0u, 1u, in.seed < 0.0);
-    let h = hash4(((u32(in.alpha) * 2u + pane) * 64u + u32(square.y) * 8u + u32(square.x)));
-    if (h.x >= sqrt(film) * BEAD_FILL) {
+    let h = hash4(((u32(in.alpha) * 2u + pane) * 64u + u32(square.y) * 8u + u32(square.x)) * 3u + salt);
+    if (h.x >= sqrt(film) * fill) {
         return vec4<f32>(0.0);
     }
-    let radius = mix(BEAD_SIZE.x, BEAD_SIZE.y, h.y * h.y);
+    let radius = mix(sizes.x, sizes.y, h.y * h.y);
     let centre = square + radius + (1.0 - 2.0 * radius) * h.zw;
     // The pixel's offset from the bead's centre, in pixels (the inverse of the local units per pixel).
     let to_pixels = inverse2(per_pixel);
-    let local = (grid - centre) * (2.0 / BEADS);
+    let local = (grid - centre) * (2.0 / squares);
     let offset = to_pixels * local;
-    let size = length(to_pixels * vec2<f32>(radius * 2.0 / BEADS, 0.0));
+    let size = length(to_pixels * vec2<f32>(radius * 2.0 / squares, 0.0));
     let r = length(grid - centre) / radius;
     let cover = 1.0 - smoothstep(1.0 - 0.7 / max(size, 0.7), 1.0, r);
     if (cover <= 0.0) {
         return vec4<f32>(0.0);
     }
     let q = vec2<f32>(offset.x, -offset.y) / max(size, 1e-3);
-    let colour = lens(q, offset, offset, size, (in.position.xy - offset) * frame.screen.zw, LENS_MAG, 0.5, 0.8);
-    return vec4<f32>(colour * cover, cover);
+    return lens(q, offset, offset, size, (in.position.xy - offset) * frame.screen.zw, LENS_MAG, 0.5, 0.8) * cover;
+}
+
+fn beads(in: Out, film: f32, per_pixel: mat2x2<f32>) -> vec4<f32> {
+    let fine = bead_layer(in, film, per_pixel, BEADS_FINE, BEAD_SIZE_FINE, BEAD_FILL_FINE, 0u);
+    let coarse = bead_layer(in, film, per_pixel, BEADS_COARSE, BEAD_SIZE_COARSE, BEAD_FILL_COARSE, 1u);
+    return vec4<f32>(coarse.rgb + fine.rgb * (1.0 - coarse.a), coarse.a + fine.a * (1.0 - coarse.a));
 }
 
 // A cell of wet film (kind 4): the frame behind it seen through a wavy sheet of water, as thick as its corners' film
@@ -343,9 +356,8 @@ fn ribbon(in: Out) -> vec4<f32> {
     }
     let size = max(length(in.pixels.xy), 0.5);
     let o = in.pixels.xy * q.x + in.pixels.zw * q.y * (half_width / max(in.metres.y, 1e-6));
-    let colour = lens(q, o, o, size, (in.position.xy - o) * frame.screen.zw, LENS_MAG * 0.4, 0.0, 0.3);
-    let alpha = (1.0 - smoothstep(1.0 - 0.8 / size, 1.0, r)) * in.alpha;
-    return vec4<f32>(colour * alpha, alpha);
+    return lens(q, o, o, size, (in.position.xy - o) * frame.screen.zw, LENS_MAG * 0.4, 0.0, 0.3)
+        * ((1.0 - smoothstep(1.0 - 0.8 / size, 1.0, r)) * in.alpha);
 }
 
 fn inverse2(m: mat2x2<f32>) -> mat2x2<f32> {
@@ -380,9 +392,8 @@ fn fs_main(in: Out) -> @location(0) vec4<f32> {
         let run = max(length(in.pixels.zw) / size, 1.0);
         let o = in.pixels.xy * q.x + in.pixels.zw * q.y;
         let look = in.pixels.xy * q.x + in.pixels.zw * (q.y / run);
-        let colour = lens(q, o, look, size, in.centre.xy, LENS_MAG, 0.6, 1.0);
-        let alpha = (1.0 - smoothstep(1.0 - 0.8 / size, 1.0, rr)) * in.alpha;
-        return vec4<f32>(colour * alpha, alpha);
+        return lens(q, o, look, size, in.centre.xy, LENS_MAG, 0.6, 1.0)
+            * ((1.0 - smoothstep(1.0 - 0.8 / size, 1.0, rr)) * in.alpha);
     }
     let edge = ragged(in.local, in.seed, select(0.35, 0.25, in.kind == 1));
     if (r > edge) {

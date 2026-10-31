@@ -293,7 +293,7 @@ const MOST_RADIUS: f32 = 0.02;
 pub const FILM_CELLS: [usize; 2] = [48, 24];
 const FILM_WETS: f32 = 0.6;
 const FILM_DRIES: f32 = 0.02;
-const FILM_AIRFLOW: f32 = 12.0;
+const FILM_AIRFLOW: f32 = 20.0;
 const FILM_BLOWN: f32 = 0.5;
 /// What a blade leaves of the film it sweeps: a thin smear.
 const FILM_SMEAR: f32 = 0.1;
