@@ -1,13 +1,12 @@
-//! The mounted body's pose update (`CMountedRigidBody::E45_M1980`, 0x521980, `src/rbr/RBR_E45_MountedA.cpp`) over the
-//! physics core's store: the base's dirty call and flag from the enable state, the owner's pose composition on the car's
-//! block, the two vector copies from the car's pose, and 16 bytes of the body's own vector copied to +0x2a0.
+//! The mounted body's pose update over the physics core's store: the base's dirty call and flag from the enable
+//! state, the owner's pose composition on the car's block, the two vector copies from the car's pose, and the body's
+//! own vector copied to its target.
 
 use super::layout::mounted_pose::PoseHost;
 use super::store::CoreStore;
 
-/// `CMountedRigidBody::E45_M1980` (0x521980) on the body at `body`. The enable state is read through the body's
-/// state pointer (+0x580) first. The original's null case for the last copy's source (the body at -0xf0) is not a body,
-/// so the source is always the body's +0x100.
+/// The mounted body's pose update on the body at `body`. The enable state is read through the body's
+/// state first.
 pub fn pose_update<S: CoreStore>(store: &mut S, host: &mut impl PoseHost<S>, body: u32) {
     let state = store.mounted_enable(body);
     let base = store.mounted_base(body);

@@ -1,5 +1,5 @@
-//! `CPhysics::StepForward` (0x5273a0) and `Work5500` (0x525500), over the physics core's store. The stack words its call
-//! sites leave (`StepStack`) and the calls into the original are in `layout`.
+//! The physics step, over the physics core's store. The stack image its call sites leave (`StepStack`) and the
+//! calls into the host are in `layout`.
 
 use crate::physics_core::layout::contact_walk::NodeHost;
 use crate::physics_core::layout::physics_object::StepHost;
@@ -7,7 +7,7 @@ use crate::physics_core::layout::{StepStack, SLOT_20, SLOT_24, SLOT_48, SLOT_54,
 use crate::physics_core::pacing;
 use crate::physics_core::store::CoreStore;
 
-/// The collision window in steps: NGP's 20 (`1014fbdc`, the operand at `0x527447`), where 1.02 reads 4 (`0x72d150`).
+/// The collision window in steps: NGP's 20, where 1.02 reads 4.
 const MAX_WINDOW: f32 = 20.0;
 
 /// Calls `each` on every node of the list the owner (`this`'s state) holds at its head, linked through the nodes. The
@@ -22,9 +22,8 @@ fn for_each_node<S: CoreStore>(store: &mut S, this: u32, mut each: impl FnMut(&m
     }
 }
 
-/// `Work5500` (0x525500, thiscall, one stack word `p`): three passes over the owner's list, the slot 0x5c of each node,
-/// then the slot 0x64 of each, then the slots 0x6c and 0x58 of each with `p`. The trailing walk of the original reads the
-/// list and writes nothing, so it is not here.
+/// The body pass: three walks over the owner's list, force input on each node, then force to acceleration, then the
+/// integrate and child walk of each with `p`. The trailing walk reads the list and writes nothing, so it is not here.
 pub fn step_bodies<S: CoreStore>(store: &mut S, host: &mut impl NodeHost<S>, this: u32, p: f32) {
     for_each_node(store, this, |store, node| host.force_input(store, node));
     for_each_node(store, this, |store, node| host.force_to_accel(store, node));
@@ -44,9 +43,9 @@ fn walk_slot<S: CoreStore>(store: &S, head: u32, slot: u32, mut each: impl FnMut
     }
 }
 
-/// `CPhysics::StepForward(p1)` (0x5273a0): first-step setup, the physics workers and solver in original order, and the
-/// per-substep clock. Ported callees are direct Rust calls; unresolved entity slots, listeners, collision work and the
-/// solver chain use `StepHost` at the retail call depths. `stack` is the original function's entry ESP.
+/// The physics step: first-step setup, the physics workers and solver in step order, and the
+/// per-substep clock. Ported callees are direct Rust calls; entity callbacks, listeners, collision work and the
+/// solver chain use `StepHost`. `stack` is the caller's stack image.
 pub fn step_forward<S: CoreStore>(
     store: &mut S,
     host: &mut impl StepHost<S>,

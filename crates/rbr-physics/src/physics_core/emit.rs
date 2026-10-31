@@ -1,14 +1,14 @@
-//! Signal dispatch in the physics core (`RBR_E46_Conn.cpp`): `CMultiSignal1<const CSigLocalTime&>::Emit` (0x526580), over
-//! the physics core's store. The connections' `Invoke` and the two `E01Log` messages are the caller's (`SignalHost`).
+//! Signal dispatch in the physics core, over the physics core's store. The connections' invoke and the two log
+//! messages are the caller's (`SignalHost`).
 
 use super::layout::signal_emit::{OwnerHost, SignalHost};
 use super::layout::{signal_overflow, signal_slot};
 use super::signal::SLOT_COUNT;
 use super::store::CoreStore;
 
-/// `CMultiSignal1<const CSigLocalTime&>::Emit` (0x526580) on the signal at `signal`: `sig` goes to each connection of
-/// the overflow list, then of the slot the count selects. A null count pointer returns silently. A set guard logs and
-/// returns. An out-of-range count logs and returns with the guard still set; the original traps there (`traps`).
+/// Emits `sig` on the signal at `signal`: `sig` goes to each connection of the overflow list, then of the slot the
+/// count selects. A null count pointer returns silently. A set guard logs and returns. An out-of-range count logs and
+/// returns with the guard still set.
 pub fn emit<S: CoreStore>(store: &mut S, host: &mut impl SignalHost<S>, signal: u32, sig: u32) {
     let count_at = store.signal_count_at(signal);
     if count_at == 0 {
@@ -38,8 +38,8 @@ pub fn emit<S: CoreStore>(store: &mut S, host: &mut impl SignalHost<S>, signal: 
     store.set_signal_guard(signal, 0);
 }
 
-/// `E46FuncConn::NotifyPad` (0x527b40) and `NotifyExitGame` (0x527b90), which are the same code: the connection at `conn`
-/// calls its owner (+0x10) with the signal.
+/// The pad/exit notify on the connection at `conn`: the connection calls its owner with the signal. Both notifies
+/// are the same code.
 pub fn notify_owner<S: CoreStore>(store: &mut S, host: &mut impl OwnerHost<S>, conn: u32, sig: u32) {
     let owner = store.conn_owner(conn);
     host.call_owner(store, owner, sig);
