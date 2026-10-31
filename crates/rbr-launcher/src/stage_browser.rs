@@ -646,6 +646,10 @@ impl StageBrowser {
                 action = Some(Action::Choose(row.index));
             }
         });
+        if let Some(problem) = &row.problem {
+            ui.add_space(6.0);
+            ui.label(RichText::new(format!("Cannot start: {problem}")).color(crate::pages::WARN));
+        }
         action
     }
 }
