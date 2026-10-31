@@ -12,36 +12,15 @@
 //! Runs only when `RBR_RECORDINGS` names the recordings directory; skipped otherwise.
 
 use rbr_gameplay::stage::{Stage, State};
-use rbr_recording::peek::{PeekFile, Probe, Record, Value};
+use rbr_recording::peek::{PeekFile, Probe, Record};
 use rbr_recording::{Frame, Frames};
 use std::fmt::Debug;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+
+mod common;
+use common::{peeked_f32, peeked_u32, read};
 
 const DRIVE: &str = "g7-tanner-corolla";
-
-fn read(path: &Path) -> Vec<u8> {
-    std::fs::read(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
-}
-
-/// The peek's value of the named probe in `record`.
-fn peeked(record: &Record, probes: &[Probe], name: &str) -> Value {
-    let index = probes.iter().position(|probe| probe.name == name).unwrap_or_else(|| panic!("no probe {name}"));
-    record.value(index).expect("record holds every probe")
-}
-
-fn peeked_u32(record: &Record, probes: &[Probe], name: &str) -> u32 {
-    match peeked(record, probes, name) {
-        Value::U32(v) => v,
-        other => panic!("{name}: {other:?}, expected u32"),
-    }
-}
-
-fn peeked_f32(record: &Record, probes: &[Probe], name: &str) -> f32 {
-    match peeked(record, probes, name) {
-        Value::F32(v) => v,
-        other => panic!("{name}: {other:?}, expected f32"),
-    }
-}
 
 /// The step, the field and both values of the first difference.
 fn expect_eq<T: PartialEq + Debug>(step: u32, field: &str, ours: T, theirs: T) {

@@ -7,7 +7,7 @@
 
 mod common;
 
-use common::{check_windows, load, map_windows, Call, Inner};
+use common::{check_windows, load, map_windows, After, Call, Inner, Window};
 use rbr_physics::entities::hinge_solve::{self, ContactHandles, Outcome, SolveCalls};
 use rbr_physics::entities::store::HingeStore;
 use rbr_physics::mem::Mem;
@@ -42,10 +42,10 @@ impl<'a> Answers<'a> {
         assert_eq!(call.addr, addr, "call {}: callee", self.next);
         assert_eq!(call.args, args, "call {} ({addr:#x}): arguments", self.next);
         self.next += 1;
-        for (_, at, _, _, post) in &call.windows {
+        for Window { index: _, at, len: _, before: _, after: post } in &call.windows {
             self.mem.map(*at, post);
         }
-        for (at, _, bytes) in &call.after {
+        for After { at, len: _, bytes } in &call.after {
             self.mem.map(*at, bytes);
         }
         call
@@ -119,8 +119,9 @@ fn hinge_solve_matches_original_calls() {
         unowned += usize::from(matches!(outcome, Outcome::Unowned { .. }));
         if let Outcome::Solved(value) = outcome {
             // a NaN keeps the record's bits: the sign of a default NaN is the platform's (rbr-recomp notes/rust-physics.md, section 8)
-            let recorded =
-                f32::from_le_bytes(call.windows[0].4[HINGE_OUT as usize..HINGE_OUT as usize + 4].try_into().unwrap());
+            let recorded = f32::from_le_bytes(
+                call.windows[0].after[HINGE_OUT as usize..HINGE_OUT as usize + 4].try_into().unwrap(),
+            );
             assert_eq!(value.is_nan(), recorded.is_nan(), "call {}: NaN", call.index);
             answers.mem.set_f32(this + HINGE_OUT, if value.is_nan() { recorded } else { value });
         }

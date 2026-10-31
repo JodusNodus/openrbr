@@ -1,47 +1,9 @@
 //! E33 collision event creation around the E37 event builder.
 
+use crate::math::sse;
 use crate::mem::Mem;
 
 use super::{BODY_GRID, GRID_TAG};
-
-#[inline(always)]
-fn mulss(lhs: f32, rhs: f32) -> f32 {
-    let left = lhs.to_bits();
-    let right = rhs.to_bits();
-    if is_sse_nan(right) {
-        return f32::from_bits(right | 0x0040_0000);
-    }
-    if is_sse_nan(left) {
-        return f32::from_bits(left | 0x0040_0000);
-    }
-    if (left & 0x7fff_ffff == 0 && right & 0x7fff_ffff == 0x7f80_0000)
-        || (right & 0x7fff_ffff == 0 && left & 0x7fff_ffff == 0x7f80_0000)
-    {
-        return f32::from_bits(0xffc0_0000);
-    }
-    lhs * rhs
-}
-
-#[inline(always)]
-fn addss(lhs: f32, rhs: f32) -> f32 {
-    let left = lhs.to_bits();
-    let right = rhs.to_bits();
-    if is_sse_nan(right) {
-        return f32::from_bits(right | 0x0040_0000);
-    }
-    if is_sse_nan(left) {
-        return f32::from_bits(left | 0x0040_0000);
-    }
-    if left & 0x7fff_ffff == 0x7f80_0000 && right & 0x7fff_ffff == 0x7f80_0000 && (left ^ right) & 0x8000_0000 != 0 {
-        return f32::from_bits(0xffc0_0000);
-    }
-    lhs + rhs
-}
-
-#[inline(always)]
-fn is_sse_nan(bits: u32) -> bool {
-    bits & 0x7f80_0000 == 0x7f80_0000 && bits & 0x007f_ffff != 0
-}
 
 /// The partner slot E37EvOps::Emit4DC0 (0x4f4dc0) passes for the first body: the second slot's id and word (+0xa8,
 /// +0xa4), or the first slot's (+0x8c, +0x90) when the second word is 0. Returns `(id, word)`.
@@ -110,14 +72,14 @@ pub fn plane_scale(mem: &mut Mem, event: u32, vector: u32) -> u32 {
     // Retail inlines CFloat3::LoadBinary with the output vector as its receiver.
     // The reconstructed C++ calls Init70(this+0x70), which would self-copy instead.
     mem.copy(vector, event + 0x70, 16);
-    let first = mulss(mem.f32(event + 0xc8), mem.f32(event + 0x78));
-    let second = mulss(mem.f32(event + 0xc4), mem.f32(event + 0x74));
-    let sum = addss(first, second);
-    let third = mulss(mem.f32(event + 0xc0), mem.f32(event + 0x70));
-    let sum = addss(sum, third);
-    let dot = addss(sum, mem.f32(event + 0x7c));
+    let first = sse::mul(mem.f32(event + 0xc8), mem.f32(event + 0x78));
+    let second = sse::mul(mem.f32(event + 0xc4), mem.f32(event + 0x74));
+    let sum = sse::add(first, second);
+    let third = sse::mul(mem.f32(event + 0xc0), mem.f32(event + 0x70));
+    let sum = sse::add(sum, third);
+    let dot = sse::add(sum, mem.f32(event + 0x7c));
     for lane in 0..4 {
-        let value = mulss(dot, mem.f32(vector + lane * 4));
+        let value = sse::mul(dot, mem.f32(vector + lane * 4));
         mem.set_f32(vector + lane * 4, value);
     }
     vector

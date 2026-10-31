@@ -11,14 +11,16 @@ use crate::math::Mat3;
 /// What the definition gives the pose.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PoseDefinition {
-    /// The hinge point composed with the car (`vecHingePoint_RF` through the car): the position's offset, added last.
+    /// The hinge point composed with the car (the reference-frame hinge point through the car): the position's offset,
+    /// added last.
     pub composed_hinge_point: [f32; 3],
     /// The position takes the frame's columns against these weights: the inverse origin of the body-frame axes build
-    /// (`-(F vecHingePoint_BF)`, see [`super::hinge_axes::inverse`]).
+    /// (the negated body-frame hinge point through the frame, see [`super::hinge_axes::inverse`]).
     pub inverse_origin_bf: [f32; 3],
-    /// The axes built from `vecHingeAxis_RF` and `vecZeroAxis_RF` (row-major; [`super::hinge_axes::axes`]).
+    /// The axes built from the hinge axis and the zero axis in the reference frame (row-major;
+    /// [`super::hinge_axes::axes`]).
     pub axes_rf: Mat3,
-    /// The inverse axes of the body-frame build, from `vecHingeAxis_BF` and `vecZeroAxis_BF` (row-major).
+    /// The inverse axes of the body-frame build, from the hinge axis and the zero axis in the body frame (row-major).
     pub inverse_axes_bf: Mat3,
 }
 
@@ -47,9 +49,9 @@ pub struct PoseState {
 pub struct PoseHandles {
     /// The body's car: the receiver of the transform and the frame carry.
     pub car: u32,
-    /// The definition's hinge point (`vecHingePoint_RF`), which the car transforms.
+    /// The definition's hinge point (in the reference frame), which the car transforms.
     pub hinge_point_rf: u32,
-    /// The definition's hinge axis (`vecHingeAxis_RF`), which is carried from the identity frame into the car's.
+    /// The definition's hinge axis (in the reference frame), which is carried from the identity frame into the car's.
     pub hinge_axis_rf: u32,
     /// The identity frame (the root).
     pub identity: u32,

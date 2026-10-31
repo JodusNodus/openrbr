@@ -40,11 +40,11 @@ pub trait CoreStore: Raw {
     fn set_step_counter(&mut self, state: u32, value: u32);
     /// Marks the state's NTweak base dirty.
     fn mark_state_dirty(&mut self, state: u32);
-    /// The head of the body list (+0x450) and of the second list (+0x480).
+    /// The head of the body list and of the second list.
     fn bodies_head(&self, state: u32) -> u32;
     fn second_head(&self, state: u32) -> u32;
     fn node_next(&self, node: u32) -> u32;
-    /// The function at the node's vtable byte offset.
+    /// The function at the node's virtual slot `offset`.
     fn node_slot(&self, node: u32, offset: u32) -> u32;
     fn elapsed(&self, state: u32) -> f64;
     fn set_elapsed(&mut self, state: u32, value: f64);
@@ -71,32 +71,32 @@ pub trait CoreStore: Raw {
     fn passenger_velocity(&self, passenger: u32) -> Vec4;
     /// The address of the passenger's velocity (the walk's out pointer).
     fn passenger_velocity_at(&self, passenger: u32) -> u32;
-    /// The address of the host vector the pull's call leaves (its +0x90), which the original returns.
+    /// The address of the host vector the pull's call leaves, which it returns.
     fn host_pull_at(&self, host: u32) -> u32;
-    /// The host's two vectors the pull changes (+0x40, +0x90).
+    /// The host's two vectors the pull changes.
     fn host_pull_vectors(&self, host: u32) -> (Vec4, Vec4);
     fn store_host_pull_vectors(&mut self, host: u32, h40: Vec4, h90: Vec4);
 
     // The mounted body.
-    /// The state word of a body's enable flag (the pointer at +0x580 points at it).
+    /// The state word of a body's enable flag.
     fn mounted_enable(&self, body: u32) -> u32;
     fn mounted_car(&self, body: u32) -> u32;
     /// The body's NTweak base, its pose and the copy of its pose.
     fn mounted_base(&self, body: u32) -> u32;
     fn mounted_pose_at(&self, body: u32) -> u32;
     fn mounted_pose_copy_at(&self, body: u32) -> u32;
-    /// The car's block the pose composes on (its +0x10 is passed on; 0 stays 0), and the car's pose.
+    /// The car's block the pose composes on (0 stays 0), and the car's pose.
     fn car_block(&self, car: u32) -> u32;
     fn car_pose(&self, car: u32) -> u32;
     fn mounted_owner(&self, body: u32) -> u32;
     fn set_mounted_dirty(&mut self, body: u32, value: u32);
-    /// Copies the 16 bytes of the body's pose source (+0x100) to its target (+0x2a0), as four words.
+    /// Copies the body's pose source to its target, as four words.
     fn copy_pose_source(&mut self, body: u32);
 
     // Signals: a `CMultiSignal1` and its connections.
-    /// The slot count's address (+4 points at it; zero when there is none).
+    /// The address of the slot count (zero when there is none).
     fn signal_count_at(&self, signal: u32) -> u32;
-    /// The guard word (+0): set while an emission walks its connections.
+    /// The guard word: set while an emission walks its connections.
     fn signal_guard(&self, signal: u32) -> u32;
     fn set_signal_guard(&mut self, signal: u32, value: u32);
     /// The head of a connection list (zero when empty).
@@ -117,21 +117,21 @@ pub trait CoreStore: Raw {
     fn set_mounted_position(&mut self, body: u32, value: Vec4);
     fn mounted_linear(&self, body: u32) -> Vec4;
     fn set_mounted_linear(&mut self, body: u32, value: Vec4);
-    /// The velocity of the mount point, which the pull leaves (+0x230), and its address.
+    /// The velocity of the mount point, which the pull leaves, and its address.
     fn mount_velocity(&self, body: u32) -> Vec4;
     fn set_mount_velocity(&mut self, body: u32, value: Vec4);
     fn mount_velocity_at(&self, body: u32) -> u32;
-    /// The pose of the mount on the car (`car + 0x220`).
+    /// The pose of the mount on the car.
     fn mount_point(&self, car: u32) -> Vec4;
     fn mount_point_at(&self, car: u32) -> u32;
     /// The CDef's origin base address (null only for the sentinel CDef).
     fn origin_base(&self) -> u32;
-    /// Copies the CDef's origin vector (the origin base's +0x10) to `to`.
+    /// Copies the CDef's origin vector to `to`.
     fn copy_origin(&mut self, base: u32, to: u32);
     fn mounted_key(&self, body: u32) -> u32;
     fn mounted_event_sent(&self, body: u32) -> u32;
     fn set_mounted_event_sent(&mut self, body: u32, value: u32);
-    /// Copies the body's rotation (+0x100) or position (+0x140) vector, four words, to `to`.
+    /// Copies the body's rotation or position vector, four words, to `to`.
     fn copy_mounted_rotation(&mut self, body: u32, to: u32);
     fn copy_mounted_position(&mut self, body: u32, to: u32);
     /// The motion terms of the body the point velocity reads.

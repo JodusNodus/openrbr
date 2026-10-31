@@ -11,7 +11,7 @@ pub trait VcuStore: Raw {
     fn speed_map(&self, at: u32, n: usize) -> Vec<SpeedKnot>;
     /// Reads a pedal map of `n` knots at `at`.
     fn pedal_map(&self, at: u32, n: usize) -> Vec<Knot>;
-    /// Reads the setup at `at`. The memory must cover the whole object (0xcac bytes).
+    /// Reads the setup at `at`. The memory must cover the whole object.
     fn def(&self, at: u32) -> Def;
     /// Reads the maps of the setup at `setup`.
     fn knot_maps(&self, setup: u32) -> KnotMaps;
@@ -22,7 +22,7 @@ pub trait VcuStore: Raw {
     fn store_state(&mut self, at: u32, value: &State);
     fn gearbox(&self, at: u32) -> Gearbox;
     fn store_gearbox(&mut self, at: u32, value: &Gearbox);
-    /// Gear count of the drive's own definition (`[drive + 4] + 0x654`), which `CDrive::Set47B0` clamps to.
+    /// Gear count of the drive's own definition, which the gear setter clamps to.
     fn gear_count(&self, drive: u32) -> u32;
     fn reals(&self, drive: u32) -> Reals;
     fn store_reals(&mut self, drive: u32, value: &Reals);

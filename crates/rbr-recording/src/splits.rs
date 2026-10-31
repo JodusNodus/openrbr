@@ -26,6 +26,8 @@
 
 use std::io;
 
+use crate::{invalid, word};
+
 /// The tag.
 pub const SPL1: [u8; 4] = *b"SPL1";
 /// The payload's size without the splits.
@@ -149,19 +151,17 @@ impl Splits {
             put_mark(&mut payload, &standing.record, true);
             put_mark(&mut payload, &standing.personal.clone().unwrap_or_default(), false);
         }
-        let mut out = Vec::with_capacity(8 + length);
-        crate::live::write_record(&mut out, SPL1, &payload);
-        out
+        crate::live::record(SPL1, &payload)
     }
 
     /// Reads the record's payload (the bytes after its tag and length, `crate::live::read_records`).
     pub fn from_payload(payload: &[u8]) -> io::Result<Splits> {
         let length = payload.len();
-        let bad = || io::Error::new(io::ErrorKind::InvalidData, format!("a split record of {length} bytes"));
+        let bad = || invalid(format!("a split record of {length} bytes"));
         if length < HEAD_BYTES {
             return Err(bad());
         }
-        let word = |i: usize| u32::from_le_bytes(payload[4 * i..4 * i + 4].try_into().unwrap());
+        let word = |i: usize| word(payload, i);
         let float = |i: usize| f32::from_bits(word(i));
         let standing_bytes = if word(0) & STANDING != 0 { STANDING_BYTES } else { 0 };
         let body = length - HEAD_BYTES;
@@ -173,7 +173,7 @@ impl Splits {
             return Err(bad());
         }
         if word(1) as usize != count {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "a split record's count and length disagree"));
+            return Err(invalid("a split record's count and length disagree"));
         }
         let splits =
             (0..count).map(|i| Split { time: option(float(6 + 2 * i)), reference: option(float(7 + 2 * i)) }).collect();

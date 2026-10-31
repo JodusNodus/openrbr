@@ -1,7 +1,7 @@
-//! The E38 solver's passes over its events, contact rows and offset rows, generic over the store.
+//! The solver's passes over its events, contact rows and offset rows, generic over the store.
 //!
-//! The model is `contact_solver`; the memory is `CollisionStore`; the calls into the original are `SolverHost` and
-//! `ImpulseHost` (`layout/solver_hosts.rs`).
+//! The arithmetic is `contact_solver`; the memory is `CollisionStore`; the host calls are `SolverHost` and
+//! `ImpulseHost`.
 
 use super::contact_solver::{self, Correction, SolverContact};
 use super::layout::solver_hosts::{ImpulseHost, SolverHost};
@@ -21,8 +21,7 @@ const OFFSET_ROW_LIMIT: u32 = 0x40;
 const BODY_CONTACT_ROWS: u32 = 8;
 const SOLVER_CONTACT_LIMIT: u32 = 0x40;
 
-/// E38_004FB7F0 (0x4fb7f0): unhooks the body of every contact row (+0x274) and empties the rows. eax is the count as
-/// the asm last read it.
+/// Unhooks the body of every contact row and empties the rows. Returns the count.
 pub fn clear_contact_rows<S: CollisionStore>(store: &mut S, solver: u32) -> u32 {
     let mut count = store.solver_contact_count(solver);
     let mut index = 0;
@@ -38,13 +37,13 @@ pub fn clear_contact_rows<S: CollisionStore>(store: &mut S, solver: u32) -> u32 
     count
 }
 
-/// E38_004FBCA0 (0x4fbca0): the solver's event count.
+/// The solver's event count.
 pub fn event_count<S: CollisionStore>(store: &S, solver: u32) -> u32 {
     store.event_count(solver)
 }
 
-/// CCollisionSolver::Vf08 (0x4fc0b0): drains the event list, releasing each event (`list::drain` with the pool flag).
-/// `None` (nothing changed) when an event's slot 0x1c is not `CCollisionEvent::Vf1Cx`, which the drain port assumes.
+/// Drains the event list, releasing each event to the pool. `None` (nothing changed) when an event cannot release,
+/// which the drain assumes.
 pub fn drain_events<S: CollisionStore>(store: &mut S, solver: u32) -> Option<()> {
     let mut event = store.first_event(solver);
     for _ in 0..store.event_list_len(solver) {
@@ -60,10 +59,9 @@ pub fn drain_events<S: CollisionStore>(store: &mut S, solver: u32) -> Option<()>
     Some(())
 }
 
-/// E38_004FC500 (0x4fc500): the solver's fraction, the earliest of its events' (`CCollisionEvent::Get94`, +0x94) from
-/// `FRACTION_START`. An event with a material flag (`E37Test4B20`) is released instead: unlinked from the list when it
-/// is on it (`E37Unlink`, the count first) and returned to the pool (slot 0x1c with 1). The next event is read before.
-/// `None` (nothing changed) when a released event's slot 0x1c is not `CCollisionEvent::Vf1Cx`, which the port assumes.
+/// The solver's fraction: the earliest of its events' times from [`contact_solver::FRACTION_START`]. An event with
+/// a suppressing material is released instead: unlinked from the list and returned to the pool. The next event is
+/// read before the release. `None` (nothing changed) when a released event cannot release, which the port assumes.
 pub fn min_contact_time<S: CollisionStore>(store: &mut S, solver: u32) -> Option<f32> {
     let mut event = store.first_event(solver);
     while event != 0 {
@@ -87,8 +85,8 @@ pub fn min_contact_time<S: CollisionStore>(store: &mut S, solver: u32) -> Option
     Some(best)
 }
 
-/// E37Flag4AC0 (0x4f4ac0): sets the event's flag 0x2000 when the material of its id at +0xac has flag bit 3 (+0x158),
-/// and 0x4000 for the id at +0x80 (`CMaterialManager::Tag520940` on the manager).
+/// Sets the event's suppression flag when a side's material suppresses it: 0x2000 for the body side, 0x4000 for the
+/// partner.
 pub fn mark_suppressing_materials<S: CollisionStore>(store: &mut S, event: u32) {
     for (side, flag) in [(Side::Body, 0x2000), (Side::Partner, 0x4000)] {
         if store.side_suppresses(event, side) {
@@ -107,8 +105,8 @@ fn inverse_mass<S: CollisionStore>(host: &mut impl SolverHost, store: &S, body: 
     host.inverse_mass(store.vtable_slot(body, SLOT_INVERSE_MASS), body)
 }
 
-/// E38_004FBC20 (0x4fbc20): per event, the material refresh (`event::refresh_materials`) and suppress flags, then flag
-/// 0x800 when the body is movable and 0x1000 when the active partner is.
+/// Per event, refreshes the materials and suppress flags, then flags a movable body (0x800) and a movable active
+/// partner (0x1000).
 pub fn refresh_events<S: CollisionStore>(host: &mut impl SolverHost, store: &mut S, solver: u32) {
     let mut event = store.first_event(solver);
     while event != 0 {
@@ -126,8 +124,8 @@ pub fn refresh_events<S: CollisionStore>(host: &mut impl SolverHost, store: &mut
     }
 }
 
-/// E38Ops::M_BFC0X (0x4fbfc0): appends `offset` to the body's offset row (+0x3b0, up to 8), or starts a row for it
-/// (up to 64). False when full. The count is written before the copy, as the asm does.
+/// Appends `offset` to the body's offset row (up to 8 offsets), or starts a row for it (up to 64 rows). False when
+/// full. The count is written before the offsets.
 pub fn add_body_offset<S: CollisionStore>(store: &mut S, solver: u32, body: u32, offset: Vec4) -> bool {
     let row = store.body_offset_row(body);
     if row != 0 {
@@ -150,9 +148,8 @@ pub fn add_body_offset<S: CollisionStore>(store: &mut S, solver: u32, body: u32,
     true
 }
 
-/// E38_004FC590 (0x4fc590): moves the bodies of the events out of their contact planes (`contact_solver::plan_correction`),
-/// collecting the moves in offset rows, then applies every row and empties them. eax is the row count as the asm
-/// last read it.
+/// Moves the event bodies out of their contact planes, collecting the moves in offset rows, then applies every row
+/// and empties them. Returns the row count.
 pub fn correct_penetrations<S: CollisionStore>(host: &mut impl SolverHost, store: &mut S, solver: u32) -> u32 {
     let mut margin = contact_solver::PENETRATION_MARGIN;
     let mut event = store.first_event(solver);
@@ -202,7 +199,7 @@ pub fn correct_penetrations<S: CollisionStore>(host: &mut impl SolverHost, store
     count
 }
 
-/// Slot 0x13c gates slots 0x80, 0x8c and 0x90 on a body in E38_004FCA20.
+/// Wakes `body` when it is movable and both wake tests pass.
 fn wake_if_movable<S: CollisionStore>(host: &mut impl SolverHost, store: &S, body: u32) {
     if contact_solver::movable(inverse_mass(host, store, body))
         && host.body_test(store.vtable_slot(body, SLOT_TEST_A), body) == 0
@@ -212,8 +209,7 @@ fn wake_if_movable<S: CollisionStore>(host: &mut impl SolverHost, store: &S, bod
     }
 }
 
-/// E38_004FCA20 (0x4fca20): solves each due event (`contact_solver::event_due`, time `CCollisionEvent::Get94`), first waking its
-/// movable body and active partner.
+/// Solves each due event (see [`contact_solver::event_due`]), first waking its movable body and active partner.
 pub fn solve_due_events<S: CollisionStore>(host: &mut impl SolverHost, store: &mut S, solver: u32) {
     let mut event = store.first_event(solver);
     while event != 0 {
@@ -233,10 +229,9 @@ pub fn solve_due_events<S: CollisionStore>(host: &mut impl SolverHost, store: &m
     }
 }
 
-/// E38Ops::M_BD30 (0x4fbd30): appends the contact row of `body` for `event` (`contact_solver::contact_row`; side 1 is the body's,
-/// 0 the partner's) to the body's rows (+0x274), first giving it rows when it has none. 1 when stored; 0 when the
-/// solver's 64 rows are taken (nothing else is done) or the body's 8 are. `ComposeA` writes the row's composed point
-/// into the original's frame below the entry stack pointer `esp`.
+/// Appends the contact row of `body` for `event` (see [`contact_solver::contact_row`]; side 1 is the body's, 0 the
+/// partner's) to the body's rows, first giving it rows when it has none. 1 when stored; 0 when the solver's 64 rows
+/// are taken (nothing else is done) or the body's 8 are. The row's composed point is written through the host frame.
 pub fn contact_rows<S: CollisionStore>(
     host: &mut impl ImpulseHost,
     store: &mut S,
@@ -271,8 +266,7 @@ pub fn contact_rows<S: CollisionStore>(
     1
 }
 
-/// E38_004FB890 (0x4fb890): moves the body of an offset row by `contact_solver::offsets_move` of its offsets (+0x140), then
-/// unhooks the row from the body (+0x3b0).
+/// Moves the body of an offset row by the combination of its offsets, then unhooks the row from the body.
 pub fn apply_offsets<S: CollisionStore>(store: &mut S, row: u32) {
     let body = store.offset_row_body(row);
     let offsets: Vec<Vec4> = (0..store.offset_row_count(row)).map(|i| store.offset(row, i)).collect();
@@ -283,10 +277,8 @@ pub fn apply_offsets<S: CollisionStore>(store: &mut S, row: u32) {
     store.set_body_offset_row(body, 0);
 }
 
-/// E38Ops::M_C1A0 (0x4fc1a0): the impulse of one event, the x87 result. An event `contact_solver::impulse_due` passes gets the
-/// normal impulse (`contact_solver::normal_impulse`) and, when it slips, friction (`contact_solver::friction_impulse`); `E37EvOps::Emit4DC0`
-/// applies them. The vectors the callees take and the floats they write are in the original's frame below the entry
-/// stack pointer `esp`; its last call, the empty `E21Telem::Telem80` (0x499e80), is left out.
+/// The impulse of one event. An event due for an impulse gets the normal impulse and, when it slips, friction; the
+/// impulse is then applied. Returns the impulse magnitude (0 when not due).
 pub fn solve_event<S: CollisionStore>(host: &mut impl ImpulseHost, store: &mut S, event: u32, esp: u32) -> f32 {
     let frame = ((esp - 4) & !0xf) - 0x90;
     let (normal_at, velocity_at, direction_at, slip_at, impulse_at) =

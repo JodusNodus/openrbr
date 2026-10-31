@@ -42,7 +42,7 @@ pub(crate) const UPDATE_SEED: u32 = 0x4E91F0;
 pub(crate) const ADD_EDGE: u32 = 0x4F65B0;
 
 const fn bind(addr: u32, name: &'static str, run: crate::BindingFn) -> Binding {
-    Binding { addr, name, subsystem: "car_body", run }
+    crate::bind("car_body", addr, name, run)
 }
 
 pub static BINDINGS: [Binding; 116] = [

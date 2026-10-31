@@ -6,7 +6,7 @@
 
 mod common;
 
-use common::{Call, Inner};
+use common::{Call, Inner, Window};
 use rbr_physics::fpu::Precision;
 use rbr_physics::mem::Mem;
 use rbr_physics::vcu::store::VcuStore;
@@ -51,17 +51,8 @@ fn load(addr: u32) -> Option<Vec<Call>> {
 /// Replays every recorded call of `addr` through `port`, which gets the call's windows mapped and its
 /// arguments, and returns st0. Checks st0 bit for bit and every window after the call.
 fn replay(addr: u32, name: &str, port: impl Fn(&Mem, &[u32]) -> f64) {
-    let Some(calls) = load(addr) else {
-        eprintln!("skipping {name}: RBR_VCU_VECTORS not set");
-        return;
-    };
-    let mut branches = std::collections::BTreeMap::<String, usize>::new();
-    for call in &calls {
-        let mut mem = Mem::new();
-        for (_, at, _, pre, _) in &call.windows {
-            mem.map(*at, pre);
-        }
-        let st0 = port(&mem, &call.args);
+    common::replay_branches("RBR_VCU_VECTORS", addr, name, |call, mem| {
+        let st0 = port(mem, &call.args);
         assert_eq!(
             st0.to_bits(),
             f64::from_bits(call.st0_bits).to_bits(),
@@ -70,12 +61,7 @@ fn replay(addr: u32, name: &str, port: impl Fn(&Mem, &[u32]) -> f64) {
             call.branch,
             f64::from_bits(call.st0_bits)
         );
-        for (k, at, len, _, post) in &call.windows {
-            assert_eq!(mem.read(*at, *len), *post, "{name} call {} window {k}", call.index);
-        }
-        *branches.entry(call.branch.clone()).or_default() += 1;
-    }
-    eprintln!("{name}: {} calls match, by branch: {branches:?}", calls.len());
+    });
 }
 
 #[test]
@@ -122,16 +108,7 @@ fn lock_max_matches_original_calls() {
 #[test]
 fn diff_locks_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(DIFF_LOCKS) else {
-        eprintln!("skipping diff_locks: RBR_VCU_VECTORS not set");
-        return;
-    };
-    let mut branches = std::collections::BTreeMap::<String, usize>::new();
-    for call in &calls {
-        let mut mem = Mem::new();
-        for (_, at, _, pre, _) in &call.windows {
-            mem.map(*at, pre);
-        }
+    common::replay_branches("RBR_VCU_VECTORS", DIFF_LOCKS, "diff_locks", |call, mem| {
         let speeds: Vec<&Inner> = call.inner.iter().filter(|f| f.addr == GET_4540).collect();
         let [speed] = speeds[..] else {
             panic!("call {}: {} CDrive::Get4540 calls", call.index, speeds.len());
@@ -147,12 +124,7 @@ fn diff_locks_matches_original_calls() {
             assert_eq!(*index, channel as u32, "call {}: Set4570 order", call.index);
             assert_eq!(locks[channel].to_bits(), *bits, "call {} ({}) channel {channel}", call.index, call.branch);
         }
-        for (k, at, len, _, post) in &call.windows {
-            assert_eq!(mem.read(*at, *len), *post, "call {} window {k}", call.index);
-        }
-        *branches.entry(call.branch.clone()).or_default() += 1;
-    }
-    eprintln!("diff_locks: {} calls match, by branch: {branches:?}", calls.len());
+    });
 }
 
 /// The one inner call of `addr` made by `call` (the original calls each accessor once here).
@@ -176,7 +148,7 @@ fn rev_limit_cut_matches_original_calls() {
     let mut flags_seen = std::collections::BTreeMap::<[u32; 4], usize>::new();
     for call in &calls {
         let mut mem = Mem::new();
-        for (_, at, _, pre, _) in &call.windows {
+        for Window { index: _, at, len: _, before: pre, after: _ } in &call.windows {
             mem.map(*at, pre);
         }
         let this = call.args[0];
@@ -187,7 +159,7 @@ fn rev_limit_cut_matches_original_calls() {
         let set = inner_one(call, SET_STATE4);
         assert_eq!(set.args[0], mem.u32(this + 0x54), "call {}: engine object", call.index);
         assert_eq!(set.args[1..], flags, "call {}: SetState4 flags", call.index);
-        for (k, at, len, _, post) in &call.windows {
+        for Window { index: k, at, len, before: _, after: post } in &call.windows {
             assert_eq!(mem.read(*at, *len), *post, "call {} window {k}", call.index);
         }
         *flags_seen.entry(flags).or_default() += 1;
@@ -213,7 +185,7 @@ fn gearbox_update_matches_original_calls() {
     let mut seen = std::collections::BTreeMap::<(u32, bool), usize>::new();
     for call in &calls {
         let mut mem = Mem::new();
-        for (_, at, _, pre, _) in &call.windows {
+        for Window { index: _, at, len: _, before: pre, after: _ } in &call.windows {
             mem.map(*at, pre);
         }
         let this = call.args[0];
@@ -236,7 +208,7 @@ fn gearbox_update_matches_original_calls() {
         vcu::gear::update(input, &def, &mut state, &mut drive);
         mem.store_state(scratch.state, &state);
         mem.store_gearbox(drive_at, &drive);
-        for (k, at, len, _, post) in &call.windows {
+        for Window { index: k, at, len, before: _, after: post } in &call.windows {
             assert_eq!(mem.read(*at, *len), *post, "call {} ({}) window {k}", call.index, call.branch);
         }
         *seen.entry((drive.gear, drive.commanded != requested_before)).or_default() += 1;
@@ -256,16 +228,16 @@ fn check_slip_matches_original_calls() {
     let mut results = std::collections::BTreeMap::<u32, usize>::new();
     for call in &calls {
         let mut mem = Mem::new();
-        for (_, at, _, pre, _) in &call.windows {
+        for Window { index: _, at, len: _, before: pre, after: _ } in &call.windows {
             mem.map(*at, pre);
         }
         let scratch = mem.scratch(call.args[0]);
         // window 1 is the drive's sub-object (CDrive+8), the pointer the slip flag lives behind
-        let drive_sub = call.windows.iter().find(|w| w.0 == 1).expect("window 1").1;
+        let drive_sub = call.windows.iter().find(|w| w.index == 1).expect("window 1").at;
         let slip = mem.gearbox(drive_sub).slip;
         let got = vcu::cut::check_slip(scratch.vcu_enabled, slip, f32::from_bits(call.args[1])) as u32;
         assert_eq!(got, call.eax, "call {}: CheckSlip", call.index);
-        for (k, at, len, _, post) in &call.windows {
+        for Window { index: k, at, len, before: _, after: post } in &call.windows {
             assert_eq!(mem.read(*at, *len), *post, "call {} window {k}", call.index);
         }
         *results.entry(got).or_default() += 1;
@@ -285,7 +257,7 @@ fn launch_clutch_matches_original_calls() {
     let mut sent_counts = std::collections::BTreeMap::<bool, usize>::new();
     for call in &calls {
         let mut mem = Mem::new();
-        for (_, at, _, pre, _) in &call.windows {
+        for Window { index: _, at, len: _, before: pre, after: _ } in &call.windows {
             mem.map(*at, pre);
         }
         let scratch = mem.scratch(call.args[0]);
@@ -309,7 +281,7 @@ fn launch_clutch_matches_original_calls() {
             }
             _ => panic!("call {}: {} Set4820 calls, port sent {sent:?}", call.index, set.len()),
         }
-        for (k, at, len, _, post) in &call.windows {
+        for Window { index: k, at, len, before: _, after: post } in &call.windows {
             assert_eq!(mem.read(*at, *len), *post, "call {} window {k}", call.index);
         }
         *sent_counts.entry(sent.is_some()).or_default() += 1;
@@ -331,7 +303,7 @@ fn flag_dispatch_matches_original_calls() {
     let mut seen = std::collections::BTreeMap::<(u8, bool), usize>::new();
     for call in &calls {
         let mut mem = Mem::new();
-        for (_, at, _, pre, _) in &call.windows {
+        for Window { index: _, at, len: _, before: pre, after: _ } in &call.windows {
             mem.map(*at, pre);
         }
         let scratch = mem.scratch(call.args[0]);
@@ -367,7 +339,7 @@ fn flag_dispatch_matches_original_calls() {
         mem.store_state(scratch.state, &state);
         mem.store_gearbox(drive_at, &drive);
         assert_eq!(on as u32, call.eax, "call {}: FlagDispatch return", call.index);
-        for (k, at, len, _, post) in &call.windows {
+        for Window { index: k, at, len, before: _, after: post } in &call.windows {
             assert_eq!(mem.read(*at, *len), *post, "call {} window {k}", call.index);
         }
         *seen.entry((packet.flags, on)).or_default() += 1;
@@ -380,21 +352,9 @@ fn flag_dispatch_matches_original_calls() {
 #[test]
 fn copy_def_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(COPY_DEF) else {
-        eprintln!("skipping copy_def: RBR_VCU_VECTORS not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = Mem::new();
-        for (_, at, _, pre, _) in &call.windows {
-            mem.map(*at, pre);
-        }
-        vcu::layout::copy_def(&mut mem, call.args[0], call.args[1]);
-        for (k, at, len, _, post) in &call.windows {
-            assert_eq!(mem.read(*at, *len), *post, "call {} window {k}", call.index);
-        }
-    }
-    eprintln!("copy_def: {} calls match", calls.len());
+    common::replay("RBR_VCU_VECTORS", COPY_DEF, "copy_def", |call, mem| {
+        vcu::layout::copy_def(mem, call.args[0], call.args[1]);
+    });
 }
 
 /// CScratchSim::ReadPacket (CopyFrom): its own record never comes out, since it tail-jumps into FlagDispatch.
@@ -409,12 +369,12 @@ fn read_packet_matches_original_calls() {
     };
     for call in &calls {
         let mut mem = Mem::new();
-        for (_, at, _, pre, _) in &call.windows {
+        for Window { index: _, at, len: _, before: pre, after: _ } in &call.windows {
             mem.map(*at, pre);
         }
         let (scratch, packet) = (call.args[0], call.args[1]);
-        let (_, _, _, entry, _) =
-            call.windows.iter().find(|w| w.1 == scratch && w.2 == 0x60).expect("the scratch window");
+        let Window { index: _, at: _, len: _, before: entry, after: _ } =
+            call.windows.iter().find(|w| w.at == scratch && w.len == 0x60).expect("the scratch window");
         for at in [0x0c, 0x10, 0x14, 0x18, 0x1c] {
             mem.set_u32(scratch + at, 0);
         }
@@ -470,7 +430,7 @@ fn replay_steps(addr: u32, name: &str, port: StepPort) {
             continue;
         }
         let mut mem = Mem::new();
-        for (_, at, _, pre, _) in &call.windows {
+        for Window { index: _, at, len: _, before: pre, after: _ } in &call.windows {
             mem.map(*at, pre);
         }
         let scratch = mem.scratch(call.args[0]);
@@ -495,7 +455,7 @@ fn replay_steps(addr: u32, name: &str, port: StepPort) {
         let expected: Vec<(u32, Vec<u32>)> =
             call.inner.iter().filter(|f| SENDS.contains(&f.addr)).map(|f| (f.addr, f.args[1..].to_vec())).collect();
         assert_eq!(sent, expected, "call {} ({name}): setter calls", call.index);
-        for (k, at, len, _, post) in &call.windows {
+        for Window { index: k, at, len, before: _, after: post } in &call.windows {
             assert_eq!(mem.read(*at, *len), *post, "call {} window {k}", call.index);
         }
     }
@@ -527,7 +487,7 @@ fn query_slip_matches_original_calls() {
     let mut answers = std::collections::BTreeMap::<bool, usize>::new();
     for call in &calls {
         let mut mem = Mem::new();
-        for (_, at, _, pre, _) in &call.windows {
+        for Window { index: _, at, len: _, before: pre, after: _ } in &call.windows {
             mem.map(*at, pre);
         }
         let scratch = mem.scratch(call.args[0]);
@@ -544,7 +504,7 @@ fn query_slip_matches_original_calls() {
             inner_value(call, GET_15F8),
         );
         assert_eq!(on as u32, call.eax, "call {}: QuerySlip", call.index);
-        for (k, at, len, _, post) in &call.windows {
+        for Window { index: k, at, len, before: _, after: post } in &call.windows {
             assert_eq!(mem.read(*at, *len), *post, "call {} window {k}", call.index);
         }
         *answers.entry(on).or_default() += 1;

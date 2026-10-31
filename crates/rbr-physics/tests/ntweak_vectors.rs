@@ -4,7 +4,6 @@
 
 mod common;
 
-use common::{check_windows, load, map_windows};
 use rbr_physics::ntweak;
 
 const VAR: &str = "RBR_PHYSICS_CORE_VECTORS";
@@ -14,12 +13,7 @@ const OPERATOR_NEW: u32 = 0x70bec2;
 
 #[test]
 fn tokenize_matches() {
-    let Some(calls) = load(VAR, TOKENIZE).filter(|c| !c.is_empty()) else {
-        eprintln!("skipping Tokenize: no calls ({VAR})");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
+    common::replay(VAR, TOKENIZE, "Tokenize", |call, mem| {
         let mut news = Vec::new();
         let alloc = |mem: &mut rbr_physics::mem::Mem, size: u32| {
             news.push(size);
@@ -27,32 +21,23 @@ fn tokenize_matches() {
             mem.map(block, &vec![0; size as usize]);
             block
         };
-        ntweak::tokenize(&mut mem, alloc, call.args[0], call.args[1])
+        ntweak::tokenize(mem, alloc, call.args[0], call.args[1])
             .unwrap_or_else(|e| panic!("Tokenize call {}: {e:?}", call.index));
         let expected: Vec<_> = call.inner.iter().map(|i| (i.addr, i.args.clone())).collect();
         let made: Vec<_> = news.iter().map(|&size| (OPERATOR_NEW, vec![size])).collect();
         assert_eq!(made, expected, "Tokenize call {}: calls", call.index);
         assert_eq!(call.eax, call.args[0], "Tokenize call {}: eax", call.index);
-        check_windows(call, &mem, "Tokenize");
-    }
-    eprintln!("Tokenize: {} calls match", calls.len());
+    });
 }
 
 #[test]
 fn stack_alloc_matches() {
-    let Some(calls) = load(VAR, STACK_ALLOC).filter(|c| !c.is_empty()) else {
-        eprintln!("skipping E11_StackAlloc: no calls ({VAR})");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
+    common::replay(VAR, STACK_ALLOC, "E11_StackAlloc", |call, mem| {
         let [size, heap, align] = call.args[..3] else { unreachable!() };
-        let block = ntweak::stack_alloc(&mut mem, size, heap, align)
+        let block = ntweak::stack_alloc(mem, size, heap, align)
             .unwrap_or_else(|e| panic!("E11_StackAlloc call {}: {e:?}", call.index));
         assert_eq!(block, call.eax, "E11_StackAlloc call {}: block", call.index);
-        check_windows(call, &mem, "E11_StackAlloc");
-    }
-    eprintln!("E11_StackAlloc: {} calls match", calls.len());
+    });
 }
 
 /// The calls `Parse` makes outside the walk, as the test sees them.

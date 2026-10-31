@@ -13,7 +13,6 @@
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use rbr_formats::rbz;
 
@@ -108,7 +107,7 @@ fn physics_lsp(path: &Path) -> Option<String> {
 
 /// Whether the `physics.rbz` at `path` is NGP's.
 pub fn is_ngp_archive(path: &Path) -> bool {
-    physics_lsp(path).is_some_and(|text| text.contains("PhysicsRevision_NGP"))
+    physics_lsp(path).is_some_and(|text| crate::ngp_install::has_ngp_revision(text.as_bytes()))
 }
 
 /// The NGP revision the `physics.rbz` at `path` sets (`PhysicsRevision_NGP 778`), if it is NGP's.
@@ -133,34 +132,13 @@ pub fn ngp_label(revision: Option<u32>) -> String {
     }
 }
 
-/// The platform's folder dialog with `prompt` (`osascript` on macOS, PowerShell on Windows, `zenity` or `kdialog`
-/// elsewhere); `None` when it is cancelled or there is none.
-pub fn pick_folder(prompt: &str) -> Option<String> {
-    let run = |program: &str, args: &[&str]| {
-        let out = rbr_render::console::no_window(&mut Command::new(program)).args(args).output().ok()?;
-        let path = String::from_utf8(out.stdout).ok()?.trim().to_owned();
-        (out.status.success() && !path.is_empty()).then_some(path)
-    };
-    if cfg!(target_os = "macos") {
-        run("osascript", &["-e", &format!("POSIX path of (choose folder with prompt \"{prompt}\")")])
-    } else if cfg!(windows) {
-        let script =
-            "Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; \
-                      if ($d.ShowDialog() -eq 'OK') { $d.SelectedPath }";
-        run("powershell", &["-NoProfile", "-Command", script])
-    } else {
-        run("zenity", &["--file-selection", "--directory", &format!("--title={prompt}")])
-            .or_else(|| run("kdialog", &["--getexistingdirectory"]))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn a_folder_without_ngp_or_rsf_gives_the_game_only() {
-        let dir = std::env::temp_dir().join(format!("rbr-launcher-install-{}", std::process::id()));
+        let dir = crate::test_dir("install-folder");
         std::fs::create_dir_all(dir.join("rsfdata")).unwrap();
         let folder = Folder::read(&dir.display().to_string());
         assert_eq!(folder.game.as_deref(), Some(dir.as_path()));
@@ -175,14 +153,15 @@ mod tests {
     /// A folder that does not load is told apart: missing, not the game, or the game without what ReRBR needs.
     #[test]
     fn a_folder_that_does_not_load_says_why() {
-        let dir = std::env::temp_dir().join(format!("rbr-launcher-problem-{}", std::process::id()));
+        let root = crate::test_dir("install-problem");
+        let dir = root.join("game");
         let text = |dir: &Path| problem(&dir.display().to_string());
         assert!(text(&dir).starts_with("There is no such folder"));
         std::fs::create_dir_all(dir.join("Cars")).unwrap();
         assert!(text(&dir).starts_with("This is not a Richard Burns Rally folder"));
         std::fs::create_dir_all(dir.join("Maps")).unwrap();
         assert!(text(&dir).contains("1.02 patch"));
-        std::fs::remove_dir_all(&dir).unwrap();
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     fn env<'a>(vars: &'a [(&str, &Path)]) -> impl Fn(&str) -> Option<PathBuf> + 'a {
@@ -192,7 +171,7 @@ mod tests {
     /// The usual places: the Lutris and Bottles prefixes' among them, and on Windows Program Files'.
     #[test]
     fn the_usual_places_include_the_prefixes() {
-        let home = std::env::temp_dir().join(format!("rbr-launcher-home-{}", std::process::id()));
+        let home = crate::test_dir("install-places");
         let lutris = home.join("Games/rbr/drive_c").join(RBR);
         let bottle = home.join(".local/share/bottles/bottles/RSF/drive_c").join(RBR);
         std::fs::create_dir_all(&lutris).unwrap();

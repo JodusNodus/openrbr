@@ -1,11 +1,11 @@
-//! E36's collision entry: the sphere and OBB tests and `E36Collect`'s walk of the cells, generic over the store.
+//! The collision entry: the sphere and box tests and the cell walk that collects contacts, generic over the store.
 
 use super::obb::{self, ObbFrame};
 use super::store::CollisionStore;
 use crate::mem::Mem;
 
-/// E36SphereBox (0x4f2ce0): a separated sphere writes nothing. Otherwise the contact at `index` takes the sphere as its
-/// input, then its depth, position, cleared kind, and normal.
+/// A separated sphere writes nothing. Otherwise the contact at `index` takes the sphere as its input, then its
+/// depth, position, cleared kind, and normal.
 pub fn sphere_box<S: CollisionStore>(store: &mut S, object: u32, sphere_at: u32, index_at: u32) -> u32 {
     let frame: ObbFrame = store.obb_frame(object);
     let (sphere, radius) = store.sphere_input(sphere_at);
@@ -19,16 +19,16 @@ pub fn sphere_box<S: CollisionStore>(store: &mut S, object: u32, sphere_at: u32,
     1
 }
 
-/// The second vector of E36ObbTest's input at `vector_at`: the lengths of the other box's three axes, its half extents
-/// (E36Collect stores them at its frame +0x60, 0x4f3bf4-0x4f3c14; the w lane stays as the frame held it).
+/// The second vector of the box test's input at `vector_at`: the lengths of the other box's three axes, its half
+/// extents (the collector stores them there; the w lane stays as the frame held it).
 pub fn set_obb_extents<S: CollisionStore>(store: &mut S, vector_at: u32, lengths: [f32; 3]) {
     for (at, length) in (vector_at + 0x10..).step_by(4).zip(lengths) {
         store.set_f32(at, length);
     }
 }
 
-/// E36ObbTest (0x4f3030): a separated pair writes nothing. Otherwise the contact at `index` takes its depth, the input
-/// vector `a`, the position (the position's w lane is kept), the metric, and the normal.
+/// A separated pair writes nothing. Otherwise the contact at `index` takes its depth, the input vector, the
+/// position (the position's w lane is kept), the metric, and the normal.
 pub fn obb_test<S: CollisionStore>(store: &mut S, object: u32, vector_at: u32, index_at: u32) -> u32 {
     let frame = store.obb_frame(object);
     let [a, b, c, d, e] = store.obb_input(vector_at);
@@ -42,9 +42,8 @@ pub fn obb_test<S: CollisionStore>(store: &mut S, object: u32, vector_at: u32, i
     1
 }
 
-/// The host calls of `collect`. `sp` is the callee's entry stack pointer at the original's call site (see
-/// `collect`'s `frame`): the callee reads the arguments the original pushed there, and what its frame leaves below
-/// `sp` is part of what the original's caller reads back.
+/// The host calls of [`collect`]. `sp` is the callee's frame pointer at the call site: the callee reads the
+/// arguments pushed there, and leaves below `sp` what the caller reads back.
 pub trait CollectHost<S = Mem> {
     fn virtual_call(&mut self, mem: &mut S, sp: u32, target: u32, args: &[u32]) -> u32;
     fn transform(&mut self, mem: &mut S, sp: u32, target: u32, this: u32, a: u32, b: u32, c: u32);
@@ -63,8 +62,7 @@ fn transform<S: CollisionStore>(
     host: &mut impl CollectHost<S>,
 ) {
     let target = store.vtable_slot(owner, 12 * 4);
-    // Both calls are made from the same pushes: the original pushes a, matrix and c once, and the virtual call
-    // leaves them on the stack for the finish call (0x4f399c, 0x4f39a1).
+    // Both calls share one argument block: the first call leaves the pushed words on the stack for the second.
     let sp = frame.wrapping_sub(16);
     let receiver = host.virtual_call(store, sp, target, &[owner, a, matrix, c]);
     host.transform(store, sp, finish, receiver, a, matrix, c);
@@ -75,8 +73,8 @@ fn collision_pointer<S: CollisionStore>(store: &mut S, owner: u32, frame: u32, h
     host.virtual_call(store, frame.wrapping_sub(4), target, &[owner])
 }
 
-/// E36Collect (0x4f3950): transform the query box, traverse its four grid buckets, and collect OBB/sphere contacts.
-/// E43 transforms, the body virtuals, and E45's grid selector remain explicit host calls.
+/// Transforms the query box, traverses its four grid buckets, and collects box/sphere contacts. The body transforms,
+/// the body virtuals, and the grid selector stay explicit host calls.
 pub fn collect<S: CollisionStore>(
     store: &mut S,
     frame: u32,
@@ -86,18 +84,17 @@ pub fn collect<S: CollisionStore>(
     count_out: u32,
     host: &mut impl CollectHost<S>,
 ) -> u32 {
-    // The query's arguments are the original's stack words: lo at +0x28, hi at +0x34 and the cells at +0x40, from the
-    // frame (`call_at`'s pushes at frame-16 leave them). The query writes only some cells, so the rest read what the
-    // original's frame held there.
+    // The query's arguments live in the frame: the lo and hi corners and the cells. The query writes only some
+    // cells, so the rest keep what the frame held.
     let cells = frame.wrapping_add(0x40);
     let lo = frame.wrapping_add(0x28);
     let hi = frame.wrapping_add(0x34);
-    // The box and the sphere are the original's frame words too (+0x50, +0xa0): a callee's free stack is below the
-    // frame, so they keep across the host calls.
+    // The box and the sphere are frame words too: a callee's free stack is below the frame, so they keep across the
+    // host calls.
     let box_at = frame.wrapping_add(0x50);
     let sphere_at = frame.wrapping_add(0xA0);
-    // The original reuses the box's trailing stack words for its scaled vectors
-    // and its first three transformed axes before passing the 0x50 SAT input.
+    // The box's trailing words are reused for the scaled vectors and the first three transformed axes before the
+    // SAT input.
     let axis_x = box_at + 0x20;
     let axis_y = box_at + 0x30;
     let axis_z = box_at + 0x40;

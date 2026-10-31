@@ -1,5 +1,5 @@
-//! The collision mesh queries: ray seeds, the separating-axis tests, the node walk, the segment and ray tests,
-//! `CCollisionSystem::Vf00` and the face query, generic over the store.
+//! The collision mesh queries: resetting a ray object, the separating-axis box tests, the walk over the face
+//! tree, the segment and ray casts, and the face query, generic over the store.
 
 use super::layout::solver_hosts::{CellQueryHost, RayHost, SampleHost};
 use super::mesh_hit::{
@@ -10,8 +10,8 @@ use super::store::{CollisionStore, RayHit, SurfaceRecord};
 use super::triangle::{self, PointTriangle, RayTriangleResult, SegmentTriangle};
 use crate::math::vec::Vec3;
 
-/// E38RaySeeds (0x4f6550): clears the ray object's seed bytes and words, then its two vectors (host calls). Returns
-/// `object`.
+/// Resets a ray-casting object for a new query: clears its seed bytes and words, then its two cached vectors
+/// (host calls). Returns `object`.
 pub fn ray_seeds<S: CollisionStore>(host: &mut impl RayHost, store: &mut S, object: u32) -> u32 {
     store.clear_ray_seeds(object);
     let (first, second) = store.ray_vectors(object);
@@ -20,26 +20,25 @@ pub fn ray_seeds<S: CollisionStore>(host: &mut impl RayHost, store: &mut S, obje
     object
 }
 
-/// E38RayClear (0x4f6740): clears the ray object's per-test fields. The original leaves eax as the caller had it.
+/// Clears the ray object's per-test fields.
 pub fn ray_clear<S: CollisionStore>(store: &mut S, object: u32) {
     store.clear_ray(object);
 }
 
-/// E38Ops::M_D230 (0x4fd230): true (1) when no world axis separates the box at `this` from the box given by
-/// `other_center` and `other_extent`.
+/// True (1) when no world axis separates the two boxes: the stored box at `this`, and the box with centre
+/// `other_center` and half extents `other_extent`.
 pub fn world_axes_overlap<S: CollisionStore>(store: &S, this: u32, other_center: u32, other_extent: u32) -> u32 {
     u32::from(overlap::world_axes_overlap(store.sat_box(this), store.vec3(other_center), store.vec3(other_extent)))
 }
 
-/// E38Ops::M_D2C0 (0x4fd2c0): true (1) when no world or cross axis separates the box at `this` from the other box.
+/// True (1) when no world or cross axis separates the stored box at `this` from the other box.
 pub fn box_sat_overlap<S: CollisionStore>(store: &S, this: u32, other_center: u32, other_extent: u32) -> u32 {
     u32::from(overlap::box_sat_overlap(store.sat_box(this), store.vec3(other_center), store.vec3(other_extent)))
 }
 
-/// E38 node walk (0x4fdd60, `FUN_004fdd60`), stdcall with three stack words: writes the leaves under `root` whose boxes
-/// overlap the query box at `query` (centre, then half extents at +12) to `out`, after the count at +0. A leaf is a
-/// node with faces (bits 0..20 of +0x18). A node without faces pushes its children (+0x1c, and the one 0x20 past it)
-/// whose bit 21 at +0x18 (or +0x38) is clear and whose boxes overlap the query; the last pushed is walked first.
+/// Writes the leaves under `root` whose boxes overlap the query box at `query` (centre, then half extents) to
+/// `out`, after the leaf count. A leaf is a node that holds faces; a branch node pushes the children whose flag
+/// word is clear and whose boxes overlap the query; the last pushed is walked first.
 pub fn node_walk<S: CollisionStore>(store: &mut S, query: u32, root: u32, out: u32) {
     let mut pending = if root == 0 { Vec::new() } else { vec![root] };
     let mut leaves = Vec::new();
@@ -64,10 +63,9 @@ pub fn node_walk<S: CollisionStore>(store: &mut S, query: u32, root: u32, out: u
     }
 }
 
-/// E39_SegTest170 (0x4ff170, fastcall: `this` in ecx, stack words `a`, `b` and `out`, ret 0xc): the segment's ends
-/// `a` and `b` (three floats each) go to the box at `tmp`, the original's frame below the return address, and
-/// `node_walk` (0x4fdd60) runs on the object's tree (`this+8`) with it. The records go to `out`, or to the grid's own
-/// list (`this+0x1014`) when `out` is 0. Returns 1 when the list has records, else 0.
+/// Builds the query box from the centre `a` and the half extents `b` in the scratch `tmp`, and walks the object's
+/// face tree over it with [`node_walk`]. The matches go to `out`, or to the object's own list when `out` is 0.
+/// Returns 1 when the list has records, else 0.
 pub fn seg_test170<S: CollisionStore>(store: &mut S, this: u32, a: u32, b: u32, out: u32, tmp: u32) -> u32 {
     let lst = if out == 0 { store.own_list(this) } else { out };
     store.set_u32(lst, 0);
@@ -81,12 +79,11 @@ pub fn seg_test170<S: CollisionStore>(store: &mut S, this: u32, a: u32, b: u32, 
     u32::from(store.u32(lst) != 0)
 }
 
-/// The half-width of SegmentSweep's query box around the segment start (`0.1`, 0x72b068).
+/// The half-width of the segment sweep's query box around the segment start.
 const SWEEP_MARGIN: f32 = 0.1;
 
-/// E38Ops::M_AC50 (0x4fac50), thiscall on the object: the mesh test of `triangle::mesh_ray_test` on the vertex block at
-/// +0xa0 (16-byte vertices) and the tags at +0xb0. On a hit the distance goes to `distance` and the four tags to `out`.
-/// Returns 1 on a hit.
+/// Tests the ray (`origin`, `direction`) against the object's mesh: [`triangle::mesh_ray_test`] over its stored
+/// vertices and tags. On a hit the distance goes to `distance` and the four tags to `out`. Returns 1 on a hit.
 pub fn mesh_test<S: CollisionStore>(
     store: &mut S,
     object: u32,
@@ -115,9 +112,9 @@ pub fn mesh_test<S: CollisionStore>(
     1
 }
 
-/// E38SegmentSweep (0x4fad90), stdcall: the cell query over the start's box (widened by `SWEEP_MARGIN`) gives four list
-/// heads at `scratch + 0x20`. Each object in those lists with bit 9 of +0x60 set is tested by `mesh_test` until one
-/// hits. `lo` and `hi` are written to `scratch` and `scratch + 0x10` for the query.
+/// Queries the grid cells overlapping the start's box (widened by [`SWEEP_MARGIN`]), giving four list heads in the
+/// scratch. Tests each flagged mesh object in those lists with [`mesh_test`] until one hits; the widened box stays
+/// in the scratch for the query.
 pub fn segment_sweep<S: CollisionStore>(
     host: &mut impl CellQueryHost<S>,
     store: &mut S,
@@ -159,8 +156,8 @@ pub fn segment_sweep<S: CollisionStore>(
     }
 }
 
-/// E38Ops::M_D480 (0x4fd480): ray/triangle intersection of `origin` and `direction` with the triangle `v0`, `v1`, `v2`,
-/// stored at `output`. The asm reads every input before it writes the output. Returns 1 on a hit.
+/// The ray/triangle intersection of `origin` and `direction` with the triangle `v0`, `v1`, `v2`, stored at
+/// `output`. Every input is read before the output is written. Returns 1 on a hit.
 pub fn ray_triangle<S: CollisionStore>(
     store: &mut S,
     origin: u32,
@@ -181,14 +178,14 @@ pub fn ray_triangle<S: CollisionStore>(
     u32::from(result.hit)
 }
 
-/// The constants M_D760X reads from the image: 2.0 (0x72ad94, the start distance), 1.0 (0x795e14), 0.0 (0x795e50), 1/15
-/// (0x7399bc, the nibble scale) and 1/31 (0x7399c0, the 5-bit channel scale).
+/// The ray parameter the grid ray query starts its search from (2.0); `ONE` and `ZERO` are the hit bounds it
+/// compares against.
 const SAMPLE_START: f32 = 2.0;
 const ONE: f32 = 1.0;
 const ZERO: f32 = 0.0;
 
-/// The nearest face found so far by M_D760X: its ray parameter, barycentric `u` and `v`, the unnormalised normal, and
-/// the face and grid block it came from.
+/// The nearest face found so far: its ray parameter, barycentric `u` and `v`, the unnormalised normal, and the
+/// face and grid block it came from.
 #[derive(Clone, Copy)]
 struct NearestFace {
     t: f32,
@@ -199,16 +196,15 @@ struct NearestFace {
     base: u32,
 }
 
-/// The low and high nibble sums (scaled by 1/15) of the three face bytes, as M_D760X passes them to the table.
+/// The low and high nibble sums (scaled by 1/15) of the three face bytes.
 fn sample_sums(bytes: [u8; 3], w: f32, u: f32, v: f32) -> (f32, f32) {
     let low = nibble_sum(bytes, 0, w, u, v) * NIBBLE_SCALE;
     (low, nibble_sum(bytes, 4, w, u, v) * NIBBLE_SCALE)
 }
 
-/// E38 grid ray query (0x4fd760, `FUN_004fd760`), thiscall on the grid with four stack words: the nearest face of the
-/// records in `list` (the grid's own list at +0x1014 when `list` is 0) that the ray from `start` to `end` hits, with
-/// distance at most 1. The hit record goes to `out`. The ray's centre box is the start (`box_sat_overlap`) with the
-/// half direction as its extent. Returns 1 on a hit, else 0.
+/// The nearest face of the records in `list` (the grid's own list when `list` is 0) that the ray from `start` to
+/// `end` hits, with distance at most 1. The hit record goes to `out`. The query box is the ray's centre box: the
+/// start with half the direction as its extent. Returns 1 on a hit, else 0.
 pub fn mesh_ray_query<S: CollisionStore>(
     host: &mut impl SampleHost,
     store: &mut S,
@@ -274,15 +270,14 @@ pub fn mesh_ray_query<S: CollisionStore>(
     1
 }
 
-/// The ray parameter `CCollisionSystem::Vf00` pre-seeds in its hit record (0x72e954): M_DE40X starts its search there.
+/// The ray parameter the segment query pre-seeds its hit record with.
 const SEGMENT_START: f32 = 1.1;
 
-/// E38Ops::M_DE40X (0x4fde40), thiscall on the system `system` with four stack words (ret 0x10): the mesh ray from the
-/// point at `origin_at` along the direction at `direction_at`, over the tree at `root`. The nearest face hit so far
-/// goes to the record at `out` (its ray parameter at +0x20 starts at the value the caller pre-seeded). The worklist is
-/// LIFO with the root first: a node without faces pushes its children that the ray's box (the origin, half the
-/// direction) overlaps, the child then the one 0x20 past it; a node with faces tests them against the table at `system
-/// + 0xc + 4 * (word >> 22)`. A hit replaces the record only when `t > 0` and `t` is nearer (strictly).
+/// Casts the mesh ray from the point at `origin_at` along the direction at `direction_at` over the tree at `root`.
+/// The nearest face hit so far goes to the record at `out` (starting from the caller's pre-seeded ray parameter).
+/// The worklist is LIFO with the root first: a branch node pushes the children the ray's box (the origin, half the
+/// direction) overlaps; a node with faces tests them against the system's mesh table. A hit replaces the record only
+/// when `t > 0` and `t` is nearer (strictly).
 pub fn mesh_ray_worklist<S: CollisionStore>(
     store: &mut S,
     system: u32,
@@ -334,9 +329,8 @@ pub fn mesh_ray_worklist<S: CollisionStore>(
     }
 }
 
-/// The frame of `CCollisionSystem::Vf00` below its entry stack pointer `esp` (after `sub esp, 0x48` and `push esi`):
-/// the origin and direction (the mesh ray's arguments), the hit record (its +0x20 to +0x28 words), and the entry stack
-/// pointer of the lookups.
+/// The scratch frame the segment query threads through its calls: the origin and direction it casts, the hit record,
+/// and the frame pointer the lookups resume from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SystemFrame {
     pub origin: u32,
@@ -350,10 +344,9 @@ pub fn system_frame(esp: u32) -> SystemFrame {
     SystemFrame { origin: base + 0x14, direction: base + 0x8, hit: base + 0x20, sample_sp: base - 0x18 }
 }
 
-/// `CCollisionSystem::Vf00` (0x4fe810), the segment query of the collision system `system` from the point at
-/// `origin_at` to the point at `end_at`: the mesh ray on the root (`mesh_ray_worklist`), then on a hit (`t` at most 1,
-/// unordered misses) the record at `out` (`mesh_hit::segment_record`). Returns 1 on a hit, else 0; a miss writes nothing but
-/// the frame.
+/// The collision system's segment query from the point at `origin_at` to the point at `end_at`: casts the mesh ray
+/// on the root ([`mesh_ray_worklist`]), then on a hit (`t` at most 1) writes the surface record to `out` (see
+/// [`mesh_hit::segment_record`]). Returns 1 on a hit, else 0; a miss writes nothing but the frame.
 pub fn system_vf00<S: CollisionStore>(
     host: &mut impl SampleHost,
     store: &mut S,
@@ -403,8 +396,8 @@ pub fn system_vf00<S: CollisionStore>(
     1
 }
 
-/// Stores the fields of a ray/triangle result that the asm wrote: the normal at +0x0c, `distance` at +0x20, `u` at
-/// +0x24 and `v` at +0x28. A miss leaves the fields it never reached untouched.
+/// Stores the ray/triangle result's fields: the normal, `distance`, `u` and `v`. A miss leaves the fields it never
+/// reached untouched.
 pub fn store_ray_triangle_result<S: CollisionStore>(store: &mut S, at: u32, result: &RayTriangleResult) {
     if let Some(normal) = result.normal {
         store.store_vec3(at + 12, normal);
@@ -420,8 +413,8 @@ pub fn store_ray_triangle_result<S: CollisionStore>(store: &mut S, at: u32, resu
     }
 }
 
-/// Stores the fields of a segment/triangle record that the asm wrote: the normal at +0x00, `t` at +0x14, `u` at +0x18
-/// and `v` at +0x1c. A miss leaves the fields it never reached untouched.
+/// Stores the segment/triangle record's fields: the normal, `t`, `u` and `v`. A miss leaves the fields it never
+/// reached untouched.
 pub fn store_segment_triangle<S: CollisionStore>(store: &mut S, at: u32, result: &SegmentTriangle) {
     if let Some(normal) = result.normal {
         store.store_vec3(at, normal);
@@ -437,9 +430,8 @@ pub fn store_segment_triangle<S: CollisionStore>(store: &mut S, at: u32, result:
     }
 }
 
-/// `E39_SegTest170(this, a, b, out)` (fastcall, three stack words, `ret 0xc`): zeroes the result word, builds the query
-/// box (the point `a`, then the half extents `b`, six floats at `query` in the original's frame), walks the tree and
-/// returns whether the walk found anything. A null `out` is the collider's own word.
+/// Builds the query box (the centre `a`, then the half extents `b`, six floats at `query`), walks the tree and
+/// returns whether the walk found anything. A null `out` selects the object's own list.
 pub fn seg_test<S: CollisionStore>(store: &mut S, this: u32, a: u32, b: u32, out: u32, query: u32) -> u32 {
     let out = if out == 0 { store.own_list(this) } else { out };
     store.set_u32(out, 0);
@@ -453,8 +445,7 @@ pub fn seg_test<S: CollisionStore>(store: &mut S, this: u32, a: u32, b: u32, out
     (store.u32(out) != 0) as u32
 }
 
-/// `E39_SegTest70(this, a, b, out)` (0x4ff070, fastcall, three stack words, `ret 0xc`): as `seg_test`, with the query
-/// box `overlap::segment_box` of the segment from `a` to `b` (six floats at `query` in the original's frame).
+/// As [`seg_test`], with the query box of the segment from `a` to `b` ([`overlap::segment_box`]).
 pub fn segment_test<S: CollisionStore>(store: &mut S, this: u32, a: u32, b: u32, out: u32, query: u32) -> u32 {
     let segment = overlap::segment_box(store.vec3(a), store.vec3(b));
     let out = if out == 0 { store.own_list(this) } else { out };
@@ -466,8 +457,7 @@ pub fn segment_test<S: CollisionStore>(store: &mut S, this: u32, a: u32, b: u32,
     (store.u32(out) != 0) as u32
 }
 
-/// Stores the fields of a point/triangle result that the asm wrote: the normal at +0x0c, `t` at +0x24 and `u` at +0x28,
-/// and on a hit 1.0 at +0x20 and the foot at +0x00.
+/// Stores the point/triangle result's fields: the normal, `t` and `u`, and on a hit 1.0 and the foot.
 pub fn store_point_triangle<S: CollisionStore>(store: &mut S, at: u32, result: &PointTriangle) {
     store.store_vec3(at + 0xc, result.normal);
     if let Some(t) = result.t {
@@ -482,8 +472,7 @@ pub fn store_point_triangle<S: CollisionStore>(store: &mut S, at: u32, result: &
     }
 }
 
-/// E38Ops::M_E2D0 (0x4fe2d0), thiscall with five stack words (`this` is not read): `triangle::point_triangle` of the point
-/// at `point` and the face's vertices, stored to `out`. Returns 1 on a hit.
+/// `triangle::point_triangle` of the point and the face's vertices, stored to `out`. Returns 1 on a hit.
 pub fn point_triangle<S: CollisionStore>(store: &mut S, point: u32, v0: u32, v1: u32, v2: u32, out: u32) -> u32 {
     let [point, v0, v1, v2] = [point, v0, v1, v2].map(|at| store.vec3(at));
     let result = triangle::point_triangle(point, v0, v1, v2);
@@ -491,23 +480,22 @@ pub fn point_triangle<S: CollisionStore>(store: &mut S, point: u32, v0: u32, v1:
     u32::from(result.foot.is_some())
 }
 
-/// The low (or high, with `shift` 4) nibble sum of the face bytes `[c, d, e]`, weighted as M_EBC0 does: `d` by `t`, `e`
-/// by `u`, `c` by `w` (asm order), scaled by 1/15.
+/// The low (or high, with `shift` 4) nibble sum of the face bytes, weighted by `t`, `u` and `w` (in order) and scaled
+/// by 1/15.
 fn face_nibble_sum(bytes: [u8; 3], shift: u32, t: f32, u: f32, w: f32) -> f32 {
     let nibble = |byte: u8| f32::from((byte >> shift) & 0xf);
     ((nibble(bytes[1]) * t + nibble(bytes[2]) * u) + nibble(bytes[0]) * w) * NIBBLE_SCALE
 }
 
-/// The two nibble sums of the face bytes that M_EBC0 passes to the material table.
+/// The two nibble sums of the face bytes for the material table.
 fn face_sample_sums(bytes: [u8; 3], t: f32, u: f32, w: f32) -> (f32, f32) {
     (face_nibble_sum(bytes, 0, t, u, w), face_nibble_sum(bytes, 4, t, u, w))
 }
 
-/// E38Ops::M_EBC0 (0x4febc0), thiscall on the collider with `(point, out, list)`, `ret 0xc`: the first face of the
-/// records in `list` (the collider's own list at +0x1014 when 0) that `point_triangle` hits. Every hit leaves 1.0 as
-/// its distance, and only a distance below the best so far (2.0) is taken, so the first hit is the one kept. Its record
-/// goes to `out`: the foot, the normal and its plane distance, the 5-bit channel sums of the face words +8 and +6, the
-/// two material table samples, and the two flag bits. Returns 1 on a hit, else 0 with `out` untouched.
+/// The first face of the records in `list` (the object's own list when 0) that `point_triangle` hits, stopping at
+/// the first hit. Its record goes to `out`: the foot, the normal and its plane distance, the 5-bit channel sums of
+/// the face words, the two material table samples, and the two flag bits. Returns 1 on a hit, else 0 with `out`
+/// untouched.
 pub fn face_query<S: CollisionStore>(
     host: &mut impl SampleHost,
     store: &mut S,

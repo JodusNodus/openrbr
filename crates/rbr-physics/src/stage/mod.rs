@@ -1,20 +1,16 @@
 //! The stage's physics world from its retail files, as the load builds it (step 5 of the load path,
 //! `notes/rust-plan.md` milestone L):
-//! - the `.col` image, read whole and relocated in place (`E39_FlagC60`, 0x4ffc60, then `E38Ops::M_E570`, 0x4fe570,
-//!   and `M_DFF0`, 0x4fdff0, per object; the relocation itself is `rbr_formats::col::relocate`), the collision
-//!   system's vertex slots and tree root, the brake wall its root names (`CBrakeWallManager::SetWall`, 0x4e4400), the
-//!   cell grid (`E45_MD60`, 0x523d60, `physics_core::detect::build_cell_grid`) and the root's water meshes (`E38Ops::M_B220`, 0x4fb220);
-//! - the `.mat` image and the E44 material table (`E09_LoadMaterials`, 0x46a290, and `E44MatTable::Build`, 0x520190, whose table is
-//!   `entities::material_table::MaterialTable`);
-//! - the `.trk` file (`CPC_TrackState::LoadPhysics`, 0x46ed20): the drive line (kind 0x14, `E09_LoadDriveLine`,
-//!   0x46a530, into `CDriveLine::SetDriveLine`, 0x50aec0) and the collision meshes (kind 0x16,
-//!   `CPC_TrackLoaderDaemon::LoadCollisionMeshes`, 0x46e300): a descriptor per mesh, the collision grid of each
-//!   static one (`collision::col_grid`), and the placements ([`Stuff`]), which the physics turns into objects;
-//! - the placements' objects (`layout::place`, the receiver `CPhysics::E46_Notify67d0`, 0x5267d0): per placement a
-//!   `CSolid` of the registry entry its object type names, placed (`CSolid::Vf44`, 0x52c700: pose, extent, grid cell,
-//!   collision grid, rotation and bounds), filed with the physics state and put to sleep (`CSolid::E43Vf94`, 0x52c130).
+//! - the `.col` image, read whole and relocated in place (the relocation itself is
+//!   `rbr_formats::col::relocate`), the collision system's vertex slots and tree root, the brake wall its root
+//!   names, the cell grid (`physics_core::detect::build_cell_grid`) and the root's water meshes;
+//! - the `.mat` image and the material table (`entities::material_table::MaterialTable`);
+//! - the `.trk` file: the drive line (kind 0x14 records as drive-line entries) and the collision meshes
+//!   (kind 0x16): a descriptor per mesh, the collision grid of each static one (`collision::col_grid`),
+//!   and the placements ([`Stuff`]), which the physics turns into objects;
+//! - the placements' objects: per placement an object of the registry entry its object type names, placed (pose,
+//!   extent, grid cell, collision grid, rotation and bounds), filed with the physics state and put to sleep.
 //!
-//! The pure parts are here; [`layout`] runs them on game memory in the original's order.
+//! The pure parts are here; [`layout`] runs them on game memory in load order.
 
 pub mod layout;
 pub mod store;
@@ -25,14 +21,14 @@ use crate::engine_driveline::drive_line::DriveLinePoint;
 use crate::math::vec::Vec4;
 use crate::physics_core::detect::Xy;
 
-/// The `.col` root object's header, as `M_DFF0`'s mode-3 path reads it: offsets in the image.
+/// The `.col` root object's header, as the relocation's mode-3 path reads it: offsets in the image.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ColRoot {
-    /// The root tree (`+0x10`), which becomes the collision system's tree root.
+    /// The root tree, which becomes the collision system's tree root.
     pub tree: u32,
-    /// The brake-wall definition (`+0x14`; none when 0).
+    /// The brake-wall definition (none when 0).
     pub wall_def: Option<u32>,
-    /// The two water-mesh lists: wet surfaces (`+0x18`/`+0x1c`, built only in wet weather) and water (`+0x20`/`+0x24`).
+    /// The two water-mesh lists: wet surfaces (built only in wet weather) and water.
     pub wet: MeshList,
     pub water: MeshList,
 }
@@ -52,7 +48,7 @@ fn word(image: &[u8], at: u32) -> u32 {
     u32::from_le_bytes(image[at..at + 4].try_into().unwrap())
 }
 
-/// The root object's header (the file header's `+4` points at it).
+/// The root object's header, from the file header.
 pub fn col_root(image: &[u8]) -> ColRoot {
     let root = word(image, 4);
     let field = |off| word(image, root + off);
@@ -65,9 +61,8 @@ pub fn col_root(image: &[u8]) -> ColRoot {
     }
 }
 
-/// The vertex slots a relocated image's objects took (`E38Ops::M_D630`, 0x4fd630, in `M_DFF0`): the root, then the
-/// cells in table order, each with vertices (`+8` nonzero) holding its slot at `+2`. Each gives `(slot, offset of its
-/// vertices)`, the vertex base `+0xc` names, which the collision system's slot table keeps.
+/// The vertex slots a relocated image's objects took: the root, then the cells in table order, each with vertices
+/// holding its slot. Each gives `(slot, offset of its vertices)`, which the collision system's slot table keeps.
 pub fn vertex_slots(image: &[u8]) -> Vec<(u32, u32)> {
     let (count, table) = (word(image, 8), word(image, 0xc));
     std::iter::once(word(image, 4))
@@ -80,9 +75,8 @@ pub fn vertex_slots(image: &[u8]) -> Vec<(u32, u32)> {
         .collect()
 }
 
-/// `CCollisionMeshWater::CtorWater` (0x4fb110): the lanewise bounds of the record's four corners (`E37Vec16::Min` and
-/// `Max` over corners 1 to 3 from corner 0), and the word it stores at `+0xbc`, `(y + x) * 0 - z` of corner 0 (SSE,
-/// in that order).
+/// The water mesh's corner bounds: the lanewise bounds of the record's four corners (the min and max over corners
+/// 1 to 3 from corner 0), and the stored word, `(y + x) * 0 - z` of corner 0 (in that order).
 pub fn water_box(corners: [Vec4; 4]) -> (Vec4, Vec4, f32) {
     let (low, high) =
         corners[1..].iter().fold((corners[0], corners[0]), |(low, high), &c| (low.min_lanes(c), high.max_lanes(c)));
@@ -90,20 +84,20 @@ pub fn water_box(corners: [Vec4; 4]) -> (Vec4, Vec4, f32) {
     (low, high, (c.y + c.x) * 0.0 - c.z)
 }
 
-/// `CCollisionMeshWater::Vf15CW` (0x4faf00): the point it files the water under, the centre of its bounds:
-/// `(high + low) * half` per axis on the x87 (PC=24, so f32 arithmetic), stored as floats.
+/// The point the water is filed under, the centre of its bounds: `(high + low) * half` per axis in f32 arithmetic,
+/// stored as floats.
 pub fn water_centre(low: Vec4, high: Vec4, half: f32) -> (f32, f32) {
     ((high.x + low.x) * half, (high.y + low.y) * half)
 }
 
-/// `CBrakeWallManager::QueryWall` (0x4e4140) through `CBrakeWall::Vf11C` (0x4e3870): the corners (low, high) of the
-/// wall's root box (centre x, centre y, half x, half y), which `E45_MD60` (0x523d60) spans the cell grid over.
+/// The corners (low, high) of the wall's root box (centre x, centre y, half x, half y), which the cell grid spans
+/// over.
 pub fn wall_corners([cx, cy, hx, hy]: [f32; 4]) -> [Xy; 2] {
     [Xy { x: cx - hx, y: cy - hy }, Xy { x: cx + hx, y: hy + cy }]
 }
 
-/// One run of the chosen `.mat` entry as `E09_LoadMaterials` (0x46a290) hands it on: the low bytes of its width and
-/// height words and the offset of its 256 cell bytes in the image.
+/// One run of the chosen `.mat` entry as the material loader hands it on: the low bytes of its width and height
+/// words and the offset of its 256 cell bytes in the image.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MaterialMap {
     pub width: u8,
@@ -111,9 +105,9 @@ pub struct MaterialMap {
     pub cells: u32,
 }
 
-/// `E09_LoadMaterials` (0x46a290) on a `.mat` image: the runs of the first entry whose name holds both `wear` and
-/// `wetness` (`E11_TyreCond`, 0x46f6c0, gives the words), or `None` when no entry does (the original then emits
-/// nothing). Each entry is a NUL-terminated name, a run count and 0x108-byte runs (width word, height word, cells).
+/// On a `.mat` image: the runs of the first entry whose name holds both `wear` and `wetness` (the `wear` and
+/// `wetness` words), or `None` when no entry does (then nothing is emitted). Each entry is a NUL-terminated name,
+/// a run count and 0x108-byte runs (width word, height word, cells).
 pub fn select_maps(image: &[u8], wear: &[u8], wetness: &[u8]) -> Option<Vec<MaterialMap>> {
     let contains = |name: &[u8], word: &[u8]| name.windows(word.len()).any(|w| w == word);
     let mut at = 4;
@@ -140,9 +134,8 @@ fn vec4(v: trk::Vec3) -> Vec4 {
     Vec4 { x: v.x, y: v.y, z: v.z, w: 0.0 }
 }
 
-/// `E09_LoadDriveLine` (0x46a530): the kind-0x14 records as drive-line entries: the position, the tangent, the arc
-/// length, and the two words as the tag (the first in its high half). The original's array leaves the vectors' `w`
-/// lanes unset (uninitialised heap, which `SetDriveLine` copies); here they are 0.
+/// The kind-0x14 records as drive-line entries: the position, the tangent, the arc length, and the two words as the
+/// tag (the first in its high half). The array leaves the vectors' `w` lanes unset in memory; here they are 0.
 pub fn drive_line_entries(data: &trk::DriveLineData) -> Vec<DriveLinePoint> {
     data.records
         .iter()
@@ -155,21 +148,21 @@ pub fn drive_line_entries(data: &trk::DriveLineData) -> Vec<DriveLinePoint> {
         .collect()
 }
 
-/// A placement as `LoadCollisionMeshes` (0x46e300) emits it (`CSigStuff`, 0x50 bytes; the words not named here are
-/// 0). Its receiver, `CPhysics::E46_Notify67d0` (0x5267d0), makes the object.
+/// A placement as the mesh loader emits it (0x50 bytes; the words not named here are 0). Its receiver makes the
+/// object.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Stuff {
-    /// +0x00, +0x10 and +0x20.
+    /// The position, values and extent.
     pub position: Vec4,
     pub values: [f32; 4],
     pub extent: Vec4,
-    /// +0x34: the mesh's collision id, or for a dynamic mesh its descriptor.
+    /// The mesh's collision id, or for a dynamic mesh its descriptor.
     pub collision: u32,
-    /// +0x38: the object type (`trk::CollisionMesh::game_object_type`).
+    /// The object type.
     pub object_type: u32,
-    /// +0x40: the interactive object's handle (0 for mesh kinds 0 and 5).
+    /// The interactive object's handle (0 for mesh kinds 0 and 5).
     pub handle: u32,
-    /// +0x44: 0x30 for a dynamic mesh.
+    /// The dynamic-mesh flag (0x30 for a dynamic mesh).
     pub flags: u32,
 }
 
@@ -186,7 +179,7 @@ pub fn stuff(mesh: &trk::CollisionMesh, object: &trk::CollisionObject, collision
     }
 }
 
-/// Whether `LoadCollisionMeshes` asks the interactive objects for a handle: for every mesh kind but 0 and 5.
+/// Whether the mesh loader asks the interactive objects for a handle: for every mesh kind but 0 and 5.
 pub fn wants_handle(mesh: &trk::CollisionMesh) -> bool {
     !matches!(mesh.kind, 0 | 5)
 }

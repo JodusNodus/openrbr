@@ -1,11 +1,10 @@
-//! Launch clutch (`CScratchSim::LaunchClutch`, 0x5375b0): the clutch value ramps down at the
-//! def's rate toward a target set by the engine speed, and the value goes to the drive (`Set4820`).
-//! The asm decides the branches and the NaN behaviour; `src/rbr/RBR_E50_Sim.cpp` is a 28% skeleton.
+//! Launch clutch: the clutch value ramps down at the definition's rate toward a target set by the engine
+//! speed, and the value goes to the drive. The branches and the NaN behaviour follow the operation order.
 
 use super::layout::{Def, Gearbox, State, Tuning};
 
 /// What the launch clutch reads outside the state and the drive's gear fields: the scratch's launch
-/// mode, the engine speed (`CDrive::Get4520`, rad/s) and the frame time.
+/// mode, the engine speed (rad/s) and the frame time.
 #[derive(Clone, Copy, Debug)]
 pub struct Input {
     pub launch_mode: u32,
@@ -16,7 +15,7 @@ pub struct Input {
     pub tuning: Tuning,
 }
 
-/// One step of the launch clutch. Returns the value the caller sends to the drive (`CDrive::Set4820`),
+/// One step of the launch clutch. Returns the value the caller sends to the drive's clutch slip,
 /// or `None` when the launch mode is off and nothing is sent.
 pub fn launch_clutch(input: Input, drive: &Gearbox, def: &Def, state: &mut State) -> Option<f32> {
     if input.launch_mode == 0 {
@@ -41,7 +40,7 @@ pub fn launch_clutch(input: Input, drive: &Gearbox, def: &Def, state: &mut State
     Some(state.launch_clutch)
 }
 
-/// The clutch target at an engine speed. NaN falls through to NaN, as the asm's compares do.
+/// The clutch target at an engine speed. NaN falls through to NaN, as the compares do.
 fn engine_target(engine: f32, t: &Tuning) -> f32 {
     if t.clutch_from > engine {
         1.0

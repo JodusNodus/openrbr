@@ -33,5 +33,5 @@ pub fn steered_walk(strut_direction: Vec4, gain: f32, walked: Vec4) -> Vec4 {
 pub fn spin_cross(walked: Vec4, axle: Vec4, spin: f32) -> Vec3 {
     let v = axle.scale(spin) + walked;
     let w = axle.scale(spin * SPIN_ARM);
-    Vec3 { x: v.x, y: v.y, z: v.z }.cross3(Vec3 { x: w.x, y: w.y, z: w.z })
+    v.xyz().cross3(w.xyz())
 }

@@ -1,10 +1,9 @@
-//! msvcr71's `$I10_OUTPUT` (0x7c371e14 in the DLL as the game loads it), the digits `printf` gives a double: the value
-//! as a 12-byte `_LDBL12` (a 16-bit extension word, the 64-bit mantissa, the exponent and sign), scaled by the CRT's
-//! powers of ten (`__multtenpow12` 0x7c37331e, `___ld12mul` 0x7c3730ed) into `[0.1, 1)`, then 18 digits from its
-//! 96-bit fixed point, the 18th rounding the 17th half up.
+//! The CRT's 12-byte float output, the digits `printf` gives a double: the value as a 12-byte long double
+//! (a 16-bit extension word, the 64-bit mantissa, the exponent and sign), scaled by the CRT's powers of ten into
+//! `[0.1, 1)`, then 18 digits from its 96-bit fixed point, the 18th rounding the 17th half up.
 
-/// An `_LDBL12`, little-endian: the extension word at 0, the mantissa at 2 (64 bits), the exponent and sign at 10. As
-/// the multiplication's 96-bit accumulator the same bytes are one integer.
+/// A 12-byte long double, little-endian: the extension word at 0, the mantissa at 2 (64 bits), the exponent and sign
+/// at 10. As the multiplication's 96-bit accumulator the same bytes are one integer.
 #[derive(Clone, Copy)]
 struct Ld12([u8; 12]);
 
@@ -40,7 +39,7 @@ impl Ld12 {
         self.0.copy_from_slice(&v.to_le_bytes()[..12]);
     }
 
-    /// `__shl_12` (0x7c372fb4), `__shr_12` (0x7c372fe2) and `__add_12` (0x7c372f56): the bytes as a 96-bit integer.
+    /// The 12-byte shift left, shift right and add: the bytes as a 96-bit integer.
     fn shl(&mut self) {
         self.set_int(self.int() << 1);
     }
@@ -58,7 +57,7 @@ impl Ld12 {
     }
 }
 
-/// The CRT's `_pow10pos` and `_pow10neg` (0x7c38f690, 0x7c38f7f0), the first three groups, all a double needs:
+/// The CRT's positive and negative powers of ten, the first three groups, all a double needs:
 /// `10^(j * 8^k)` for `k` 0 to 2 and `j` 1 to 7, the 80-bit mantissa rounded to nearest, and the 64 bits above the
 /// extension word rounded up when the word is at least 0x8000 (the multiplication takes one off again).
 const POW10_POS: [Ld12; 21] = [

@@ -1,4 +1,4 @@
-//! The body's contact calls over the store: `BigA`, `Vf81x`, `E43Vf128`'s tail and the ring append.
+//! The body's contact calls over the store: the contact worker, the vote, the impulse tail and the ring append.
 
 use super::contact::{self, ContactHost};
 use super::host::HostUnavailable;
@@ -8,8 +8,8 @@ use super::vote::{self, ContactVoteHost};
 use crate::mem::Mem;
 use crate::physics_core::layout as core_layout;
 
-/// `BigA`'s outputs: the impulse pair's addresses (the force vector, 16 bytes, and the torque, 12), and the
-/// force and depth floats' addresses.
+/// The contact worker's outputs: the impulse pair's addresses (the force vector and the torque), and the force and
+/// depth floats' addresses.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ContactOut {
     pub force_out: u32,
@@ -18,9 +18,9 @@ pub struct ContactOut {
     pub depth: u32,
 }
 
-/// `CSolid::BigA` (0x52b9f0) on the store: the contact at `e` with the range `f`. The body's inverse mass, the
-/// world's `MaxTimeStep` and the sample test (the hook and flag 8) are read first; the writes are the depth, the force
-/// when it is computed, and the pair on a hit. Returns eax (1 on a hit).
+/// The contact at `e` with the range `f`. The body's inverse mass, the world's maximum time step and the sample
+/// test (the hook and the retire flag) are read first; the writes are the depth, the force when it is computed, and
+/// the pair on a hit. Returns 1 on a hit.
 pub fn contact_worker<S: RigidStore>(
     store: &mut S,
     this: u32,
@@ -45,8 +45,7 @@ pub fn contact_worker<S: RigidStore>(
     Ok(1)
 }
 
-/// `CSolid::Vf81x` (0x52c510) on the store: the vote into the force and torque outputs (16 bytes each, written
-/// only when the body has a list). Returns eax.
+/// The vote into the force and torque outputs (written only when the body has a list). Returns whether it hit.
 pub fn contact_vote<S: RigidStore>(
     store: &mut S,
     this: u32,
@@ -62,25 +61,24 @@ pub fn contact_vote<S: RigidStore>(
     Ok(u32::from(v.hit))
 }
 
-/// The bit of the CDef debug word (`core_layout::cdef_debug_flags`) that lets `E43Vf128` append to a ring tail.
+/// The bit of the CDef debug word that lets the impulse tail append to a ring tail.
 const RING_BIT: u32 = 0x0100_0000;
 
-/// The original callees of `E43Vf128`'s tail, at their entry stack pointers.
+/// The impulse tail's callees, at their frame pointers.
 pub trait ImpulseTailCalls<S = Mem> {
-    /// Slot 12 of the body (`S30`), with the word the original has pushed for the compose: returns the body's pose.
+    /// The body's pose query on `body`: returns the body's pose.
     fn pose(&mut self, store: &mut S, sp: u32, body: u32, pushed: u32) -> u32;
-    /// `E33Mat34::ComposeA` (0x51b4c0) with the walker as ecx.
+    /// Composes `point` with the walker's `matrix` into `out`.
     fn compose_a(&mut self, store: &mut S, sp: u32, point: u32, matrix: u32, out: u32);
-    /// Slot 1 of the hook.
+    /// The hook's call with its eight arguments.
     fn hook(&mut self, store: &mut S, sp: u32, hook: u32, args: [u32; 8]);
-    /// `E46_RingAppend` (0x529100) on the ring tail.
+    /// Appends to the ring tail.
     fn ring_append(&mut self, store: &mut S, sp: u32, ring: u32, args: [u32; 4]);
 }
 
-/// `CSolid::E43Vf128`'s tail (from 0x52a20b), after the velocities. With a hook, its slot 1 gets the point composed
-/// with the body's pose and the call's other arguments. With the physics global's ring bit and a ring tail, the ring
-/// gets the point composed with the body. `frame` is the original's esp after its prologue, `((entry - 4) & !0xf) -
-/// 0x80`; both composes write `frame + 0x70`.
+/// The impulse tail, after the velocities. With a hook, the hook gets the point composed with the body's pose and
+/// the call's other arguments. With the physics global's ring bit and a ring tail, the ring gets the point composed
+/// with the body. Both composes write the same scratch word.
 pub fn impulse_tail<S: RigidStore>(
     store: &mut S,
     this: u32,
@@ -107,9 +105,9 @@ pub fn impulse_tail<S: RigidStore>(
     }
 }
 
-/// `E46_RingAppend` (0x529100) on the ring at `ring`: the three words `a`, `b`, `c` and the vector at `src` go in at
-/// the index, which then steps (`impulse::ring_step`). A full ring that does not wrap is left as it is. Returns the eax
-/// the original leaves: the new index plus one (wrapping), the new count, or the index (full).
+/// Appends to the ring at `ring`: the three words and the vector at `src` go in at the index, which then steps (see
+/// [`impulse::ring_step`]). A full ring that does not wrap is left as it is. Returns the new index plus one
+/// (wrapping), the new count, or the index (full).
 pub fn ring_append<S: RigidStore>(store: &mut S, ring: u32, src: u32, words: [u32; 3]) -> u32 {
     let header = store.ring_header(ring);
     let Some((next, count)) = impulse::ring_step(header.wraps, header.index, header.count) else {

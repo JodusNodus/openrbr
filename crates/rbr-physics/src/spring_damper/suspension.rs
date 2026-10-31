@@ -3,11 +3,11 @@
 //! stack. The memory edge (`layout`) loads a `Suspension` from the strut's objects, runs one method, and stores it
 //! back, so every dispatch path (bindings, host calls, pure leaves) runs this code.
 //!
-//! The step mirrors NGP's `CSpringDamper::Step` wrapper (`0x10059f70`): the bump rubber softens the definition for
+//! The step mirrors NGP's spring-damper step wrapper: the bump rubber softens the definition for
 //! this calculation alone, the high-speed latch overrides the effective damping and clears its break speed, the
-//! ported `Step` runs on the adjusted definition, the definition is restored, and `UpdateForces` recomputes the
-//! effective damping from the (possibly faded) fade state. The strut's scratch words (`+0x30/0x34/0x38`) and the
-//! car's copies (`+0xe80/0xe84/0xe88/0xe8c`) capture the pre-step latch state; `Output` carries them as typed values
+//! step runs on the adjusted definition, the definition is restored, and the force update recomputes the
+//! effective damping from the (possibly faded) fade state. The strut's scratch words and the
+//! car's copies capture the pre-step latch state; `Output` carries them as typed values
 //! so the memory edge can store them without reimplementing the logic.
 
 use super::store::SpringStore;
@@ -37,8 +37,8 @@ impl Damping {
     }
 }
 
-/// Wheel settings that affect the bump rubber during this step: the progressive flag (NGP settings bit `0x20000`
-/// with the game object's bit), the wheel definition's gap (`+0x41c`) and rebound ratio (`+0x1fc`).
+/// Wheel settings that affect the bump rubber during this step: the progressive flag (the NGP settings bit with the
+/// game object's bit), the wheel definition's gap and rebound ratio.
 #[derive(Clone, Copy, Debug)]
 pub struct Environment {
     pub progressive: bool,
@@ -50,15 +50,15 @@ pub struct Environment {
 /// car's copies. Both hold the latched state before the force calculation.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Diagnostics {
-    /// Strut `+0x30`: the bump engagement ratio (0 when the rubber is not engaged).
+    /// The bump engagement ratio (0 when the rubber is not engaged).
     pub bump_ratio: f32,
-    /// Strut `+0x34`: the rubber stiffness for the step (the definition's when disengaged).
+    /// The rubber stiffness for the step (the definition's when disengaged).
     pub bump_stiffness: f32,
-    /// Strut `+0x38`: the recorded rubber damping (the definition's when disengaged).
+    /// The recorded rubber damping (the definition's when disengaged).
     pub bump_damping: f32,
-    /// Car `+0xe80/0xe84`: the latched effective bump and rebound damping.
+    /// The latched effective bump and rebound damping.
     pub effective_damping: [f32; 2],
-    /// Car `+0xe88/0xe8c`: the break speeds for the step (cleared when latched).
+    /// The break speeds for the step (cleared when latched).
     pub break_speeds: [f32; 2],
 }
 
@@ -104,8 +104,8 @@ impl Suspension {
         mem.store_setup_values(mem.definition_at(controller_at), &self.definition);
     }
 
-    /// Adopts the nine setup values into the definition (`CopyStateToDef`, 0x52dbd0). Effective damping is left
-    /// alone; `UpdateForces` recomputes it separately, as the original sequences them.
+    /// Adopts the nine setup values into the definition. Effective damping is left
+    /// alone; the force update recomputes it separately, in sequence.
     pub fn adopt_setup(&mut self, setup: SetupValues) {
         super::apply_setup(&mut self.definition, setup);
     }
@@ -116,7 +116,7 @@ impl Suspension {
         self.damping = Damping::from_state(state);
     }
 
-    /// `UpdateForces` then the reset without the signal-manager emit (`UpdateAndReset`, 0x52e060).
+    /// The force update then the reset without the signal-manager emit.
     pub fn update_and_reset(&mut self, owner_id: u32) -> DamperSignal {
         self.update_damping();
         self.reset_signal(owner_id)

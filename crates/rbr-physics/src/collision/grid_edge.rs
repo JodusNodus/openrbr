@@ -1,5 +1,6 @@
-//! The collision grid's edge tests: `E37GridOps::EdgeEdge`, `EdgePair`, the edge-pair walks, `M6610` and `AddEdge`,
-//! generic over the store. The sweeps are `face_sweep` and `edge_pair`; the grid reads are `CollisionStore`.
+//! The collision grid's edge tests: the segment sweep over the triangle faces, the edge-pair walks, the grid copy
+//! and the edge move, generic over the store. The sweeps are `face_sweep` and `edge_pair`; the grid reads are
+//! `CollisionStore`.
 
 use super::cells;
 use super::edge_pair::{self as pair, PairGrid};
@@ -8,7 +9,7 @@ use super::layout::grid_hosts::GridOpsHost;
 use super::store::CollisionStore;
 use crate::math::vec::{Vec3, Vec4};
 
-/// The reads a sweep makes of a grid, each asked at the original's branch point.
+/// The reads a sweep makes of a grid, each asked at the sweep's branch point.
 struct GridReads<'a, S: CollisionStore> {
     store: &'a S,
     grid: u32,
@@ -86,8 +87,7 @@ impl<S: CollisionStore> PairGrid for GridReads<'_, S> {
     }
 }
 
-/// `E37GridOps::EdgeEdge` (0x4f8280), thiscall on the grid with `(start, end, point, distance, normal, word)`: sweeps the
-/// segment through the grid's triangle faces and stores the first hit. True on a hit.
+/// Sweeps the segment through the grid's triangle faces and stores the first hit. True on a hit.
 pub fn edge_edge<S: CollisionStore>(
     store: &mut S,
     grid: u32,
@@ -102,7 +102,7 @@ pub fn edge_edge<S: CollisionStore>(
     hit.is_some()
 }
 
-/// The output writes `EdgeEdge` makes only after its first accepted face.
+/// The output writes the sweep makes only after its first accepted face.
 #[allow(clippy::too_many_arguments)]
 pub fn store_edge_edge_hit<S: CollisionStore>(
     store: &mut S,
@@ -132,11 +132,9 @@ pub fn store_edge_edge_hit<S: CollisionStore>(
     }
 }
 
-/// `E37GridOps::M6610(src, a, b)` (0x4f6610) on the grid at `this`; `entry` is its entry esp. With no source the grid's
-/// rays are seeded. Else the grid becomes a copy of `src` (0x6b0 bytes); when it has points, its two blocks (+0x40 and
-/// +0x220, the count byte re-read for each) are moved through the transform `a` against `b`, and the bounds of the
-/// first block go to +0, +0x10, their centre (`E11_VecLerp` at 0.5) to +0x20 and the half extent to +0x30. Returns
-/// `this` (eax). `None` (nothing changed) for no grid with a source, or one point: the asm's loop would not end.
+/// Copies the source grid into `this` and moves its points through the transform `a` against `b`, rebinding them.
+/// With no source the grid's rays are seeded. Returns `this`. `None` (nothing changed) for no grid with a source,
+/// or a single point.
 pub fn grid_ops_m6610<S: CollisionStore>(
     host: &mut impl GridOpsHost,
     store: &mut S,
@@ -172,9 +170,8 @@ pub fn grid_ops_m6610<S: CollisionStore>(
     Some(this)
 }
 
-/// `E37GridOps::AddEdge(vec)` (0x4f65b0) on the grid at `this`: each of the grid's points (+0x40, 16 bytes each; the
-/// count byte at +0x68d, re-read after each point) moves by the vector at `vec` on three lanes (`addss` lane by lane);
-/// lane 3 is kept. The vector is read again for each point, as the asm does. Returns the number of points moved.
+/// Moves each of the grid's points by the vector at `vec` on three lanes; lane 3 is kept. The vector is read again
+/// for each point. Returns the number of points moved.
 pub fn grid_add_edge<S: CollisionStore>(store: &mut S, this: u32, vec: u32) -> u32 {
     let mut moved = 0;
     while moved < u32::from(store.grid_edge_count(this)) {
@@ -186,13 +183,12 @@ pub fn grid_add_edge<S: CollisionStore>(store: &mut S, this: u32, vec: u32) -> u
     moved
 }
 
-/// `E37VecSet::Store5570` (0x4f5570) (name ours), thiscall on `this` with `(p2, p3, p4)`, ret 0xc: the gap, in st0.
+/// The signed volume of the tetrahedron at `this`, `p2`, `p3`, `p4`: the gap.
 pub fn vec_set_gap<S: CollisionStore>(store: &S, this: u32, p2: u32, p3: u32, p4: u32) -> f64 {
     pair::signed_volume(store.vec3(this), store.vec3(p2), store.vec3(p3), store.vec3(p4))
 }
 
-/// `E37GridOps::M74A0` (0x4f74a0) (name ours), thiscall on the grid with `(idx, p3, p4, out)`, ret 0x10: the row's edge
-/// normal to `out`. Returns 1.0 (st0).
+/// The row's edge normal to `out`. Returns 1.0.
 pub fn edge_normal<S: CollisionStore>(store: &mut S, grid: u32, index: u32, p3: u32, p4: u32, out: u32) -> f32 {
     let normal = {
         let view = GridReads { store: &*store, grid };
@@ -203,8 +199,7 @@ pub fn edge_normal<S: CollisionStore>(store: &mut S, grid: u32, index: u32, p3: 
     1.0
 }
 
-/// `E37GridOps::Walk5FF0` (0x4f5ff0), thiscall on the grid with `(idx, p3, p4, p5, p6, p7, p8, p9)`, ret 0x20: the
-/// returned t, in st0 (2.0 for a miss). `p8` and `p9` are written once the first gate passes, `p7` on a hit.
+/// The walk's `t` (2.0 for a miss). `p8` and `p9` are written once the first gate passes, `p7` on a hit.
 pub fn walk_5ff0<S: CollisionStore>(
     store: &mut S,
     grid: u32,
@@ -233,9 +228,8 @@ pub fn walk_5ff0<S: CollisionStore>(
     walk.t
 }
 
-/// `E37GridOps::EdgePair` (0x4f8560), thiscall on the grid with `(p2, p3, p4, p5, hit, t, normal, scratch, grid, 0)`,
-/// ret 0x28. `t` is always written (1.01 when no row beat it); the hit, normal and sample bytes only on a hit. Returns
-/// 1 on a hit, else 0.
+/// The edge-pair test of the two edges through the grid's rows. `t` is always written (1.01 when no row beat it);
+/// the hit, normal and sample bytes only on a hit. Returns 1 on a hit, else 0.
 pub fn edge_pair<S: CollisionStore>(store: &mut S, grid: u32, args: [u32; 10]) -> u32 {
     let [p2, p3, p4, p5, hit_at, t_at, normal_at, ..] = args;
     let result = {

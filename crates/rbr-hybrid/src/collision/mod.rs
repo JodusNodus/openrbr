@@ -47,7 +47,7 @@ pub(crate) const E36_ALLOC_EVENT: u32 = 0x4f4f10;
 pub(crate) const COLL_EVENT_INIT_FULL: u32 = 0x4f50e0;
 
 const fn bind(addr: u32, name: &'static str, run: crate::BindingFn) -> Binding {
-    Binding { addr, name, subsystem: "collision", run }
+    crate::bind("collision", addr, name, run)
 }
 
 pub static BINDINGS: [Binding; 93] = [

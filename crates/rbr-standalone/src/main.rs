@@ -119,7 +119,7 @@ use rbr_recording::replay::Replay;
 use rbr_recording::Frame;
 
 use args::{Args, USAGE};
-use physics::{on_big_stack, payload, why};
+use physics::{payload, run_guarded};
 use stage::{stage_data, StageData};
 
 /// Counts the allocations for `--boot`'s timing line.
@@ -199,7 +199,7 @@ fn main() -> ExitCode {
 
 /// `--live`: serves the viewer's protocol from the snapshot or the boot (`live/`), then writes the rally's files.
 fn live(args: &Args, data: &Data, race: Option<&boot::Race>, stage: &StageData) -> ExitCode {
-    let r = on_big_stack(|| {
+    let r = run_guarded("the live run", || {
         let mut live = if let Some(race) = race {
             live::Live::boot(data, &args.stage, race, stage, args.marker_settings, true)?
         } else {
@@ -266,8 +266,7 @@ fn live(args: &Args, data: &Data, race: Option<&boot::Race>, stage: &StageData) 
             args.damage_out.as_deref(),
             args.result_out.as_deref(),
         )
-    })
-    .unwrap_or_else(|e| Err(format!("the live run panicked outside a step: {}", why(&*e))));
+    });
     match r {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
@@ -280,11 +279,10 @@ fn live(args: &Args, data: &Data, race: Option<&boot::Race>, stage: &StageData) 
 /// `--events-out OUT`: the recording's controls through the live boot, with the particle and lamp records of each step
 /// (`events_out.rs`).
 fn events(args: &Args, out: &Path, data: &Data, race: &boot::Race, stage: &StageData, recording: &Path) -> ExitCode {
-    let r = on_big_stack(|| {
+    let r = run_guarded("the events run", || {
         let live = live::Live::boot(data, &args.stage, race, stage, args.marker_settings, true)?;
         events_out::write(live, stage, recording, out)
-    })
-    .unwrap_or_else(|e| Err(format!("the events run panicked outside a step: {}", why(&*e))));
+    });
     match r {
         Ok(written) => {
             eprintln!("rbr-standalone: {} steps of events in {}", written.steps, out.display());
@@ -322,7 +320,7 @@ fn autopilot(args: &Args, out: &Path, data: &Data, race: Option<&boot::Race>, st
             return ExitCode::FAILURE;
         }
     };
-    let r = on_big_stack(|| {
+    let r = run_guarded("the autopilot", || {
         let (mut live, head, control) = if let Some(race) = race {
             let live = live::Live::boot(data, &args.stage, race, stage, args.marker_settings, false)?;
             let neutral = payload(&QuantizedControl::default().car_control(), 0);
@@ -336,8 +334,7 @@ fn autopilot(args: &Args, out: &Path, data: &Data, race: Option<&boot::Race>, st
             live.set_saves(stage.saves(dir, args.profile.as_deref())?);
         }
         autopilot::drive(live, head, control, stage, args.steps as u32, args.top_speed, args.aim, out)
-    })
-    .unwrap_or_else(|e| Err(format!("the autopilot panicked outside a step: {}", why(&*e))));
+    });
     match r {
         Ok(d) => {
             let finish = d.finish.map_or("not reached".into(), |s| format!("step {s}"));

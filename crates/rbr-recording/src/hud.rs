@@ -17,6 +17,8 @@
 
 use std::io::{self, Read};
 
+use crate::{invalid, word};
+
 /// The tags.
 pub const HUD1: u32 = 0x3144_5548;
 pub const HUD2: u32 = 0x3244_5548;
@@ -68,7 +70,6 @@ impl Hud {
     pub fn read(reader: &mut impl Read) -> io::Result<Hud> {
         let mut head = [0u8; HUD1_BYTES];
         reader.read_exact(&mut head)?;
-        let word = |b: &[u8], i: usize| u32::from_le_bytes(b[4 * i..4 * i + 4].try_into().unwrap());
         let race = match word(&head, 0) {
             HUD1 => None,
             HUD2 => {
@@ -84,7 +85,7 @@ impl Hud {
                 })
             }
             tag => {
-                return Err(io::Error::new(io::ErrorKind::InvalidData, format!("{tag:#010x} is not a HUD record")));
+                return Err(invalid(format!("{tag:#010x} is not a HUD record")));
             }
         };
         Ok(Hud {

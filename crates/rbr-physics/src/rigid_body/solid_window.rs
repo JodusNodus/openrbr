@@ -9,16 +9,15 @@ use super::{emit, window};
 use crate::collision;
 use crate::collision::layout::body_hosts::Vf40Host;
 
-/// `CSolid::S18` (0x529dc0, slot 18) on the body at `this`, after its children's walk (`CEntity::E43Vf48`, the
-/// caller's): `emit::window_start`.
+/// The window start on the body at `this`, after its children's walk: `emit::window_start`.
 pub fn solid_window_start<S: RigidStore>(store: &mut S, this: u32) {
     let mut body = store.body(this);
     emit::window_start(&mut body);
     store.store_body(this, &body);
 }
 
-/// `CSolid::VfDx` (0x52cfd0, the back step) on the body at `this`: `window::back_step`. The body is stored when the
-/// step stops, as the fields before a failed call are written.
+/// The back step on the body at `this`: `window::back_step`. The body is stored when the step stops, as the fields
+/// before a failed call are written.
 pub fn solid_back_step<S: RigidStore>(
     store: &mut S,
     host: &mut (impl CellHost + StateHost),
@@ -31,8 +30,7 @@ pub fn solid_back_step<S: RigidStore>(
     done
 }
 
-/// `CSolid::VfEx` (0x52d110, the rest of the window) on the body at `this`: `window::advance_rest`, stored as
-/// `solid_back_step` stores it.
+/// The rest of the window on the body at `this`: `window::advance_rest`, stored as `solid_back_step` stores it.
 pub fn solid_advance_rest<S: RigidStore>(
     store: &mut S,
     host: &mut (impl CellHost + StateHost),
@@ -45,8 +43,7 @@ pub fn solid_advance_rest<S: RigidStore>(
     done
 }
 
-/// `E47SolidState::Vf17x` (0x529a50): `state` is the body's state at +0xe0. Refreshes its matrix (which is the body's
-/// `+0x110`) from the orientation, scaled by the diagonal when the gate is positive.
+/// Refreshes the state's matrix from the orientation, scaled by the diagonal when the gate is positive.
 pub fn refresh_state_rotation<S: RigidStore>(
     store: &mut S,
     state: u32,
@@ -58,8 +55,7 @@ pub fn refresh_state_rotation<S: RigidStore>(
     Ok(())
 }
 
-/// `E47_Vf16Helper` (0x52b6d0), `CSolid::Vf40` in the C++: `Vf17x` on the state at `+0xe0` twice, then the tail jump to
-/// `CBody::Vf40` (0x4e1120) on the body. Returns that call's result.
+/// Refreshes the state matrix twice, then the body's base reset. Returns that call's result.
 pub fn vf16_helper<S: RigidStore>(
     store: &mut S,
     this: u32,
@@ -71,8 +67,8 @@ pub fn vf16_helper<S: RigidStore>(
     Ok(collision::layout::reset_state_and_base(host, this))
 }
 
-/// `CSolid::E43Vf74` (0x529ea0): the scratch accumulator gets `pp * scale` added; then the flush runs when `gate` has its
-/// bit (the caller reads the gate from the app). The same sum as `scratch::accumulate`, on the store.
+/// The scratch accumulator gets `pp * scale` added; then the flush runs when `gate` has its bit. The same sum as
+/// `scratch::accumulate`, on the store.
 pub fn scratch_accumulate<S: RigidStore>(
     store: &mut S,
     this: u32,

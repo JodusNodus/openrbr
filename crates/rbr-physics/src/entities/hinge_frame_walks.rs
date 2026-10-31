@@ -25,14 +25,14 @@ pub struct FrameWalkInput {
     pub hinge_rotation: [[f32; 3]; 3],
     /// The body's frame matrix ([`super::hinge_pose::PoseBody::frame_matrix`]): `vector_times_matrix`'s matrix.
     pub frame_matrix: [[f32; 3]; 3],
-    /// The axes built from `vecHingeAxis_RF` and `vecZeroAxis_RF`: its rows are carried, and the rotation rows are
-    /// multiplied by it.
+    /// The axes built from the hinge axis and the zero axis in the reference frame: its rows are carried, and the
+    /// rotation rows are multiplied by it.
     pub axes_rf: [[f32; 3]; 3],
     /// The inverse origin of the body-frame axes build: `vector_times_matrix`'s vector.
     pub inverse_origin_bf: [f32; 3],
-    /// `vecHingePoint_RF`: added to the product before the transform.
+    /// The hinge point in the reference frame: added to the product before the transform.
     pub hinge_point_rf: [f32; 3],
-    /// `vecFaceNormal_BF`: the vector carried on the body.
+    /// The face normal in the body frame: the vector carried on the body.
     pub face_normal_bf: [f32; 3],
 }
 

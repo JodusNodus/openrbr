@@ -7,7 +7,7 @@
 
 mod common;
 
-use common::{load_inner, Inner};
+use common::{load_inner, Inner, Window};
 use rbr_physics::entities::hinge_axes::AxesHandles;
 use rbr_physics::entities::layout;
 use rbr_physics::mem::Mem;
@@ -17,7 +17,7 @@ const VF_E070: u32 = 0x51E070;
 
 /// The windows the call wrote, after the port ran.
 fn check_windows(call: &Inner, mem: &Mem, index: usize) {
-    for (k, at, len, _, post) in &call.windows {
+    for Window { index: k, at, len, before: _, after: post } in &call.windows {
         assert_eq!(mem.read(*at, *len), *post, "VfE070 inner call {index} window {k}");
     }
 }
@@ -30,7 +30,7 @@ fn vf_e070_matches_original_calls() {
     };
     for (index, call) in calls.iter().enumerate() {
         let mut mem = Mem::new();
-        for (_, at, _, pre, _) in &call.windows {
+        for Window { index: _, at, len: _, before: pre, after: _ } in &call.windows {
             mem.map(*at, pre);
         }
         let [_this, a, b, c, d, e, f] = call.args[..] else {

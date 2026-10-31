@@ -29,6 +29,7 @@ mod image;
 mod leaves;
 mod playback;
 mod stand_in;
+mod watch;
 
 use crate::engine_driveline::SIGNALS;
 use crate::rigid_body::OPERATOR_NEW as CRT_NEW;
@@ -41,6 +42,8 @@ pub use heap::{ALLOCATOR_HEAP_BASE, ALLOCATOR_HEAP_END};
 pub use image::{app_state, clock, max_time_step, set_app_state, time_keeper, CAR_BYTES, CAR_PTR};
 pub use playback::{step, Playback, ReadTrace, SENTINEL};
 pub use stand_in::{stand_in, uncovered, StandIn};
+pub(crate) use watch::{Watch, OUTSIDE_ASSISTANCE_EMIT, TYRE_PARTICLES_EMIT, WATCHED};
+pub use watch::{PARTICLE_EVENT_BYTES, TYRE_PARTICLES_BYTES};
 
 /// The return address a host call leaves in its callee's slot; never mapped (`CALL_RET` in `rust_step.py`).
 pub const CALL_RET: u32 = 0xfeed_2000;
@@ -64,29 +67,6 @@ const CRT_DELETE_ARRAY: u32 = 0x70c27e;
 /// The import table slot of `QueryPerformanceCounter`.
 pub(crate) const QUERY_PERFORMANCE_COUNTER: u32 = 0x729190;
 
-/// `CSigOutsideAssistance`'s emit, whose code [`Pure::take_outside_assistance`] gives the host.
-pub(crate) const OUTSIDE_ASSISTANCE_EMIT: u32 = 0x4e89b0;
-/// `CSigRetireCar`'s emit, whose code [`Pure::take_retire`] gives the host.
-const RETIRE_EMIT: u32 = 0x4e8770;
-/// `CMultiSignal1<CSigCarStandStill>::Emit` and `CMultiSignal1<CSigCarProblem>::Emit`, whose payloads
-/// [`Pure::take_hud_signals`] gives the host (the HUD's messages, `rbr_recording::dash`).
-const STAND_STILL_EMIT: u32 = 0x4e88f0;
-const CAR_PROBLEM_EMIT: u32 = 0x4e8a70;
-
-/// `CMultiSignal1<CSigTireParticles>::Emit` (0x53d0d0) on the tyre-particle signal, `[0x893600] + 0x4518` (the wheel
-/// step's emit, `rbr_physics::wheel::layout`), whose payloads [`Pure::take_tyre_particles`] gives the host. The same
-/// code emits `CSigSolidGeneralState`, on another signal.
-pub(crate) const TYRE_PARTICLES_EMIT: u32 = 0x53d0d0;
-const TYRE_PARTICLES_SIGNAL: u32 = 0x4518;
-/// The payload bytes kept (`rbr_recording::particles::PAYLOAD_BYTES`).
-pub const TYRE_PARTICLES_BYTES: usize = 0xb0;
-/// The other emits the particles take (with [`Pure::keep_tyre_particles`]), each on its signal `[0x893600] + offset`:
-/// `(emit, signal offset, kind, payload bytes)`. `CMultiSignal1<CSigCarDamage>::Emit` with the handler's 0x40-byte
-/// record, the damping event of `CSolid::Emit` (0x52be70, 0x40 bytes) and `CSigEngineFire`'s float. The kinds are
-/// `rbr_recording::particles::Event`'s.
-const PARTICLE_EMITS: [(u32, u32, u32, usize); 3] =
-    [(0x4ef1d0, 0x9f20, 1, 0x40), (0x52be70, 0xadc8, 2, 0x40), (0x4ef290, 0xb840, 3, 4)];
-
 /// The subsystems whose calls, made or taken, [`Pure::direct`] runs in place: the entity walk, the wheel and its tyre,
 /// strut and VCU, collision and the rigid body. A call between two others (the physics core, the car body, the
 /// engine, NTweak, NGP) still writes its stack words.
@@ -102,27 +82,8 @@ const TYRE_STEPS: [u32; 2] = [0x5360c0, 0x1005_b660];
 const UNSEEN: u8 = u8::MAX - 1;
 const NOT_DIRECT: u8 = u8::MAX;
 
-/// The bytes of a particle event's payload.
-pub const PARTICLE_EVENT_BYTES: usize = 0x40;
-/// `CMultiSignal1<CSigEngineFire>::Emit` (0x4ef290) on the engine-fire signal (`[0x893600] + 0xb840`), whose emits
-/// [`Pure::take_engine_fires`] counts for the host (the sound's fire).
-const ENGINE_FIRE_EMIT: u32 = 0x4ef290;
-const ENGINE_FIRE_SIGNAL: u32 = 0xb840;
 /// The entries of [`Pure::slot_of`]'s cache.
 const SLOT_CACHE: usize = 1024;
-
-/// The emits [`Pure::enter`] watches ([`Pure::watch`]).
-const WATCHED: [u32; 9] = [
-    OUTSIDE_ASSISTANCE_EMIT,
-    TYRE_PARTICLES_EMIT,
-    PARTICLE_EMITS[0].0,
-    PARTICLE_EMITS[1].0,
-    PARTICLE_EMITS[2].0,
-    ENGINE_FIRE_EMIT,
-    RETIRE_EMIT,
-    STAND_STILL_EMIT,
-    CAR_PROBLEM_EMIT,
-];
 
 /// The term `CScratch::FillOutputs` (0x532f10, `rbr_physics::tyre::noise_signal`) folds into word 1 of the tyre-noise block
 /// of `scratch`, from the step it ended (`dt` its divisor, `Step`'s second word): `(tread depth + carcass radius - c -
@@ -188,9 +149,6 @@ pub struct Pure {
     ticks: Cell<u64>,
     /// The read trace `mem` is backed by, told the running binding ([`Playback::traced`]).
     trace: Option<Arc<ReadTrace>>,
-    /// The code of the last `CSigOutsideAssistance` emit (0x4e89b0), the word its argument points at: what the HUD's
-    /// receiver (0x573900) keeps for the race clock. The host takes it after each step.
-    outside_assistance: Cell<Option<u32>>,
     /// B1's Mem-direct dispatch: a call to a leaf ([`leaves::LEAVES`]) from or of the [`IN_PLACE`] subsystems runs as
     /// a plain call ([`Pure::call_leaf`]), without the call's words on the stack.
     pub direct: bool,
@@ -208,24 +166,8 @@ pub struct Pure {
     bound: &'static [&'static crate::Binding],
     /// Whether the tyre-particle payloads are kept (the live viewer's particles; off in every check).
     pub keep_tyre_particles: bool,
-    /// The tyre-particle payloads emitted since the host last took them, copied at the emit's entry.
-    tyre_particles: RefCell<Vec<[u8; TYRE_PARTICLES_BYTES]>>,
-    /// The tyre steps since the host last took them ([`TYRE_STEPS`]): the scratch and its `FillOutputs` term.
-    tyre_terms: RefCell<Vec<(u32, Option<f32>)>>,
-    /// The other particle emits since the host last took them ([`PARTICLE_EMITS`]): kind and payload (zero padded).
-    particle_events: RefCell<Vec<(u32, [u8; PARTICLE_EVENT_BYTES])>>,
-    /// The code of the last `CSigRetireCar` emit (0x4e8770), what the race flow's receiver (0x5662c0) takes. The host
-    /// takes it after each step.
-    retire: Cell<Option<u32>>,
-    /// The last `CSigCarStandStill` payload (count, kind) and `CSigCarProblem` kind, copied at the emits' entry for
-    /// the HUD. The host takes them after each step.
-    stand_still: Cell<Option<[u32; 2]>>,
-    car_problem: Cell<Option<u32>>,
-    /// The `CSigEngineFire` emits since the host last took them.
-    engine_fires: Cell<u32>,
-    /// The damper-signal payloads `CSpringDamper::ResetOutputs` emitted since the host last took them: the strut
-    /// and the payload the reset handed to the signal manager.
-    damper_signals: RefCell<Vec<(u32, rbr_physics::spring_damper::DamperSignal)>>,
+    /// The watched emits' kept payloads and counts ([`Watch`]).
+    captures: Watch,
     /// NGP.dll's base in this image, 0 without NGP: the runs see it through [`crate::ngp::Scope`].
     pub ngp_base: u32,
 }
@@ -261,7 +203,6 @@ impl Pure {
             first_met: RefCell::default(),
             ticks: Cell::new(1 << 40),
             trace: None,
-            outside_assistance: Cell::new(None),
             direct: false,
             direct_runs: Cell::new(0),
             in_place_slots: bound().iter().map(|b| IN_PLACE.contains(&b.subsystem)).collect(),
@@ -276,14 +217,7 @@ impl Pure {
             leaf_slots: bound().iter().map(|b| LEAVES.contains(&b.addr)).collect(),
             bound: bound(),
             keep_tyre_particles: false,
-            tyre_particles: RefCell::default(),
-            tyre_terms: RefCell::default(),
-            particle_events: RefCell::default(),
-            retire: Cell::new(None),
-            stand_still: Cell::new(None),
-            car_problem: Cell::new(None),
-            engine_fires: Cell::new(0),
-            damper_signals: RefCell::default(),
+            captures: Watch::default(),
             ngp_base: 0,
         }
     }
@@ -308,11 +242,6 @@ impl Pure {
         }
     }
 
-    /// Whether the allocator's unwritten reads are logged ([`Pure::untrack_allocator`]).
-    pub fn tracks_allocator(&self) -> bool {
-        self.heap.lock().unwrap_or_else(|p| p.into_inner()).pages.is_none()
-    }
-
     /// The calls [`Pure::direct`] ran in place.
     pub fn direct_runs(&self) -> u64 {
         self.direct_runs.get()
@@ -320,25 +249,25 @@ impl Pure {
 
     /// The tyre-particle payloads emitted since the last call (with [`Pure::keep_tyre_particles`]), in emit order.
     pub fn take_tyre_particles(&self) -> Vec<[u8; TYRE_PARTICLES_BYTES]> {
-        self.tyre_particles.take()
+        self.captures.take_tyre_particles()
     }
 
     /// The tyre steps since the last call (with [`Pure::keep_tyre_particles`]), in order: each one's scratch and the
     /// term its `FillOutputs` folded into the tyre-noise block's word 1, `None` for the no-contact path
     /// (`rbr_recording::sound::TyreMax`).
     pub fn take_tyre_terms(&self) -> Vec<(u32, Option<f32>)> {
-        self.tyre_terms.take()
+        self.captures.take_tyre_terms()
     }
 
     /// The damage, damping and engine-fire emits since the last call (with [`Pure::keep_tyre_particles`]), in emit
     /// order: each one's kind ([`PARTICLE_EMITS`]) and payload.
     pub fn take_particle_events(&self) -> Vec<(u32, [u8; PARTICLE_EVENT_BYTES])> {
-        self.particle_events.take()
+        self.captures.take_particle_events()
     }
 
     /// The `CSigEngineFire` emits since the last call.
     pub fn take_engine_fires(&self) -> u32 {
-        self.engine_fires.take()
+        self.captures.take_engine_fires()
     }
 
     /// The run's memory for an in-process restart: the pages overlay and the allocator heap's bookkeeping (its
@@ -373,22 +302,22 @@ impl Pure {
 
     /// The damper-signal payloads emitted since the last call, in emit order: the strut and its payload.
     pub fn take_damper_signals(&self) -> Vec<(u32, rbr_physics::spring_damper::DamperSignal)> {
-        self.damper_signals.take()
+        self.captures.take_damper_signals()
     }
 
     /// The code of the `CSigOutsideAssistance` emitted since the last call, if any.
     pub fn take_outside_assistance(&self) -> Option<u32> {
-        self.outside_assistance.take()
+        self.captures.take_outside_assistance()
     }
 
     /// The last `CSigCarStandStill` payload (count, kind) and `CSigCarProblem` kind emitted since the last call.
     pub fn take_hud_signals(&self) -> (Option<[u32; 2]>, Option<u32>) {
-        (self.stand_still.take(), self.car_problem.take())
+        self.captures.take_hud_signals()
     }
 
     /// The code of the `CSigRetireCar` emitted since the last call, if any.
     pub fn take_retire(&self) -> Option<u32> {
-        self.retire.take()
+        self.captures.take_retire()
     }
 
     /// Runs the binding at `addr` from the entry registers `regs` (`regs.esp` its return address slot; `regs.stack`
@@ -407,7 +336,7 @@ impl Pure {
         let mut regs = regs;
         regs.stack = self.mem.u32s(regs.esp + 4);
         if WATCHED.contains(&addr) {
-            self.watch(addr, &regs);
+            self.captures.watch(&self.mem, addr, &regs, self.keep_tyre_particles);
         }
         match self.slot_of(crate::ngp::file_at(self.ngp_base, addr)) {
             Some(slot) => self.run_bound(slot, addr, regs, mem),
@@ -429,45 +358,6 @@ impl Pure {
             return (slot != u32::MAX).then_some(slot as usize);
         }
         (slot != u32::MAX).then_some(slot as usize)
-    }
-
-    /// The emits the host keeps a payload or a count of ([`WATCHED`]), at their entry.
-    #[inline(never)]
-    fn watch(&self, addr: u32, regs: &Regs) {
-        if addr == OUTSIDE_ASSISTANCE_EMIT {
-            self.outside_assistance.set(Some(self.mem.u32(regs.stack[0])));
-        }
-        if self.keep_tyre_particles
-            && addr == TYRE_PARTICLES_EMIT
-            && regs.ecx == self.mem.u32(SIGNALS).wrapping_add(TYRE_PARTICLES_SIGNAL)
-        {
-            if let Some(bytes) = self.mem.try_read(regs.stack[0], TYRE_PARTICLES_BYTES) {
-                self.tyre_particles.borrow_mut().push(bytes.try_into().expect("the length read"));
-            }
-        }
-        if self.keep_tyre_particles {
-            for &(emit, signal, kind, bytes) in &PARTICLE_EMITS {
-                if addr == emit && regs.ecx == self.mem.u32(SIGNALS).wrapping_add(signal) {
-                    if let Some(read) = self.mem.try_read(regs.stack[0], bytes) {
-                        let mut payload = [0; PARTICLE_EVENT_BYTES];
-                        payload[..bytes].copy_from_slice(&read);
-                        self.particle_events.borrow_mut().push((kind, payload));
-                    }
-                }
-            }
-        }
-        if addr == ENGINE_FIRE_EMIT && regs.ecx == self.mem.u32(SIGNALS).wrapping_add(ENGINE_FIRE_SIGNAL) {
-            self.engine_fires.set(self.engine_fires.get() + 1);
-        }
-        if addr == RETIRE_EMIT {
-            self.retire.set(Some(self.mem.u32(regs.stack[0])));
-        }
-        if addr == STAND_STILL_EMIT {
-            self.stand_still.set(Some([self.mem.u32(regs.stack[0]), self.mem.u32(regs.stack[0] + 4)]));
-        }
-        if addr == CAR_PROBLEM_EMIT {
-            self.car_problem.set(Some(self.mem.u32(regs.stack[0])));
-        }
     }
 
     /// The running binding's address (0: the driver), the caller a stop names.
@@ -508,7 +398,7 @@ impl Pure {
         let b = bound()[slot];
         if self.keep_tyre_particles && TYRE_STEPS.contains(&b.addr) {
             let term = tyre_term(&self.mem, regs.ecx, f32::from_bits(regs.stack[1]));
-            self.tyre_terms.borrow_mut().push((regs.ecx, term));
+            self.captures.push_tyre_term(regs.ecx, term);
         }
         if b.addr == addr {
             let ran = &self.ran[slot];
@@ -826,7 +716,7 @@ impl std::fmt::Display for Stop {
 
 impl Host for Pure {
     fn emit_damper(&self, strut: u32, signal: rbr_physics::spring_damper::DamperSignal) {
-        self.damper_signals.borrow_mut().push((strut, signal));
+        self.captures.push_damper(strut, signal);
     }
 
     fn call_slot_word(&self) -> Option<u32> {
@@ -903,182 +793,4 @@ impl Host for Direct {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::stand_in::{code_stand_in, dll_listener, CODE_STAND_INS, DLL_LISTENERS};
-    use super::*;
-    use rbr_physics::mem::Backend;
-    use std::panic::{self, AssertUnwindSafe};
-    use std::sync::{Arc, Mutex};
-
-    #[test]
-    fn allocator_views_keep_the_boot_runtime_without_mapping_code() {
-        use rbr_physics::ngp::layout::runtime::Runtime;
-        let mut mem = Mem::with_pages(rbr_physics::mem::Pages::default());
-        mem.set_ngp_runtime(Runtime::new([0x1000, 0x2000, 0x3000], 10));
-        let runtime = mem.ngp_runtime().unwrap().clone();
-        let mut pure = Pure::new(mem, false);
-        assert!(Arc::ptr_eq(pure.mem.ngp_runtime().unwrap(), &runtime));
-        pure.untrack_allocator();
-        assert!(Arc::ptr_eq(pure.mem.ngp_runtime().unwrap(), &runtime));
-        assert!(pure.mem.try_read(0x50d9c4, 1).is_none());
-        assert!(pure.mem.try_read(0x4f13a7, 4).is_none());
-    }
-
-    #[test]
-    fn leaves_are_bound() {
-        for addr in LEAVES {
-            assert!(binding_slot(addr).is_some(), "{addr:#x}");
-        }
-    }
-
-    #[test]
-    fn code_stand_ins_match_the_exe() {
-        let Some(data) = rbr_formats::data::Data::from_env().filter(|d| d.patch().is_some()) else {
-            eprintln!("skipping: RBR_DATA or RBR_PATCH not set");
-            return;
-        };
-        let path = data.resolve("RichardBurnsRally_SSE.exe").expect("the exe");
-        let exe = rbr_formats::pe::parse(&std::fs::read(path).unwrap()).unwrap();
-        for (at, stand_in) in CODE_STAND_INS {
-            let code = exe.read(at, 19).expect("code in the exe");
-            assert_eq!(code_stand_in(code), Some(stand_in), "{at:#x}");
-        }
-    }
-
-    /// Memory shared by its clones, as a snapshot's is.
-    #[derive(Default)]
-    struct Shared(Mutex<BTreeMap<u32, u8>>);
-
-    impl Backend for Shared {
-        fn read(&self, at: u32, out: &mut [u8]) -> bool {
-            let bytes = self.0.lock().unwrap();
-            for (i, b) in out.iter_mut().enumerate() {
-                match bytes.get(&(at + i as u32)) {
-                    Some(&v) => *b = v,
-                    None => return false,
-                }
-            }
-            true
-        }
-
-        fn write(&self, at: u32, src: &[u8]) {
-            let mut bytes = self.0.lock().unwrap();
-            for (i, &b) in src.iter().enumerate() {
-                bytes.insert(at + i as u32, b);
-            }
-        }
-    }
-
-    const TRAMPOLINE: u32 = 0x401000;
-    const UNBOUND: u32 = 0x402000;
-    const RET_4: u32 = 0x403000;
-    const CONN: u32 = 0x20000;
-    const OWNER: u32 = 0x30000;
-
-    /// A stack at 0x10000-0x12000, the import slot, a connection, and code: an `Invoke` trampoline, a function with
-    /// no binding and one that is `ret 4`.
-    fn host(keep_going: bool) -> Pure {
-        let mut mem = Mem::with_backend(Arc::new(Shared::default()));
-        mem.map(0x10000, &[0; 0x2000]);
-        mem.map(QUERY_PERFORMANCE_COUNTER, &[0; 4]);
-        for at in [UNBOUND, CRT_SIN] {
-            mem.map(at, &[0x90; 64]);
-        }
-        let code = |bytes: &[u8]| [bytes, &[0xcc; 64][bytes.len()..]].concat();
-        mem.map(TRAMPOLINE, &code(&[0x8b, 0xc1, 0x8b, 0x48, 0x10, 0xff, 0x60, 0x14]));
-        mem.map(RET_4, &code(&[0xc2, 0x04, 0x00]));
-        mem.map(CONN, &[0; 0x18]);
-        mem.set_u32(CONN + 0x10, OWNER);
-        Pure::new(mem, keep_going)
-    }
-
-    /// Calls `addr` from a frame of `StepForward` with its entry at 0x11ff0.
-    fn call(pure: &Pure, addr: u32, ecx: u32, args: &[u32]) -> Called {
-        let regs = Regs { eax: 0x77, esp: 0x11ff0, ..Regs::default() };
-        pure.with_frame(STEP_FORWARD, regs, || pure.call(addr, ecx, args))
-    }
-
-    fn stop_of(pure: &Pure, addr: u32, ecx: u32) -> Stop {
-        let e = panic::catch_unwind(AssertUnwindSafe(|| call(pure, addr, ecx, &[1]))).unwrap_err();
-        e.downcast_ref::<Stopped>().expect("a stop").0.clone()
-    }
-
-    #[test]
-    fn a_call_with_no_binding_stops_with_its_address_and_caller() {
-        let pure = host(false);
-        let unbound = Stop::Unbound { addr: UNBOUND, caller: STEP_FORWARD };
-        assert_eq!(stop_of(&pure, UNBOUND, 0), unbound);
-        // Through a trampoline, the stop is the method it leads to.
-        pure.mem.clone().set_u32(CONN + 0x14, UNBOUND);
-        assert_eq!(stop_of(&pure, TRAMPOLINE, CONN), unbound);
-        assert_eq!(uncovered(&pure.mem, TRAMPOLINE, CONN, &[1]), Some(UNBOUND));
-    }
-
-    #[test]
-    fn keep_going_counts_the_stop_and_answers_zero() {
-        let pure = host(true);
-        assert_eq!(call(&pure, UNBOUND, 0, &[]).eax, 0);
-        assert_eq!(call(&pure, UNBOUND, 0, &[]).eax, 0);
-        let unbound = Stop::Unbound { addr: UNBOUND, caller: STEP_FORWARD };
-        assert_eq!(pure.stops.take(), BTreeMap::from([(unbound, 2)]));
-    }
-
-    #[test]
-    fn a_call_runs_below_its_caller_with_the_return_slot_and_arguments() {
-        let pure = host(false);
-        let mut mem = pure.mem.clone();
-        mem.set_u32(CONN + 0x14, RET_4);
-        // The trampoline leaves eax = the connection; `ret 4` keeps it.
-        assert_eq!(call(&pure, TRAMPOLINE, CONN, &[0x1234]).eax, CONN);
-        let sp = (0x11ff0 - 0x1000) & !0xf;
-        assert_eq!((mem.u32(sp), mem.u32(sp + 4)), (CALL_RET, 0x1234));
-        assert_eq!(uncovered(&pure.mem, TRAMPOLINE, CONN, &[0x1234]), None);
-    }
-
-    #[test]
-    fn a_dll_listener_is_known_at_any_load_address() {
-        let (bytes, Some(at), _) = DLL_LISTENERS[1] else { panic!("the CSigCarControl listener relocates") };
-        for entry in [0x6e70ac0u32, 0x7470ac0] {
-            let mut code = bytes.to_vec();
-            let word = u32::from_le_bytes(code[at..at + 4].try_into().unwrap());
-            code[at..at + 4].copy_from_slice(&word.wrapping_add(entry).to_le_bytes());
-            assert_eq!(dll_listener(&code, entry), Some(4));
-            assert_eq!(dll_listener(&code, entry + 0x10000), None);
-        }
-    }
-
-    #[test]
-    fn the_crt_sine_is_the_x87_model_and_keeps_eax() {
-        let pure = host(false);
-        let angle = 0.7f32;
-        let r = call(&pure, CRT_SIN, 0, &[angle.to_bits()]);
-        assert_eq!((r.eax, r.st0.to_bits()), (0x77, trig::x87_sin(angle).to_bits()));
-    }
-
-    #[test]
-    fn the_pure_crt_allocator_aligns_reuses_by_size_and_zeroes_new_blocks() {
-        let mut mem = Mem::new();
-        mem.map(0x10000, &[0; 0x2000]);
-        for at in [CRT_NEW, CRT_NEW_ARRAY, CRT_DELETE, CRT_DELETE_ARRAY] {
-            mem.map(at, &[0x90; 64]);
-        }
-        let pure = Pure::new(mem, false);
-        let a = call(&pure, CRT_NEW_ARRAY, 0, &[0x21]).eax;
-        let b = call(&pure, CRT_NEW, 0, &[0x30]).eax;
-        assert_eq!(a % 16, 0);
-        assert_eq!(b % 16, 0);
-        assert_ne!(a, b);
-        pure.mem.clone().map(a, &[0xaa; 0x21]);
-        call(&pure, CRT_DELETE_ARRAY, 0, &[a]);
-        call(&pure, CRT_DELETE, 0, &[b]);
-        assert_eq!(call(&pure, CRT_NEW, 0, &[0x30]).eax, b);
-        assert_eq!(call(&pure, CRT_NEW_ARRAY, 0, &[0x21]).eax, a);
-        assert_eq!(pure.mem.read(a, 0x21), vec![0; 0x21]);
-
-        {
-            let _run = PureRunGuard::new(&pure.run_depth);
-            assert_eq!(pure.mem.read(a, 4), [0, 0, 0, 0]);
-        }
-        assert_eq!(pure.allocator_unwritten_reads(), (a..a + 4).collect::<Vec<_>>());
-    }
-}
+mod tests;

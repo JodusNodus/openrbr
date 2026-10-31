@@ -17,10 +17,11 @@
 //! ([`lsp_keys_ngp`], `notes/ngp.md` "Load path") and allowing
 //! the DLL's material records (see `notes/ngp.md` "NGP .lsp keys").
 
-use rbr_formats::{lsp, lsp_keys, lsp_keys_ngp, rbz};
+use rbr_formats::{lsp, lsp_keys, lsp_keys_ngp};
 use std::collections::BTreeSet;
-use std::io::Read;
 use std::path::{Path, PathBuf};
+
+mod common;
 
 use lsp::Node;
 use lsp_keys::Class;
@@ -360,8 +361,7 @@ fn known_bits() -> BTreeSet<String> {
 
 #[test]
 fn all_retail_lsp_keys_resolve() {
-    let Ok(data_dir) = std::env::var("RBR_DATA") else {
-        eprintln!("skipping: RBR_DATA not set");
+    let Some(data_dir) = common::data_dir() else {
         return;
     };
     let mut failures = Vec::new();
@@ -371,17 +371,12 @@ fn all_retail_lsp_keys_resolve() {
 
     for archive_name in ["Root/physics.rbz", "Root/misc.rbz"] {
         let path = Path::new(&data_dir).join(archive_name);
-        let mut archive = rbz::open(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-        for i in 0..archive.len() {
-            let mut entry = archive.by_index(i).expect("entry");
-            let entry_name = entry.name().expect("ascii name").into_owned();
+        common::each_rbz_entry(&path, |entry_name, bytes| {
             if !entry_name.ends_with(".lsp") {
-                continue;
+                return;
             }
             let name = format!("{}!{entry_name}", path.display());
-            let mut bytes = Vec::new();
-            entry.read_to_end(&mut bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
-            let text = std::str::from_utf8(&bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
+            let text = std::str::from_utf8(bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
             let doc = lsp::parse(text).unwrap_or_else(|e| panic!("{name}: {e}"));
             files += 1;
             let Node::List(root) = &doc[0] else {
@@ -406,7 +401,7 @@ fn all_retail_lsp_keys_resolve() {
             let shape = classify(&top);
             if entry_name.ends_with("Misc/state.lsp") {
                 // Save snapshot, not loader input (see module docs).
-                continue;
+                return;
             }
             let body_start = match root.first() {
                 Some(Node::Quoted(_)) => 1,
@@ -458,7 +453,7 @@ fn all_retail_lsp_keys_resolve() {
             failures.extend(walker.failures);
             flag_names.extend(walker.flag_names);
             seen.extend(walker.seen);
-        }
+        });
     }
     assert!(files > 80, "expected most retail .lsp files, got {files}");
 
@@ -520,17 +515,15 @@ fn all_ngp_lsp_keys_resolve_or_are_ngp() {
     let ngp = Path::new(&ngp_dir);
     let mut files: Vec<(String, String)> = Vec::new();
     let zip_path = ngp.join("7.4.778/physics.rbz");
-    let mut archive = rbz::open(&zip_path).unwrap_or_else(|e| panic!("{}: {e}", zip_path.display()));
-    for i in 0..archive.len() {
-        let mut entry = archive.by_index(i).expect("entry");
-        let entry_name = entry.name().expect("ascii name").into_owned();
+    common::each_rbz_entry(&zip_path, |entry_name, bytes| {
         if entry_name != "Physics/physics.lsp" {
-            continue;
+            return;
         }
-        let mut bytes = Vec::new();
-        entry.read_to_end(&mut bytes).expect("read physics.lsp from zip");
-        files.push((format!("physics.rbz!{entry_name}"), String::from_utf8(bytes).expect("physics.lsp is ASCII")));
-    }
+        files.push((
+            format!("physics.rbz!{entry_name}"),
+            String::from_utf8(bytes.to_vec()).expect("physics.lsp is ASCII"),
+        ));
+    });
     let cars_dir = ngp.join("cars-rsf");
     let mut car_dirs: Vec<PathBuf> = std::fs::read_dir(&cars_dir)
         .unwrap_or_else(|e| panic!("{}: {e}", cars_dir.display()))

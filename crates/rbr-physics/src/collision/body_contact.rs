@@ -1,12 +1,10 @@
-//! `CBody::VfD0` (0x4e1eb0) and `CBody::VfDC` (0x4e2850): the point, edge and pair contacts against another
-//! entity.
+//! The body-against-entity contacts: the point, edge and pair walks over the grids, generic over the store.
 
 use super::grid_contact::{self as collide_big, ContactKind};
 use super::layout::collide_hosts::{VfD0Host, VfDcHost};
 use super::store::CollisionStore;
 
-/// CBody::VfD0's frame (0x4e1eb0), from the stack pointer `S` after its prologue: `push ebp`, the 16-byte alignment,
-/// the exception record and 0xe78 bytes of locals, then `ebx`, `esi` and `edi`.
+/// The scratch frame of the point/edge walk, addressed from its base `s`.
 struct VfD0Frame {
     s: u32,
 }
@@ -31,9 +29,9 @@ impl VfD0Frame {
     const NORMAL2: u32 = 0xe0;
     const HIT_SPAN: u32 = 0xf0;
     const EDGE_SPAN: u32 = 0x100;
-    /// This body's grid in the other entity's frame (`FetchY`).
+    /// This body's grid in the other entity's frame.
     const GRID: u32 = 0x110;
-    /// The other entity's grid in its own frame (`M6610`).
+    /// The other entity's grid in its own frame.
     const OTHER_GRID: u32 = 0x7c0;
 
     fn at(&self, offset: u32) -> u32 {
@@ -43,16 +41,15 @@ impl VfD0Frame {
 
 const WORLD_POINT_CONTACTS: u32 = 4;
 const WORLD_EDGE_CONTACTS: u32 = 8;
-/// The other entity's flags byte (+0x60): a negative one is collided through `CollideInit`; 0x40 sends the point walk
-/// through its slot 0xf0.
-const ENTITY_FLAG_VF_F0: u8 = 0x40;
+/// The flag (0x40) that sends the point walk through the other entity's query slot; a negative flags byte takes
+/// the init path instead.
+const ENTITY_SLOT_QUERY: u8 = 0x40;
 
-/// CBody::VfD0 (0x4e1eb0) on the body `this` against the entity `other` with `matrix` (`a`) and the event list `list`;
-/// `esp` is its entry stack pointer. Returns eax: 1 when it appended an event (or `CollideInit`'s eax). This body's
-/// grid goes into the other entity's frame. With point contacts on (`world_flags` bit 2) and the other flagged 0x40 or
-/// without a grid, each grid point is tested by the other's slot 0xf0. Else the other's grid is copied (`M6610`) and,
-/// with point contacts on, each grid point is paired with the grid's centre by `EdgeEdge` (`point_contact`); when none
-/// hit and edge contacts are on (bit 3), each grid edge is (`edge_contact`).
+/// Contacts of the body `this` against the entity `other`: this body's grid goes into the other entity's frame.
+/// With point contacts on and the other queryable through its slot (or gridless), each grid point is tested through
+/// that slot; else the other's grid is copied and, with point contacts on, each grid point is paired with the grid's
+/// centre, then each grid edge when no point hit and edge contacts are on. Appends the events to `list`; returns 1
+/// when it appended an event.
 pub fn body_vf_d0<S: CollisionStore>(
     host: &mut impl VfD0Host,
     store: &mut S,
@@ -78,7 +75,7 @@ pub fn body_vf_d0<S: CollisionStore>(
     host.fetch_y(f.s - 0xc, matrix, grid, transform);
     copy_vec4(store, f.at(VfD0Frame::FROM), grid + 0x20);
     if store.world_flags() & WORLD_POINT_CONTACTS != 0
-        && (store.entity_flags(other) & ENTITY_FLAG_VF_F0 != 0 || host.grid(f.s - 4, other) == 0)
+        && (store.entity_flags(other) & ENTITY_SLOT_QUERY != 0 || host.grid(f.s - 4, other) == 0)
     {
         let result = slot_contacts(host, store, &f, this, other, list);
         host.ray_clear(f.s - 4, grid);
@@ -123,8 +120,8 @@ pub fn body_vf_d0<S: CollisionStore>(
     result
 }
 
-/// VfD0's walk through the other entity's slot 0xf0: each grid point against the grid's centre. A hit's point is
-/// fetched into this body's frame and becomes a point event.
+/// The walk through the other entity's query slot: each grid point against the grid's centre. A hit's point goes
+/// into this body's frame and becomes a point event.
 fn slot_contacts<S: CollisionStore>(
     host: &mut impl VfD0Host,
     store: &mut S,
@@ -167,9 +164,9 @@ fn slot_contacts<S: CollisionStore>(
     result
 }
 
-/// VfD0's point contact for grid point `i`: `EdgeEdge` from the grid's centre to the point. When the reverse test hits
-/// too, the contact moves to the midpoint of the two hits and is tested again along the flat `probe_direction`, its
-/// normal that direction with `plane_offset`; else it stays at the point. Returns 1 for an event.
+/// The point contact for grid point `i`: the edge test from the grid's centre to the point. When the reverse test
+/// hits too, the contact moves to the midpoint of the two hits and is probed again along the flat direction; else
+/// it stays at the point. Returns 1 for an event.
 #[allow(clippy::too_many_arguments)]
 fn point_contact<S: CollisionStore>(
     host: &mut impl VfD0Host,
@@ -206,9 +203,8 @@ fn point_contact<S: CollisionStore>(
     1
 }
 
-/// VfD0's edge contact for grid edge record `i`: `EdgeEdge` along the edge both ways, then the probe from the midpoint
-/// of the hits along `probe_direction`. The event is at the midpoint, sampled at the hit's `edge_ratio`. Returns 1 for
-/// an event.
+/// The edge contact for grid edge record `i`: edge tests along the edge both ways, then the probe from the midpoint
+/// of the hits. The event is at the midpoint, sampled at the hit's edge ratio. Returns 1 for an event.
 #[allow(clippy::too_many_arguments)]
 fn edge_contact<S: CollisionStore>(
     host: &mut impl VfD0Host,
@@ -251,7 +247,7 @@ fn edge_contact<S: CollisionStore>(
     1
 }
 
-/// One `EdgeEdge` of VfD0 on the other entity's grid: hit and normal into the frame at `hit` and `normal`.
+/// One edge test on the other entity's grid: the hit and normal into the frame.
 fn edge_test(host: &mut impl VfD0Host, f: &VfD0Frame, from: u32, to: u32, hit: u32, t: u32, normal: u32) -> u32 {
     host.edge_edge(
         f.s - 0x1c,
@@ -265,8 +261,8 @@ fn edge_test(host: &mut impl VfD0Host, f: &VfD0Frame, from: u32, to: u32, hit: u
     )
 }
 
-/// The midpoint of the two hits to `mid`, the normalised `probe_direction` to the frame's direction, and the probe
-/// `EdgeEdge` from `mid + dir` back to `mid`. On a hit, the normal is the direction with its `plane_offset` through the
+/// The midpoint of the two hits to `mid`, the normalised probe direction to the frame's direction, and the probe
+/// edge test from `mid + dir` back to `mid`. On a hit, the normal is the direction with its plane offset through the
 /// new hit. False when the probe misses.
 fn probe<S: CollisionStore>(
     host: &mut impl VfD0Host,
@@ -295,7 +291,7 @@ fn probe<S: CollisionStore>(
     true
 }
 
-/// A point contact's hit and normal through the other entity's transform into the world (`ComposeA`, `ComposeB`).
+/// A point contact's hit and normal through the other entity's transform into the world.
 fn to_world<S: CollisionStore>(host: &mut impl VfD0Host, store: &mut S, f: &VfD0Frame, other: u32) {
     let (hit, normal) = (f.at(VfD0Frame::HIT), f.at(VfD0Frame::NORMAL));
     let transform = host.transform(f.s - 0x10, other);
@@ -309,15 +305,14 @@ fn make_event(host: &mut impl VfD0Host, f: &VfD0Frame, kind: ContactKind, this: 
     host.make_event(f.s - 0x28, kind, hit, this, other, at, normal)
 }
 
-/// CBody::VfDC's frame (0x4e2850), from the stack pointer `S` after its prologue: `push ebp`, the 16-byte alignment,
-/// the exception record, 0x14c4 bytes of locals (`_chkstk`), then `ebx`, `esi` and `edi`.
+/// The scratch frame of the pair walk, addressed from its base `s`.
 struct VfDcFrame {
     s: u32,
 }
 
 impl VfDcFrame {
     const SIZE: u32 = 0x14e0;
-    /// EdgePair's t and the word after it, which it is given but does not write.
+    /// The pair test's `t` and the word after it, which the test reads but does not write.
     const T: u32 = 0x14;
     const SCRATCH: u32 = 0x18;
     /// The overlap box: its corners, centre and half extent.
@@ -331,7 +326,7 @@ impl VfDcFrame {
     const UNION_LO: u32 = 0x80;
     const UNION_HI: u32 = 0x90;
     const AT: u32 = 0xa0;
-    /// This body's grid through `b` and through `a` (`FetchY`), and the other entity's grid (`M6610`).
+    /// This body's grid fetched through `b` and through `a`, and the other entity's copied grid.
     const GRID_B: u32 = 0xb0;
     const GRID_A: u32 = 0x760;
     const OTHER_GRID: u32 = 0xe10;
@@ -341,12 +336,9 @@ impl VfDcFrame {
     }
 }
 
-/// CBody::VfDC (0x4e2850) on the body `this` against the entity `other`, with the matrices `a` and `b` and the event
-/// list `list`; `esp` is its entry stack pointer. Returns eax: 1 when it appended an event.
-///
-/// This body's grid goes into the other entity's frame twice (through `a` and `b`) and the other's grid is copied
-/// (`M6610`). Each of this body's edge pairs whose edge (through `b`) meets the box where the three grids overlap is
-/// tested by `EdgePair` (`vf_dc_pair`).
+/// Contacts of the body `this` against the entity `other`: this body's grid is fetched twice (through `a` and
+/// through `b`) and the other's grid is copied. Each of this body's edge pairs whose edge meets the box where the
+/// grids overlap is pair-tested. Appends the events to `list`; returns 1 when it appended an event.
 #[allow(clippy::too_many_arguments)]
 pub fn body_vf_dc<S: CollisionStore>(
     host: &mut impl VfDcHost,
@@ -390,8 +382,8 @@ pub fn body_vf_dc<S: CollisionStore>(
     result
 }
 
-/// VfDC's overlap box (name ours): the join of the two fetched grids' boxes (`E33Vec4::Min`, `Max`), met with the other
-/// grid's box, to the frame's corners, centre and half extent.
+/// The overlap box: the join of the two fetched grids' boxes, met with the other grid's box, to the frame's
+/// corners, centre and half extent.
 fn overlap_box<S: CollisionStore>(store: &mut S, f: &VfDcFrame) {
     let (a, b) = (f.at(VfDcFrame::GRID_A), f.at(VfDcFrame::GRID_B));
     let other = f.at(VfDcFrame::OTHER_GRID);
@@ -413,10 +405,9 @@ fn overlap_box<S: CollisionStore>(store: &mut S, f: &VfDcFrame) {
     store.store_vec4(f.at(VfDcFrame::HALF), half);
 }
 
-/// VfDC's edge pair `i`: its edge through `b` against the overlap box (`BoxHit`, 0x4e0e40), then `EdgePair` on the
-/// other grid with the edge through `a` and through `b`. A hit and its normal go into the world through the other's
-/// transform; the contact point into this body's frame (`AT`). The event takes the grid's two flag bytes, which are
-/// cleared. Returns 1 for an event.
+/// Edge pair `i`: its edge against the overlap box, then the pair test on the other grid with the edge through `a`
+/// and through `b`. A hit and its normal go into the world through the other's transform; the contact point into this
+/// body's frame (`AT`). The event takes the grid's two flag bytes, which are cleared. Returns 1 for an event.
 fn vf_dc_pair<S: CollisionStore>(
     host: &mut impl VfDcHost,
     store: &mut S,
@@ -471,7 +462,7 @@ fn vf_dc_pair<S: CollisionStore>(
     1
 }
 
-/// E01Vec4::CopyFrom (0x43c5b0): the sixteen bytes at `src` go to `dst`, read whole before the store.
+/// Copies the sixteen bytes at `src` to `dst`, read whole before the store.
 fn copy_vec4<S: CollisionStore>(store: &mut S, dst: u32, src: u32) {
     let value = store.vec4(src);
     store.store_vec4(dst, value);

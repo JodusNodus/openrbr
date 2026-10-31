@@ -47,17 +47,6 @@ impl Mode {
         self.0
     }
 
-    /// The sub-state (+4) `M00565430` stores with the mode: 3 for the championship, 11 for any other race mode. For
-    /// mode 0 it is 11 unless the season daemon's `M005d2d20` holds (`season_open`), which keeps `previous`.
-    pub fn sub_state(self, season_open: bool, previous: u32) -> u32 {
-        match self.0 {
-            0 if season_open => previous,
-            0 => 0xb,
-            3 => 3,
-            _ => 0xb,
-        }
-    }
-
     /// `E59Host90::M00565e80` (0x565e80): the modes 1-5 and 8, in which the finish line goes to the HUD's finish (the
     /// clock stops and the 20 s timer runs) instead of ending the race at once.
     pub fn finish_to_menu(self) -> bool {
@@ -83,24 +72,12 @@ impl Mode {
     }
 }
 
-/// The flow object's host (+0xc98) when it holds a saved rally: its first half-word is 0x7b and the gates read the
-/// mode (+0x17850) and the rally's assistance level (+0x17858) from it instead of the flow word and the season daemon.
-/// This is the seam for the game's saves (a later task); the reference runs have the half-word 0, which is `None`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SavedRally {
-    pub mode: Mode,
-    pub rally_level: u32,
-}
-
 /// `E60Flow::M566640` and its twin `M5665f0` (0x566640/0x5665f0), the assistance gate: open unless the mode is the
-/// championship with the rally's assistance level (`*0x7d6128` +0x8e84, or the saved rally's) at 2 or more. The car's
-/// stuck test (`Update9AF0`), the script box (`E34_RetireA`) and the rally incident read it.
-pub fn assistance_gate(settings: AssistSettings, saved: Option<SavedRally>) -> bool {
-    let (mode, level) = match saved {
-        Some(s) => (s.mode, s.rally_level),
-        None => (Mode(settings.mode), settings.rally_level),
-    };
-    mode != Mode::CHAMPIONSHIP || level < 2
+/// championship with the rally's assistance level (`*0x7d6128` +0x8e84) at 2 or more. The car's stuck test
+/// (`Update9AF0`), the script box (`E34_RetireA`) and the rally incident read it. The original reads the mode and
+/// level from a saved rally instead when the flow's host (+0xc98) holds one; the reference runs never do.
+pub fn assistance_gate(settings: AssistSettings) -> bool {
+    Mode(settings.mode) != Mode::CHAMPIONSHIP || settings.rally_level < 2
 }
 
 /// The finish timer `M573530` arms (HUD +0x2c0, the f32 20.0).
@@ -388,7 +365,6 @@ pub struct FlowEvents {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RaceFlow {
     settings: AssistSettings,
-    saved: Option<SavedRally>,
     /// The finish timer (HUD +0x2c0), armed (+0x2c4) when `Some`.
     finish: Option<f32>,
     /// The rally incident's timer (HUD +0x27c) and the off-stage timer (+0x280).
@@ -409,7 +385,6 @@ impl RaceFlow {
     pub fn new(settings: AssistSettings) -> Self {
         Self {
             settings,
-            saved: None,
             finish: None,
             incident: TIMER_IDLE,
             offstage: TIMER_IDLE,
@@ -429,14 +404,9 @@ impl RaceFlow {
         self.settings = settings;
     }
 
-    /// The saved rally the gates read instead of the settings (the save seam).
-    pub fn set_saved(&mut self, saved: Option<SavedRally>) {
-        self.saved = saved;
-    }
-
     /// The assistance gate in this race ([`assistance_gate`]).
     pub fn assistance_gate(&self) -> bool {
-        assistance_gate(self.settings, self.saved)
+        assistance_gate(self.settings)
     }
 
     /// How the stage ended, once it has.
@@ -752,14 +722,9 @@ mod tests {
         assert!(!Mode::MENU.finish_to_menu());
         assert!(!Mode::SCHOOL.finish_to_menu());
         assert!(!Mode(6).finish_to_menu());
-        assert!(assistance_gate(AssistSettings::QUICK_RACE, None));
-        assert!(assistance_gate(AssistSettings { rally_level: 1, ..CHAMPIONSHIP_HARD }, None));
-        assert!(!assistance_gate(CHAMPIONSHIP_HARD, None));
-        assert!(!assistance_gate(AssistSettings::QUICK_RACE, Some(SavedRally { mode: Mode(3), rally_level: 2 })));
-        assert_eq!(Mode::CHAMPIONSHIP.sub_state(false, 0), 3);
-        assert_eq!(Mode::QUICK_RALLY.sub_state(false, 0), 0xb);
-        assert_eq!(Mode::MENU.sub_state(true, 7), 7);
-        assert_eq!(Mode::MENU.sub_state(false, 7), 0xb);
+        assert!(assistance_gate(AssistSettings::QUICK_RACE));
+        assert!(assistance_gate(AssistSettings { rally_level: 1, ..CHAMPIONSHIP_HARD }));
+        assert!(!assistance_gate(CHAMPIONSHIP_HARD));
     }
 
     /// The quick race's mode is the boot's flow word: physics reads it, so it must stay 1.

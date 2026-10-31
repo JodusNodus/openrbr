@@ -44,7 +44,7 @@ impl Sampler54Calls for RecordedVote<'_> {
 
 /// The window's recorded post bytes at `offset` (window `k` of the root call), as a little-endian word.
 fn post_word(call: &Call, k: usize, offset: usize) -> u32 {
-    let post = &call.windows[k].4;
+    let post = &call.windows[k].after;
     u32::from_le_bytes(post[offset..offset + 4].try_into().unwrap())
 }
 

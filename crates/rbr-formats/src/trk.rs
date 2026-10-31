@@ -16,6 +16,7 @@
 //! Other chunk payloads remain opaque. The game seeks to the declared end of
 //! each chunk after a handler returns, so any unread payload suffix is kept.
 
+use crate::le::{self, Reader, Truncated};
 use std::fmt::{self, Display, Formatter};
 
 /// A 3D vector read from a loader stream.
@@ -203,9 +204,7 @@ pub enum Error {
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Error::Truncated { offset, needed, len } => {
-                write!(f, "truncated at offset {offset}: need {needed} bytes but file is {len} bytes")
-            }
+            Error::Truncated { offset, needed, len } => le::fmt_truncated(f, *offset, *needed, *len),
             Error::MissingNul { offset } => {
                 write!(f, "missing NUL terminator for string at offset {offset}")
             }
@@ -215,137 +214,78 @@ impl Display for Error {
 
 impl std::error::Error for Error {}
 
-struct Cursor<'a> {
-    bytes: &'a [u8],
-    offset: usize,
+impl From<Truncated> for Error {
+    fn from(t: Truncated) -> Self {
+        Error::Truncated { offset: t.offset, needed: t.needed, len: t.len }
+    }
 }
 
-impl<'a> Cursor<'a> {
-    fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, offset: 0 }
-    }
+fn vec3(rd: &mut Reader<'_, Error>) -> Result<Vec3, Error> {
+    Ok(Vec3 { x: rd.f32()?, y: rd.f32()?, z: rd.f32()? })
+}
 
-    fn remaining(&self) -> usize {
-        self.bytes.len() - self.offset
-    }
-
-    fn take(&mut self, count: usize) -> Result<&'a [u8], Error> {
-        let end = self.offset.checked_add(count).ok_or(Error::Truncated {
-            offset: self.offset,
-            needed: count,
-            len: self.bytes.len(),
-        })?;
-        if end > self.bytes.len() {
-            return Err(Error::Truncated { offset: self.offset, needed: count, len: self.bytes.len() });
-        }
-        let slice = &self.bytes[self.offset..end];
-        self.offset = end;
-        Ok(slice)
-    }
-
-    fn u8(&mut self) -> Result<u8, Error> {
-        Ok(self.take(1)?[0])
-    }
-
-    fn u16(&mut self) -> Result<u16, Error> {
-        let mut b = [0u8; 2];
-        b.copy_from_slice(self.take(2)?);
-        Ok(u16::from_le_bytes(b))
-    }
-
-    fn u32(&mut self) -> Result<u32, Error> {
-        let mut b = [0u8; 4];
-        b.copy_from_slice(self.take(4)?);
-        Ok(u32::from_le_bytes(b))
-    }
-
-    fn f32(&mut self) -> Result<f32, Error> {
-        Ok(f32::from_bits(self.u32()?))
-    }
-
-    fn vec3(&mut self) -> Result<Vec3, Error> {
-        Ok(Vec3 { x: self.f32()?, y: self.f32()?, z: self.f32()? })
-    }
-
-    fn c_string(&mut self) -> Result<Vec<u8>, Error> {
-        let start = self.offset;
-        let tail = &self.bytes[start..];
-        let end = tail.iter().position(|&b| b == 0).ok_or(Error::MissingNul { offset: start })?;
-        let name = tail[..end].to_vec();
-        self.offset += end + 1;
-        Ok(name)
-    }
-
-    fn require_records(&self, count: usize, stride: usize) -> Result<(), Error> {
-        let needed = count.checked_mul(stride).ok_or(Error::Truncated {
-            offset: self.offset,
-            needed: usize::MAX,
-            len: self.bytes.len(),
-        })?;
-        if needed > self.remaining() {
-            return Err(Error::Truncated { offset: self.offset, needed, len: self.bytes.len() });
-        }
-        Ok(())
-    }
+fn c_string(rd: &mut Reader<'_, Error>) -> Result<Vec<u8>, Error> {
+    let start = rd.pos();
+    rd.take_cstr().map(|b| b.to_vec()).map_err(|_| Error::MissingNul { offset: start })
 }
 
 fn parse_driveline(bytes: &[u8]) -> Result<DriveLineData, Error> {
-    let mut rd = Cursor::new(bytes);
+    let mut rd = Reader::new(bytes);
     let count = rd.u32()? as usize;
-    rd.require_records(count, 32)?;
+    rd.require(count, 32)?;
     let mut records = Vec::new();
     records.try_reserve_exact(count).map_err(|_| Error::Truncated {
-        offset: rd.offset,
+        offset: rd.pos(),
         needed: count.saturating_mul(32),
         len: bytes.len(),
     })?;
     for _ in 0..count {
         records.push(DriveLineRecord {
-            vectors: [rd.vec3()?, rd.vec3()?],
+            vectors: [vec3(&mut rd)?, vec3(&mut rd)?],
             value: rd.f32()?,
             unknown_u16: [rd.u16()?, rd.u16()?],
         });
     }
-    let ignored_tail = bytes[rd.offset..].to_vec();
+    let ignored_tail = bytes[rd.pos()..].to_vec();
     Ok(DriveLineData { records, ignored_tail })
 }
 
 fn parse_collision_meshes(bytes: &[u8]) -> Result<CollisionMeshData, Error> {
-    let mut rd = Cursor::new(bytes);
+    let mut rd = Reader::new(bytes);
     let count = rd.u32()? as usize;
     let mut meshes = Vec::new();
     for _ in 0..count {
-        let name = rd.c_string()?;
+        let name = c_string(&mut rd)?;
         let kind = rd.u32()?;
         let unknown_byte = rd.u8()?;
         let static_flag = rd.u8()?;
         let shape_kind = rd.u32()?;
         let shape = match shape_kind {
             0 => CollisionShape::None,
-            1 => CollisionShape::Bounds { min: rd.vec3()?, max: rd.vec3()? },
-            2 => CollisionShape::Sphere { center: rd.vec3()?, radius: rd.f32()? },
+            1 => CollisionShape::Bounds { min: vec3(&mut rd)?, max: vec3(&mut rd)? },
+            2 => CollisionShape::Sphere { center: vec3(&mut rd)?, radius: rd.f32()? },
             kind => CollisionShape::Unknown { kind },
         };
 
         let vertex_count_word = rd.u32()?;
         let vertex_count = (vertex_count_word as u16) as usize;
-        rd.require_records(vertex_count, 12)?;
+        rd.require(vertex_count, 12)?;
         let mut vertices = Vec::new();
         vertices.try_reserve_exact(vertex_count).map_err(|_| Error::Truncated {
-            offset: rd.offset,
+            offset: rd.pos(),
             needed: vertex_count.saturating_mul(12),
             len: bytes.len(),
         })?;
         for _ in 0..vertex_count {
-            vertices.push(rd.vec3()?);
+            vertices.push(vec3(&mut rd)?);
         }
 
         let face_count_word = rd.u32()?;
         let face_count = (face_count_word as u16) as usize;
-        rd.require_records(face_count, 13)?;
+        rd.require(face_count, 13)?;
         let mut faces = Vec::new();
         faces.try_reserve_exact(face_count).map_err(|_| Error::Truncated {
-            offset: rd.offset,
+            offset: rd.pos(),
             needed: face_count.saturating_mul(13),
             len: bytes.len(),
         })?;
@@ -354,17 +294,17 @@ fn parse_collision_meshes(bytes: &[u8]) -> Result<CollisionMeshData, Error> {
         }
 
         let object_count = rd.u32()? as usize;
-        rd.require_records(object_count, 44)?;
+        rd.require(object_count, 44)?;
         let mut objects = Vec::new();
         objects.try_reserve_exact(object_count).map_err(|_| Error::Truncated {
-            offset: rd.offset,
+            offset: rd.pos(),
             needed: object_count.saturating_mul(44),
             len: bytes.len(),
         })?;
         for _ in 0..object_count {
             let interactive_id = rd.u32()?;
-            let position = rd.vec3()?;
-            let extent = rd.vec3()?;
+            let position = vec3(&mut rd)?;
+            let extent = vec3(&mut rd)?;
             let values = [rd.f32()?, rd.f32()?, rd.f32()?, rd.f32()?];
             objects.push(CollisionObject { interactive_id, position, extent, values });
         }
@@ -382,18 +322,8 @@ fn parse_collision_meshes(bytes: &[u8]) -> Result<CollisionMeshData, Error> {
             objects,
         });
     }
-    let ignored_tail = bytes[rd.offset..].to_vec();
+    let ignored_tail = bytes[rd.pos()..].to_vec();
     Ok(CollisionMeshData { meshes, ignored_tail })
-}
-
-fn read_u32_le(bytes: &[u8], offset: usize) -> Result<u32, Error> {
-    let end = offset.checked_add(4).ok_or(Error::Truncated { offset, needed: 4, len: bytes.len() })?;
-    if end > bytes.len() {
-        return Err(Error::Truncated { offset, needed: 4, len: bytes.len() });
-    }
-    let mut buf = [0u8; 4];
-    buf.copy_from_slice(&bytes[offset..end]);
-    Ok(u32::from_le_bytes(buf))
 }
 
 /// Parses the outer chunks and all recognized 1.02 `.trk` payloads.
@@ -403,7 +333,7 @@ pub fn parse(bytes: &[u8]) -> Result<TrkFile, Error> {
     let len = bytes.len();
 
     while offset < len {
-        let header_len = read_u32_le(bytes, offset)? as usize;
+        let header_len = le::read_u32_le(bytes, offset)? as usize;
         offset += 4;
 
         let header_end = offset.checked_add(header_len).ok_or(Error::Truncated { offset, needed: header_len, len })?;
@@ -413,7 +343,7 @@ pub fn parse(bytes: &[u8]) -> Result<TrkFile, Error> {
         let header = bytes[offset..header_end].to_vec();
         offset = header_end;
 
-        let payload_len = read_u32_le(bytes, offset).map_err(|_| Error::Truncated { offset, needed: 4, len })? as usize;
+        let payload_len = le::read_u32_le(bytes, offset)? as usize;
         offset += 4;
 
         let data_end = offset.checked_add(payload_len).ok_or(Error::Truncated { offset, needed: payload_len, len })?;
@@ -423,9 +353,9 @@ pub fn parse(bytes: &[u8]) -> Result<TrkFile, Error> {
         let data = bytes[offset..data_end].to_vec();
         offset = data_end;
 
-        let payload = match (header.len(), read_u32_le(&header, 0), read_u32_le(&header, 4)) {
-            (8, Ok(3), Ok(0x14)) => ChunkPayload::DriveLine(parse_driveline(&data)?),
-            (8, Ok(3), Ok(0x16)) => ChunkPayload::CollisionMeshes(parse_collision_meshes(&data)?),
+        let payload = match (header.len(), le::u32_at(&header, 0), le::u32_at(&header, 4)) {
+            (8, Some(3), Some(0x14)) => ChunkPayload::DriveLine(parse_driveline(&data)?),
+            (8, Some(3), Some(0x16)) => ChunkPayload::CollisionMeshes(parse_collision_meshes(&data)?),
             _ => ChunkPayload::Opaque,
         };
         chunks.push(Chunk { header, data, payload });

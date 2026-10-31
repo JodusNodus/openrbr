@@ -1,7 +1,7 @@
-//! `CScratchSim::Step` (0x537f50) and `CScratchSim::StepBasic` (0x5380a0): one VCU step. Step runs the gear
-//! logic first; both then set the clutch, cut the rev limit, route the pedals to the engine and the drive,
-//! set the brake and neutral lights, lock the diffs and decay the shift cooldown. The asm sets the order
-//! (rbr-recomp `notes/physics/vcu.md`, 3f). StepBasic is Step without the gear logic; it keeps the clutch.
+//! One VCU step. [`step`] runs the gear logic first; both then set the clutch, cut the rev limit, route the pedals
+//! to the engine and the drive, set the brake and neutral lights, lock the diffs and decay the shift cooldown, in
+//! the original's order (rbr-recomp `notes/physics/vcu.md`, 3f). [`step_basic`] is [`step`] without the gear logic;
+//! it keeps the clutch.
 
 use super::clutch;
 use super::cut;
@@ -9,28 +9,28 @@ use super::gear;
 use super::layout::{Def, Gearbox, Outputs, Scratch, State, Tuning};
 use super::locks;
 
-/// The brake light is on above this value (`0x72b068`).
+/// The brake light is on above this value.
 const LIGHT_THRESHOLD: f32 = 0.1;
 
-/// A call the step makes on the engine, the drive or the lights, in the order the original makes it. The
+/// A call the step makes on the engine, the drive or the lights, in step order. The
 /// objects they go to (engine, drive, lights) are the scratch's.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Send {
-    /// `CEngine::SetScratch08`: the throttle for the engine (the brake when the pedals are swapped).
+    /// The throttle for the engine (the brake when the pedals are swapped).
     EnginePedal(f32),
-    /// `CDrive::Set44A0`: the throttle for the drive, the same value as `EnginePedal`.
+    /// The throttle for the drive, the same value as `EnginePedal`.
     DriveThrottle(f32),
-    /// `CDrive::Set30`: the brake for the drive. The brake light follows it.
+    /// The brake for the drive. The brake light follows it.
     DriveBrake(f32),
-    /// `CDrive::Set4820`: the clutch slip, from the launch clutch or the fixed clutch.
+    /// The clutch slip, from the launch clutch or the fixed clutch.
     DriveClutch(f32),
-    /// `CDrive::Set4570`: the diff lock of a channel (0 centre, 1 front, 2 rear).
+    /// The diff lock of a channel (0 centre, 1 front, 2 rear).
     DiffLock { channel: u32, value: f32 },
-    /// `CEngine::SetState4`: the four rev-limit cut flags.
+    /// The four rev-limit cut flags.
     CutFlags([u32; 4]),
-    /// `Lights::Set1e40`: the brake light.
+    /// The brake light.
     BrakeLight(bool),
-    /// `Lights::Set1ed0`: the neutral light, on in gear 0.
+    /// The neutral light, on in gear 0.
     NeutralLight(bool),
 }
 
@@ -39,18 +39,18 @@ pub enum Send {
 pub struct Input {
     /// Frame time (seconds).
     pub dt: f32,
-    /// Engine speed, rad/s (`CDrive::Get4520`).
+    /// Engine speed, rad/s.
     pub engine: f32,
-    /// Car speed (`CCar::Get15F8`).
+    /// Car speed.
     pub car_speed: f32,
-    /// Drive speed for the diff locks (`CDrive::Get4540`).
+    /// Drive speed for the diff locks.
     pub drive_speed: f32,
     /// Number of gears in the drive's definition (see `Gearbox::gear_count`).
     pub gear_count: u32,
     pub tuning: Tuning,
 }
 
-/// `CScratchSim::Step`: the gear logic, then the rest of the step (`step_basic`).
+/// The gear logic, then the rest of the step (`step_basic`).
 pub fn step(
     input: Input,
     scratch: &Scratch,
@@ -74,7 +74,7 @@ pub fn step(
     step_basic(input, scratch, def, state, drive, out, send);
 }
 
-/// `CScratchSim::StepBasic`: the step without the gear logic.
+/// The step without the gear logic.
 pub fn step_basic(
     input: Input,
     scratch: &Scratch,

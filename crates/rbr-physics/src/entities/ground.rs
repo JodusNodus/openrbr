@@ -42,8 +42,8 @@ pub trait ProbeCalls {
     fn copy_vector(&mut self, to: u32, from: u32);
 }
 
-/// The scratch the box probe keeps on its stack: the two matrices (`first`, `second`, 16 bytes each) and the host's 13-float
-/// output (`out`). Their addresses are the original's stack; the model takes them from its caller.
+/// The scratch the box probe keeps: the two matrices (`first`, `second`) and the host's 13-float output
+/// (`out`). The model takes their addresses from its caller.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProbeScratch {
     pub first: u32,
@@ -51,9 +51,9 @@ pub struct ProbeScratch {
     pub out: u32,
 }
 
-/// `CGround::VfE8` (0x51c6f0) on the ground `ground`, with transforms `a` and `b` and the record `d`: `FetchX` of both
+/// The ground probe on the ground `ground`, with transforms `a` and `b` and the record `d`: the fetch of both
 /// transforms into `scratch`, the host's query on their matrices (its 13 floats go to `scratch.out`), and on a hit the
-/// record: `CopyFrom` of `out[0..4]`, then the scatter ([`contact`]). Returns eax.
+/// record: the copy of `out[0..4]`, then the scatter ([`contact`]). Returns 1 on a hit, else 0.
 pub fn box_probe<S: EntityStore>(
     store: &mut S,
     ground: u32,

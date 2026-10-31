@@ -7,7 +7,7 @@
 
 mod common;
 
-use common::{check_windows, load, map_windows, Inner};
+use common::{check_windows, load, map_windows, Inner, Window};
 use rbr_physics::entities::hinge_pose::{self, PoseCalls, PoseState};
 use rbr_physics::entities::store::HingeStore;
 use rbr_physics::mem::Mem;
@@ -39,7 +39,7 @@ impl<'a> Answers<'a> {
         assert_eq!(call.addr, addr, "call {index}: callee");
         self.next += 1;
         // every window inside the body: its bytes before the call are the port's stores (the products, the rotation)
-        for (_, at, _, pre, _) in &call.windows {
+        for Window { index: _, at, len: _, before: pre, after: _ } in &call.windows {
             if (self.this..self.this + BODY_LEN).contains(at) {
                 for (i, word) in pre.chunks_exact(4).enumerate() {
                     let recorded = u32::from_le_bytes(word.try_into().unwrap());
@@ -52,7 +52,7 @@ impl<'a> Answers<'a> {
                 }
             }
         }
-        for (_, at, _, _, post) in &call.windows {
+        for Window { index: _, at, len: _, before: _, after: post } in &call.windows {
             self.mem.map(*at, post);
         }
         call

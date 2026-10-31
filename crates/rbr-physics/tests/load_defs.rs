@@ -61,6 +61,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+mod common;
+
+use common::hex;
+
 #[path = "common/patch.rs"]
 mod patch;
 
@@ -143,10 +147,6 @@ struct Object {
     at: u32,
     bytes: Vec<u8>,
     names: Vec<(u32, Vec<u8>)>,
-}
-
-fn hex(text: &str) -> Vec<u8> {
-    (0..text.len()).step_by(2).map(|i| u8::from_str_radix(&text[i..i + 2], 16).unwrap()).collect()
 }
 
 /// The objects of vector files: every line but the header and the instance file's `call`, `alloc` and `env` lines.

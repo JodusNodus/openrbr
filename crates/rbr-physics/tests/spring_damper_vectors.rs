@@ -2,7 +2,7 @@
 
 mod common;
 
-use common::Call;
+use common::{Call, Window};
 use rbr_physics::fpu::Precision;
 use rbr_physics::mem::Mem;
 use rbr_physics::spring_damper::{self, layout};
@@ -28,7 +28,7 @@ fn f(bits: u32) -> f32 {
 }
 
 fn check_spring_windows(call: &Call, mem: &Mem, name: &str) {
-    for (k, at, len, _, expected) in &call.windows {
+    for Window { index: k, at, len, before: _, after: expected } in &call.windows {
         let actual = mem.read(*at, *len);
         assert_eq!(actual.len(), expected.len());
         for (word, (got, want)) in actual.chunks_exact(4).zip(expected.chunks_exact(4)).enumerate() {

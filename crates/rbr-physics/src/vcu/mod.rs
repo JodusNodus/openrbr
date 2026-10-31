@@ -1,7 +1,7 @@
-//! Vehicle control unit (`NPhysics::CVehicleControlUnit`, exe 0x536880-0x5380a0). `layout` holds the
-//! typed views of the game memory; the other modules are the ported functions. The asm (not the C++
-//! in `src/rbr`) decides the operation order and the NaN behaviour; `notes/physics.md` "VCU" has the
-//! semantics. Each function is checked against the original's calls (`harness/vcu_vectors.py`).
+//! Vehicle control unit: the gear logic, the launch clutch, the rev-limit cut and the diff locks. `layout`
+//! holds the typed views of the game memory; the other modules are the ported functions. The operation order
+//! and the NaN behaviour are fixed; `notes/physics.md` "VCU" has the semantics. Each function is checked
+//! against the recorded calls (`harness/vcu_vectors.py`).
 
 pub mod clutch;
 pub mod cut;

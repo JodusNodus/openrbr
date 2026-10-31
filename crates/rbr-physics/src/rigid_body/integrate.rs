@@ -1,9 +1,8 @@
-//! `CSolid::E43Vf6C` (slot 27, 0x52cc30; `Vf27x` in the notes): the integrator pass. The angular velocity takes
-//! `angular_accel * dt` and the linear velocity `linear_accel * dt`. A body with flag 0x8 clears a velocity below the
-//! threshold (the linear one first; the angular one only when the linear one was cleared). Then the pose step (`VfC8`),
-//! the acceleration estimates and their filter, the history copy, the entity walk, the sleep step (`Vf24x`) and the
-//! state signal. The asm decides the lane order: each lane is one `mulps`/`addps` step, and the estimate's lane 3 keeps
-//! its old value.
+//! The integrator pass: the angular velocity takes `angular_accel * dt` and the linear velocity `linear_accel *
+//! dt`. A flagged body clears a velocity below the threshold (the linear one first; the angular one only when the
+//! linear one was cleared). Then the pose step, the acceleration estimates and their filter, the history copy, the
+//! entity walk, the sleep step and the state signal. Each lane is one multiply-add step, and the estimate's lane 3
+//! keeps its old value.
 
 use super::host::HostUnavailable;
 use super::layout::{Body, Def, ParentFrame, Vec4, BODY_FLAG_8};
@@ -12,30 +11,27 @@ use super::sleep;
 use crate::math::quat::Quat;
 use crate::math::sse;
 
-/// Squared speed under which a flagged body's velocity is cleared: NGP's 4e-7 (`1014fbf0`), where NGP repoints both
-/// reads (`0x52cd05`, `0x52cd4e`) of 1.02's 1e-5 (`0x795e8c`).
+/// Squared speed under which a flagged body's velocity is cleared: NGP's 4e-7, where NGP repoints both reads of
+/// 1.02's 1e-5.
 const CLEAR_SPEED_SQ: f32 = f32::from_bits(0x34D6_BF94);
 
-/// The filter's weights (the floats at 0x72f428 and 0x72f610).
+/// The filter's weights.
 const FILTER_OLD: f32 = 0.2;
 const FILTER_NEW: f32 = 0.8;
 
-/// The calls `E43Vf6C` makes outside the body, beyond the pose step's (`PoseHost`).
+/// The calls the integrator pass makes outside the body, beyond the pose step's.
 pub trait IntegrateHost: PoseHost {
-    /// `CEntity::E43Vf6C` (0x51a330) on the body with the step length: the entity walk, whose state refresh (the
-    /// body's slot 16) the host runs. The callee reads the body, so the host stores `body` first and returns the body
-    /// as the walk leaves it.
+    /// The entity walk on the body with the step length, whose state refresh the host runs. The callee reads the
+    /// body, so the host stores `body` first and returns the body as the walk leaves it.
     fn entity_walk(&mut self, body: &Body, dt: f32) -> Body;
-    /// The rest of the body's slot 37 after a sleep trip (`CSolid::E43Vf94`, 0x52c130). The in-object part is
-    /// `sleep::deactivate`, which the step makes itself. As for `entity_walk`, the host stores `body` first and returns
-    /// the body after the call.
+    /// The rest of the after-sleep call after a sleep trip. The in-object part is `sleep::deactivate`, which the step
+    /// makes itself. As for `entity_walk`, the host stores `body` first and returns the body after the call.
     fn sleep_trip(&mut self, body: &Body) -> Result<Body, HostUnavailable>;
-    /// Emits the body's state signal (`CSigMrRBodyState`), the step's last call.
+    /// Emits the body's state signal, the step's last call.
     fn emit_state(&mut self, state: &StateSignal) -> Result<(), HostUnavailable>;
 }
 
-/// The state signal's payload, in the original's stack buffer: `owner` at +0x00, `position` at +0x10 and `orientation` at
-/// +0x20 (the asm copies the position to +0x10: the C++ names that offset +0x14).
+/// The state signal's payload: the owner, the position and the orientation.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct StateSignal {
     pub owner: u32,
@@ -57,7 +53,7 @@ pub fn integrate(
     let (update_position, update_orientation) = clear_slow(body, CLEAR_SPEED_SQ);
     pose_step(body, dt, update_position, update_orientation, parent, host)?;
 
-    // The estimates divide by `dt` as `1.0f / dt` (the asm's divss), then every lane is scaled.
+    // The estimates divide by `dt` as `1.0 / dt`, then every lane is scaled.
     let inv = 1.0 / dt;
     body.accel_linear_est = estimate(body.linear_velocity, body.prev_linear_velocity, body.accel_linear_est, inv);
     body.accel_angular_est = estimate(body.angular_velocity, body.prev_angular_velocity, body.accel_angular_est, inv);
@@ -75,8 +71,8 @@ pub fn integrate(
     host.emit_state(&StateSignal { owner: body.state_owner, position: body.position, orientation: body.orientation })
 }
 
-/// `v + a * dt` lanewise as the asm's `mulps` then `addps` (the product the first operand): lane w carries the
-/// original's stack residue, which reaches infinities, so `inf + -inf` must be the instruction's negative NaN.
+/// `v + a * dt` lanewise, product first: lane w carries the caller's stack residue, which reaches infinities, so
+/// `inf + -inf` must be the instruction's negative NaN.
 fn add_scaled_sse(v: Vec4, a: Vec4, dt: f32) -> Vec4 {
     Vec4 {
         x: sse::add(sse::mul(a.x, dt), v.x),
@@ -100,12 +96,12 @@ fn clear_slow(body: &mut Body, threshold: f32) -> (bool, bool) {
     (false, false)
 }
 
-/// `z*z + y*y + x*x` in the asm's order.
+/// `z*z + y*y + x*x`, in order.
 pub(super) fn squared_speed(v: Vec4) -> f32 {
     (v.z * v.z + v.y * v.y) + v.x * v.x
 }
 
-/// The acceleration estimate `(v - prev) * inv`. The asm subtracts lanes x, y and z only, so lane w keeps the old
+/// The acceleration estimate `(v - prev) * inv`. Lanes x, y and z only are subtracted, so lane w keeps the old
 /// estimate's value before the scale.
 fn estimate(v: Vec4, prev: Vec4, old: Vec4, inv: f32) -> Vec4 {
     Vec4 { x: (v.x - prev.x) * inv, y: (v.y - prev.y) * inv, z: (v.z - prev.z) * inv, w: old.w * inv }

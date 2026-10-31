@@ -17,6 +17,27 @@ use rbr_recording::particles::PAYLOAD_BYTES;
 /// One answer without its HUD and damage records: the header, the payload and the car and wheels.
 const FRAME_BYTES: usize = HEADER_BYTES + CONTROL_BYTES + CAR_BYTES + WHEELS * WHEEL_BYTES;
 
+/// The boot most live tests drive: track-11_O, car 5, good weather. Runs `check` on the big stack with the data,
+/// the stage and the quick race, which the test adjusts (`.in_championship`, the aids, the sensitivities) and boots.
+fn quick_race(check: impl FnOnce(&Data, &StageData, boot::Race) + Send) {
+    let (Some(install), Some(patch), Some(ngp)) = (
+        std::env::var_os("RBR_DATA").map(PathBuf::from),
+        std::env::var_os("RBR_PATCH").map(PathBuf::from),
+        std::env::var_os("RBR_NGP_PHYSICS").map(PathBuf::from),
+    ) else {
+        eprintln!("RBR_DATA, RBR_PATCH or RBR_NGP_PHYSICS unset; skipped");
+        return;
+    };
+    on_big_stack(move || {
+        let data = Data::new(install, Some(patch));
+        let stage = stage_data(&data, "track-11_O", 5).unwrap();
+        let season = Season::load(&data).unwrap();
+        let weather = weather::quick_race(&season, 11, Preset::Good, Draws::default()).unwrap();
+        check(&data, &stage, boot::Race::quick_race(11, 5, 3, weather, ngp))
+    })
+    .unwrap();
+}
+
 #[test]
 fn a_frame_of_several_steps_sends_each_wheel_s_last_tyre_payload() {
     let payload = |wheel: u8, tag: u8| {
@@ -35,21 +56,8 @@ fn a_frame_of_several_steps_sends_each_wheel_s_last_tyre_payload() {
 /// 7 ms of race time a frame, and the CLK1 record saying so.
 #[test]
 fn a_paced_ngp_live_boot_runs_frames_of_several_steps_at_real_speed() {
-    let (Some(install), Some(patch), Some(ngp)) = (
-        std::env::var_os("RBR_DATA").map(PathBuf::from),
-        std::env::var_os("RBR_PATCH").map(PathBuf::from),
-        std::env::var_os("RBR_NGP_PHYSICS").map(PathBuf::from),
-    ) else {
-        eprintln!("RBR_DATA, RBR_PATCH or RBR_NGP_PHYSICS unset; skipped");
-        return;
-    };
-    on_big_stack(move || {
-        let data = Data::new(install.clone(), Some(patch));
-        let stage = stage_data(&data, "track-11_O", 5).unwrap();
-        let season = Season::load(&data).unwrap();
-        let weather = weather::quick_race(&season, 11, Preset::Good, Draws::default()).unwrap();
-        let race = boot::Race::quick_race(11, 5, 3, weather, ngp);
-        let mut live = Live::boot(&data, "track-11_O", &race, &stage, MarkerSettings::default(), true).unwrap();
+    quick_race(|data, stage, race| {
+        let mut live = Live::boot(data, "track-11_O", &race, stage, MarkerSettings::default(), true).unwrap();
         live.pace(f64::from(rbr_recording::STEP_SECONDS));
         let ngp = StepClock { step: f32::from_bits(0x3ab6_0b61), settle: 1520 };
         assert_eq!(live.clock, ngp);
@@ -78,7 +86,7 @@ fn a_paced_ngp_live_boot_runs_frames_of_several_steps_at_real_speed() {
         assert!((ticked - real - rbr_recording::STEP_SECONDS).abs() <= ngp.step, "{ticked} s in {real} s");
         // `--pilot autopilot` holds the car until the race clock's go, then launches it (it revs to a share of
         // the car's rev limit in neutral first, so it needs the limit) and drives off within 5 s.
-        let mut pilot = crate::autopilot::Pilot::new("autopilot", &stage, &live).unwrap();
+        let mut pilot = crate::autopilot::Pilot::new("autopilot", stage, &live).unwrap();
         let mut last = None;
         let mut driving = 0;
         while driving < 700 {
@@ -89,32 +97,18 @@ fn a_paced_ngp_live_boot_runs_frames_of_several_steps_at_real_speed() {
         let sense = crate::autopilot::sense(&last.unwrap(), &live);
         let speed = sense.pose.speed();
         assert!(speed > 3.0, "the pilot did not drive off: {speed:.1} m/s in gear {}", sense.gear);
-    })
-    .unwrap();
+    });
 }
 
 /// NGP's force-feedback sensitivity (`Race::ffb_sensitivity`, `--ffb-sensitivity`) at 50 % halves the car's `S`:
 /// the same drive, frame for frame, with each steering force `1 - (1 - f)^2` of the force `f` at 100 %.
 #[test]
 fn ngp_ffb_sensitivity_reshapes_the_force_and_nothing_else() {
-    let (Some(install), Some(patch), Some(ngp)) = (
-        std::env::var_os("RBR_DATA").map(PathBuf::from),
-        std::env::var_os("RBR_PATCH").map(PathBuf::from),
-        std::env::var_os("RBR_NGP_PHYSICS").map(PathBuf::from),
-    ) else {
-        eprintln!("RBR_DATA, RBR_PATCH or RBR_NGP_PHYSICS unset; skipped");
-        return;
-    };
-    on_big_stack(move || {
-        let data = Data::new(install.clone(), Some(patch));
-        let stage = stage_data(&data, "track-11_O", 5).unwrap();
-        let season = Season::load(&data).unwrap();
-        let weather = weather::quick_race(&season, 11, Preset::Good, Draws::default()).unwrap();
-        let race = boot::Race::quick_race(11, 5, 3, weather, ngp);
+    quick_race(|data, stage, race| {
         let drive = |race: &boot::Race| {
-            let mut live = Live::boot(&data, "track-11_O", race, &stage, MarkerSettings::default(), true).unwrap();
+            let mut live = Live::boot(data, "track-11_O", race, stage, MarkerSettings::default(), true).unwrap();
             live.pace(f64::from(rbr_recording::STEP_SECONDS));
-            let mut pilot = crate::autopilot::Pilot::new("autopilot", &stage, &live).unwrap();
+            let mut pilot = crate::autopilot::Pilot::new("autopilot", stage, &live).unwrap();
             let mut last: Option<Vec<u8>> = None;
             let mut out = vec![];
             // 3000 frames of 7 ms, the countdown included.
@@ -141,8 +135,7 @@ fn ngp_ffb_sensitivity_reshapes_the_force_and_nothing_else() {
         }
         let peak = base.iter().map(|(_, f)| f.abs()).fold(0.0, f32::max);
         assert!(felt > 100, "only {felt} frames with a force to compare (peak {peak})");
-    })
-    .unwrap();
+    });
 }
 
 /// The viewer's Ignition action (its payload's aux bit, `CDrive+0x50`): an NGP engine stalled in first gear at idle
@@ -150,23 +143,10 @@ fn ngp_ffb_sensitivity_reshapes_the_force_and_nothing_else() {
 /// is held with the clutch in.
 #[test]
 fn an_ngp_engine_stalled_in_gear_restarts_on_the_held_ignition() {
-    let (Some(install), Some(patch), Some(ngp)) = (
-        std::env::var_os("RBR_DATA").map(PathBuf::from),
-        std::env::var_os("RBR_PATCH").map(PathBuf::from),
-        std::env::var_os("RBR_NGP_PHYSICS").map(PathBuf::from),
-    ) else {
-        eprintln!("RBR_DATA, RBR_PATCH or RBR_NGP_PHYSICS unset; skipped");
-        return;
-    };
-    on_big_stack(move || {
-        let data = Data::new(install.clone(), Some(patch));
-        let stage = stage_data(&data, "track-11_O", 5).unwrap();
-        let season = Season::load(&data).unwrap();
-        let weather = weather::quick_race(&season, 11, Preset::Good, Draws::default()).unwrap();
-        let mut race = boot::Race::quick_race(11, 5, 3, weather, ngp);
+    quick_race(|data, stage, mut race| {
         // Without the clutch help and the automatic gears, as a player who stalls drives.
         (race.options.aids.clutch_help, race.options.aids.auto_gears) = (false, false);
-        let mut live = Live::boot(&data, "track-11_O", &race, &stage, MarkerSettings::default(), true).unwrap();
+        let mut live = Live::boot(data, "track-11_O", &race, stage, MarkerSettings::default(), true).unwrap();
         live.pace(f64::from(rbr_recording::STEP_SECONDS));
         let mut engine = |input: Input| {
             let answer = live.answer(&input.to_bytes()).unwrap();
@@ -199,29 +179,15 @@ fn an_ngp_engine_stalled_in_gear_restarts_on_the_held_ignition() {
         }
         let at = at.unwrap_or_else(|| panic!("no start in 4.9 s of ignition: at most {started} rad/s"));
         eprintln!("started after {:.2} s of ignition, {started:.0} rad/s at most", at as f32 * 0.007);
-    })
-    .unwrap();
+    });
 }
 
 /// The pause menu's record and retire (`rbr_gameplay::pause_menu`): a quick race offers the call for help from 2 s
 /// of race time, and a payload with `RETIRE` ends the race retired on its frame, with no step, on page 0x12.
 #[test]
 fn the_pause_menu_s_retire_ends_the_race_without_a_step() {
-    let (Some(install), Some(patch), Some(ngp)) = (
-        std::env::var_os("RBR_DATA").map(PathBuf::from),
-        std::env::var_os("RBR_PATCH").map(PathBuf::from),
-        std::env::var_os("RBR_NGP_PHYSICS").map(PathBuf::from),
-    ) else {
-        eprintln!("RBR_DATA, RBR_PATCH or RBR_NGP_PHYSICS unset; skipped");
-        return;
-    };
-    on_big_stack(move || {
-        let data = Data::new(install.clone(), Some(patch));
-        let stage = stage_data(&data, "track-11_O", 5).unwrap();
-        let season = Season::load(&data).unwrap();
-        let weather = weather::quick_race(&season, 11, Preset::Good, Draws::default()).unwrap();
-        let race = boot::Race::quick_race(11, 5, 3, weather, ngp);
-        let mut live = Live::boot(&data, "track-11_O", &race, &stage, MarkerSettings::default(), true).unwrap();
+    quick_race(|data, stage, race| {
+        let mut live = Live::boot(data, "track-11_O", &race, stage, MarkerSettings::default(), true).unwrap();
         live.pace(f64::from(rbr_recording::STEP_SECONDS));
         let menu = |answer: &[u8]| {
             let (_, rest) = answer.split_at(FRAME_BYTES + HUD2_BYTES + DMG1_BYTES);
@@ -248,29 +214,16 @@ fn the_pause_menu_s_retire_ends_the_race_without_a_step() {
             (rbr_gameplay::flow::EndCause::Retired, false, time)
         );
         assert_eq!(live.end_page(&end), EndPage::QuickRetired);
-    })
-    .unwrap();
+    });
 }
 
 /// A championship stage's start (`rbr_gameplay::flow::Mode::confirm_arms`): the start orbit gives no go, and the
 /// countdown waits for the player's confirm, an input payload's `ACCEPT_MESSAGE`; the driving starts 2 s after it.
 #[test]
 fn a_championship_start_waits_for_the_confirm() {
-    let (Some(install), Some(patch), Some(ngp)) = (
-        std::env::var_os("RBR_DATA").map(PathBuf::from),
-        std::env::var_os("RBR_PATCH").map(PathBuf::from),
-        std::env::var_os("RBR_NGP_PHYSICS").map(PathBuf::from),
-    ) else {
-        eprintln!("RBR_DATA, RBR_PATCH or RBR_NGP_PHYSICS unset; skipped");
-        return;
-    };
-    on_big_stack(move || {
-        let data = Data::new(install.clone(), Some(patch));
-        let stage = stage_data(&data, "track-11_O", 5).unwrap();
-        let season = Season::load(&data).unwrap();
-        let weather = weather::quick_race(&season, 11, Preset::Good, Draws::default()).unwrap();
-        let race = boot::Race::quick_race(11, 5, 3, weather, ngp).in_championship(Default::default());
-        let mut live = Live::boot(&data, "track-11_O", &race, &stage, MarkerSettings::default(), true).unwrap();
+    quick_race(|data, stage, race| {
+        let race = race.in_championship(Default::default());
+        let mut live = Live::boot(data, "track-11_O", &race, stage, MarkerSettings::default(), true).unwrap();
         live.pace(f64::from(rbr_recording::STEP_SECONDS));
         let input = |flags| Input { flags, ..Input::default() }.to_bytes();
         let start = live.next_step();
@@ -285,30 +238,16 @@ fn a_championship_start_waits_for_the_confirm() {
             frames += 1;
         }
         assert_eq!(frames, 287, "the confirm's frame and 285 more of the 2 s countdown, then the first step");
-    })
-    .unwrap();
+    });
 }
 
 /// A payload of several periods (`Input::frames`, a viewer behind real time) is one game frame of their wall
 /// time: the same answers as a process paced at that time a payload, frames of 15 to 18 steps once driving.
 #[test]
 fn a_payload_of_three_periods_is_one_frame_of_three_steps() {
-    let (Some(install), Some(patch), Some(ngp)) = (
-        std::env::var_os("RBR_DATA").map(PathBuf::from),
-        std::env::var_os("RBR_PATCH").map(PathBuf::from),
-        std::env::var_os("RBR_NGP_PHYSICS").map(PathBuf::from),
-    ) else {
-        eprintln!("RBR_DATA, RBR_PATCH or RBR_NGP_PHYSICS unset; skipped");
-        return;
-    };
-    on_big_stack(move || {
-        let data = Data::new(install.clone(), Some(patch));
-        let stage = stage_data(&data, "track-11_O", 5).unwrap();
-        let season = Season::load(&data).unwrap();
-        let weather = weather::quick_race(&season, 11, Preset::Good, Draws::default()).unwrap();
-        let race = boot::Race::quick_race(11, 5, 3, weather, ngp);
+    quick_race(|data, stage, race| {
         let step = f64::from(rbr_recording::STEP_SECONDS);
-        let boot = || Live::boot(&data, "track-11_O", &race, &stage, MarkerSettings::default(), true).unwrap();
+        let boot = || Live::boot(data, "track-11_O", &race, stage, MarkerSettings::default(), true).unwrap();
         let (mut periods, mut frame) = (boot(), boot());
         periods.pace(step);
         frame.pace(3.0 * step);
@@ -334,31 +273,17 @@ fn a_payload_of_three_periods_is_one_frame_of_three_steps() {
             let (a, b) = (periods.answer_over(&recorded, 3).unwrap(), frame.answer(&recorded).unwrap());
             assert!(a == b, "frame {k}: the recorded control's answers");
         }
-    })
-    .unwrap();
+    });
 }
 
 /// The live picture resets the damper words once a frame and SND1 carries each frame's emitted payloads: after an
 /// answer with steps the memory words read reset while SND1 carries the frame's peaks.
 #[test]
 fn live_damper_words_reset_each_frame() {
-    let (Some(install), Some(patch), Some(ngp)) = (
-        std::env::var_os("RBR_DATA").map(PathBuf::from),
-        std::env::var_os("RBR_PATCH").map(PathBuf::from),
-        std::env::var_os("RBR_NGP_PHYSICS").map(PathBuf::from),
-    ) else {
-        eprintln!("RBR_DATA, RBR_PATCH or RBR_NGP_PHYSICS unset; skipped");
-        return;
-    };
-    on_big_stack(move || {
-        let data = Data::new(install, Some(patch));
-        let stage = stage_data(&data, "track-11_O", 5).unwrap();
-        let season = Season::load(&data).unwrap();
-        let weather = weather::quick_race(&season, 11, Preset::Good, Draws::default()).unwrap();
-        let race = boot::Race::quick_race(11, 5, 3, weather, ngp);
-        let mut live = Live::boot(&data, "track-11_O", &race, &stage, MarkerSettings::default(), true).unwrap();
+    quick_race(|data, stage, race| {
+        let mut live = Live::boot(data, "track-11_O", &race, stage, MarkerSettings::default(), true).unwrap();
         live.pace(f64::from(rbr_recording::STEP_SECONDS));
-        let mut pilot = crate::autopilot::Pilot::new("autopilot", &stage, &live).unwrap();
+        let mut pilot = crate::autopilot::Pilot::new("autopilot", stage, &live).unwrap();
         let mut last: Option<Vec<u8>> = None;
         let mut waited = 0;
         while live.game.race_clock().counting_down() {
@@ -401,32 +326,18 @@ fn live_damper_words_reset_each_frame() {
         }
         assert!(stepped == 600, "only {stepped} stepped frames");
         assert!(max_peak > 0.05, "SND1 carries no damper peaks (max {max_peak})");
-    })
-    .unwrap();
+    });
 }
 
 /// Restarting the stage in process answers every frame as the fresh boot did: after driving with the autopilot,
 /// `restart` runs the countdown and the drive again byte for byte.
 #[test]
 fn live_restart_answers_each_frame_again() {
-    let (Some(install), Some(patch), Some(ngp)) = (
-        std::env::var_os("RBR_DATA").map(PathBuf::from),
-        std::env::var_os("RBR_PATCH").map(PathBuf::from),
-        std::env::var_os("RBR_NGP_PHYSICS").map(PathBuf::from),
-    ) else {
-        eprintln!("RBR_DATA, RBR_PATCH or RBR_NGP_PHYSICS unset; skipped");
-        return;
-    };
-    on_big_stack(move || {
-        let data = Data::new(install, Some(patch));
-        let stage = stage_data(&data, "track-11_O", 5).unwrap();
-        let season = Season::load(&data).unwrap();
-        let weather = weather::quick_race(&season, 11, Preset::Good, Draws::default()).unwrap();
-        let race = boot::Race::quick_race(11, 5, 3, weather, ngp);
-        let mut live = Live::boot(&data, "track-11_O", &race, &stage, MarkerSettings::default(), true).unwrap();
+    quick_race(|data, stage, race| {
+        let mut live = Live::boot(data, "track-11_O", &race, stage, MarkerSettings::default(), true).unwrap();
         live.pace(f64::from(rbr_recording::STEP_SECONDS));
         let drive = |live: &mut Live| {
-            let mut pilot = crate::autopilot::Pilot::new("autopilot", &stage, live).unwrap();
+            let mut pilot = crate::autopilot::Pilot::new("autopilot", stage, live).unwrap();
             let mut last: Option<Vec<u8>> = None;
             let mut out = Vec::new();
             for _ in 0..500 {
@@ -480,36 +391,21 @@ fn live_restart_answers_each_frame_again() {
         live.saves.as_mut().unwrap().finish([11.0, 21.0, 31.0]).unwrap();
         assert!(live.saves.as_ref().unwrap().written());
         std::fs::remove_dir_all(&dir).unwrap();
-    })
-    .unwrap();
+    });
 }
 
 /// An `--autopilot --boot` playback (no `--saves`) waits for the race clock's go: it does not take the jump start,
 /// and the car drives off.
 #[test]
 fn an_autopilot_playback_starts_on_the_green() {
-    let (Some(install), Some(patch), Some(ngp)) = (
-        std::env::var_os("RBR_DATA").map(PathBuf::from),
-        std::env::var_os("RBR_PATCH").map(PathBuf::from),
-        std::env::var_os("RBR_NGP_PHYSICS").map(PathBuf::from),
-    ) else {
-        eprintln!("RBR_DATA, RBR_PATCH or RBR_NGP_PHYSICS unset; skipped");
-        return;
-    };
-    on_big_stack(move || {
-        let data = Data::new(install, Some(patch));
-        let stage = stage_data(&data, "track-11_O", 5).unwrap();
-        let season = Season::load(&data).unwrap();
-        let weather = weather::quick_race(&season, 11, Preset::Good, Draws::default()).unwrap();
-        let race = boot::Race::quick_race(11, 5, 3, weather, ngp);
-        let live = Live::boot(&data, "track-11_O", &race, &stage, MarkerSettings::default(), false).unwrap();
+    quick_race(|data, stage, race| {
+        let live = Live::boot(data, "track-11_O", &race, stage, MarkerSettings::default(), false).unwrap();
         let out = std::env::temp_dir().join(format!("rbr-autopilot-green-{}.bin", std::process::id()));
         let neutral = payload(&QuantizedControl::default().car_control(), 0);
-        let drove = crate::autopilot::drive(live, &[], neutral, &stage, 9000, None, None, &out).unwrap();
+        let drove = crate::autopilot::drive(live, &[], neutral, stage, 9000, None, None, &out).unwrap();
         std::fs::remove_file(&out).unwrap();
         assert!(!drove.out.unwrap().false_start, "the autopilot jumped the start");
-    })
-    .unwrap();
+    });
 }
 
 /// An RSF car (`RBR_RSF`: the Evo IX if it is there, else the first car with a pack) boots under NGP
@@ -590,21 +486,8 @@ fn ngp_control_input_emit_adds_the_direct_gears_with_the_automatic_gearbox_off()
 #[test]
 fn a_realtime_ngp_drive_steps_once_a_frame_and_replays_through_frames() {
     use rbr_recording::realtime::{Message, Step, INPUT, RESUME, STEP_BYTES, STP1};
-    let (Some(install), Some(patch), Some(ngp)) = (
-        std::env::var_os("RBR_DATA").map(PathBuf::from),
-        std::env::var_os("RBR_PATCH").map(PathBuf::from),
-        std::env::var_os("RBR_NGP_PHYSICS").map(PathBuf::from),
-    ) else {
-        eprintln!("RBR_DATA, RBR_PATCH or RBR_NGP_PHYSICS unset; skipped");
-        return;
-    };
-    on_big_stack(move || {
-        let data = Data::new(install.clone(), Some(patch));
-        let stage = stage_data(&data, "track-11_O", 5).unwrap();
-        let season = Season::load(&data).unwrap();
-        let weather = weather::quick_race(&season, 11, Preset::Good, Draws::default()).unwrap();
-        let race = boot::Race::quick_race(11, 5, 3, weather, ngp);
-        let boot = || Live::boot(&data, "track-11_O", &race, &stage, MarkerSettings::default(), false).unwrap();
+    quick_race(|data, stage, race| {
+        let boot = || Live::boot(data, "track-11_O", &race, stage, MarkerSettings::default(), false).unwrap();
         let live = boot();
         let (reader, mut writer) = std::io::pipe().unwrap();
         // The first input, the start, then the steering swept for 0.6 s with a gear up and the throttle on.
@@ -660,6 +543,5 @@ fn a_realtime_ngp_drive_steps_once_a_frame_and_replays_through_frames() {
         std::fs::remove_file(&log).unwrap();
         assert!(line.ends_with("compared, all equal") && !answers.is_empty(), "{line}");
         eprintln!("{line}");
-    })
-    .unwrap();
+    });
 }

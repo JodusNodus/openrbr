@@ -109,8 +109,8 @@ fn relocate_minimal_exact() {
     assert_eq!(b, want);
     // The placeholder is gone: the grafted node is the cell's inner
     // root with bit 21 clear.
-    assert_eq!(u32_at(&b, 0x58 + 0x18).unwrap(), 0);
-    assert_eq!(u32_at(&b, 0x58 + 0x1c).unwrap(), BASE + 0xf4);
+    assert_eq!(read_u32_le(&b, 0x58 + 0x18).unwrap(), 0);
+    assert_eq!(read_u32_le(&b, 0x58 + 0x1c).unwrap(), BASE + 0xf4);
 }
 
 /// Relocating at two bases shifts exactly the absolute words.
@@ -131,7 +131,7 @@ fn relocate_delta_is_base_difference() {
         assert_eq!(x, y, "byte {i:#x} differs across bases");
     }
     for off in [0x54, 0x74, 0xf0, 0x110] {
-        let (a, c) = (u32_at(&b1, off).unwrap(), u32_at(&b2, off).unwrap());
+        let (a, c) = (read_u32_le(&b1, off).unwrap(), read_u32_le(&b2, off).unwrap());
         assert_eq!(c.wrapping_sub(a), B2.wrapping_sub(B1), "word {off:#x}");
     }
 }

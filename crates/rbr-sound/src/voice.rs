@@ -21,7 +21,7 @@ pub enum Loop {
     Helicopter,
     /// `Audio\Cars\Effects\cooler.wav` (`CCarSound::Md2b0` 0x4ad2b0).
     Cooler,
-    /// The H-shifter's grind (ours, `Mixer::set_grind`): silent until a sample is given.
+    /// The H-shifter's grind (ours, `Player::set_grind`): silent until a sample is given.
     Grind,
 }
 

@@ -35,7 +35,7 @@ pub struct EntryTerms {
 /// What the solve reads after the pivot update.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SolveTerms {
-    /// The axes built from `vecHingeAxis_RF` and `vecZeroAxis_RF`, row-major.
+    /// The axes built from the hinge axis and the zero axis in the reference frame, row-major.
     pub axes_rf: [[f32; 3]; 3],
     /// The hinge rotation ([`super::hinge_limits::rotation_block`]), row-major.
     pub hinge_rotation: [[f32; 3]; 3],
@@ -43,11 +43,11 @@ pub struct SolveTerms {
     pub hinge_point_acceleration: [f32; 3],
     /// The inverse origin of the body-frame axes build: the weights of the matrix's columns.
     pub inverse_origin_bf: [f32; 3],
-    /// `vecHingeAxis_RF`: the inertial torque is projected on it.
+    /// The hinge axis in the reference frame: the inertial torque is projected on it.
     pub hinge_axis_rf: [f32; 3],
-    /// `vecHingeAxis_BF`: the contact load's torque is projected on it.
+    /// The hinge axis in the body frame: the contact load's torque is projected on it.
     pub hinge_axis_bf: [f32; 3],
-    /// `vecHingePoint_BF`, negated for the contact force's lever arm.
+    /// The hinge point in the body frame, negated for the contact force's lever arm.
     pub hinge_point_bf: [f32; 3],
     /// `HingeDefaultAngle`, `SpringRate` and `Damping`; the hinge angle (rad) and rate (rad/s); and the frame's angular
     /// acceleration along the axis ([`super::hinge_pivot::Pivot`]).

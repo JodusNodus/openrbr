@@ -26,17 +26,16 @@
 //! name gets a `-2`, `-3` suffix. An audio-only download without the style/range definitions it needs fails with an
 //! actionable error (or a pack listed with its missing dependency), and never appears ready.
 
-use std::fs::{self, File};
-use std::io::{BufReader, Read};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use rbr_formats::rsf::{codriver, pacenotes};
 
-use crate::car_packs::{safe_folder, safe_path};
-use crate::disc_install::{Job, Progress, Temp};
+use crate::archive::{safe_folder, safe_path};
+use crate::job::{Job, Progress, Temp};
 use crate::pages::{GOOD, WARN};
-use crate::{install, Form};
+use crate::Form;
 
 /// The folders in the player's folder with the owned packs.
 pub const VOICES_DIR: &str = "codrivers";
@@ -616,12 +615,8 @@ fn import_both(
     voice_src: &Path,
     notes_src: &Path,
 ) -> Result<Vec<String>, Fail> {
-    let voice = stage(home, VOICES_DIR, name)?;
-    let notes = stage(home, NOTES_DIR, name)?;
-    copy_voice(voice_src, &voice.staged, cancel)?;
-    let (styles, ranges) = check_voice(&voice.staged)?;
-    copy_notes(notes_src, &notes.staged, cancel)?;
-    let n = check_notes(&notes.staged, notes_src)?;
+    let (voice, (styles, ranges)) = stage_voice(home, name, cancel, |d, c| copy_voice(voice_src, d, c))?;
+    let (notes, n) = stage_notes(home, name, notes_src, cancel, |d, c| copy_notes(notes_src, d, c))?;
     publish_pair(&voice, &notes, cancel)?;
     Ok(vec![voice_line(&voice.dest, &styles, &ranges), notes_line(&notes.dest, n)])
 }
@@ -638,9 +633,7 @@ fn stage(home: &Path, dir: &str, name: &str) -> Result<Staged, Fail> {
     let base = home.join(dir);
     fs::create_dir_all(&base).map_err(|e| format!("{}: {e}", base.display()))?;
     let dest = free_dir(&base, &safe_folder(name).unwrap_or_else(|| "pack".to_owned()));
-    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
-    let temp = Temp(base.join(format!(".import-{}-{stamp}", std::process::id())));
-    fs::create_dir(&temp.0).map_err(|e| format!("{}: {e}", temp.0.display()))?;
+    let temp = Temp::create(&base, "import")?;
     let staged = temp.0.join("pack");
     fs::create_dir(&staged).map_err(|e| format!("{}: {e}", staged.display()))?;
     Ok(Staged { _temp: temp, staged, dest })
@@ -689,67 +682,61 @@ fn check_notes(staged: &Path, src: &Path) -> Result<usize, Fail> {
     }
 }
 
-/// Stages a voice pack named `name` with `copy` (into a temp folder, validated, then published): the lines saying
-/// what was added. A failure leaves no pack behind.
-fn import_voice_from(
+/// A staged voice pack and what its validation says: its call styles and range sets.
+type StagedVoice = (Staged, (Vec<String>, Vec<String>));
+
+/// Stages a voice pack named `name` with `copy` (into a temp folder, validated): the staging, its styles and
+/// range sets. A failure leaves no pack behind (the staging drops with its temp folder).
+fn stage_voice<R>(
     home: &Path,
     name: &str,
     cancel: &AtomicBool,
-    copy: impl FnOnce(&Path, &AtomicBool) -> Result<usize, Fail>,
-) -> Result<Vec<String>, Fail> {
+    copy: impl FnOnce(&Path, &AtomicBool) -> Result<R, Fail>,
+) -> Result<StagedVoice, Fail> {
     let op = stage(home, VOICES_DIR, name)?;
     copy(&op.staged, cancel)?;
-    let (styles, ranges) = check_voice(&op.staged)?;
+    let checked = check_voice(&op.staged)?;
+    Ok((op, checked))
+}
+
+/// Stages a note pack named `name` with `copy`: the staging and its note files.
+fn stage_notes<R>(
+    home: &Path,
+    name: &str,
+    src: &Path,
+    cancel: &AtomicBool,
+    copy: impl FnOnce(&Path, &AtomicBool) -> Result<R, Fail>,
+) -> Result<(Staged, usize), Fail> {
+    let op = stage(home, NOTES_DIR, name)?;
+    copy(&op.staged, cancel)?;
+    let n = check_notes(&op.staged, src)?;
+    Ok((op, n))
+}
+
+/// Stages a voice pack named `name` with `copy` (into a temp folder, validated, then published): the lines saying
+/// what was added. A failure leaves no pack behind.
+fn import_voice_from<R>(
+    home: &Path,
+    name: &str,
+    cancel: &AtomicBool,
+    copy: impl FnOnce(&Path, &AtomicBool) -> Result<R, Fail>,
+) -> Result<Vec<String>, Fail> {
+    let (op, (styles, ranges)) = stage_voice(home, name, cancel, copy)?;
     publish(&op, cancel)?;
     Ok(vec![voice_line(&op.dest, &styles, &ranges)])
 }
 
 /// Stages a note pack named `name` with `copy`: the lines saying what was added.
-fn import_notes_from(
+fn import_notes_from<R>(
     home: &Path,
     name: &str,
     src: &Path,
     cancel: &AtomicBool,
-    copy: impl FnOnce(&Path, &AtomicBool) -> Result<usize, Fail>,
+    copy: impl FnOnce(&Path, &AtomicBool) -> Result<R, Fail>,
 ) -> Result<Vec<String>, Fail> {
-    let op = stage(home, NOTES_DIR, name)?;
-    copy(&op.staged, cancel)?;
-    let n = check_notes(&op.staged, src)?;
+    let (op, n) = stage_notes(home, name, src, cancel, copy)?;
     publish(&op, cancel)?;
     Ok(vec![notes_line(&op.dest, n)])
-}
-
-/// The file entries of the ZIP archive `src`: their raw path parts (no wrapper stripped, so a single-stage
-/// archive's stage folder keeps its name). Unsafe paths and directory entries are left out.
-fn zip_entries(src: &Path) -> Result<Vec<Vec<String>>, Fail> {
-    let error = |e: String| format!("{}: {e}", src.display());
-    let zip = rbr_formats::rbz::open(src).map_err(|e| error(e.to_string()))?;
-    let mut entries = Vec::new();
-    for k in 0..zip.len() {
-        let name = zip.name_for_index(k).and_then(Result::ok).ok_or_else(|| error("a bad entry".into()))?;
-        let dir = name.ends_with(['/', '\\']);
-        let Some(parts) = safe_path(&name) else { continue };
-        if !dir {
-            entries.push(parts.iter().map(|p| p.to_string()).collect());
-        }
-    }
-    Ok(entries)
-}
-
-/// The file entries of the 7z archive `src`: raw path parts, as [`zip_entries`].
-fn seven_entries(src: &Path) -> Result<Vec<Vec<String>>, Fail> {
-    let error = |e: String| format!("{}: {e}", src.display());
-    let file = File::open(src).map_err(|e| error(e.to_string()))?;
-    let archive = sevenz_rust2::ArchiveReader::new(BufReader::new(file), sevenz_rust2::Password::empty())
-        .map_err(|e| error(format!("not a .7z: {e}")))?;
-    let mut entries = Vec::new();
-    for f in &archive.archive().files {
-        let Some(parts) = safe_path(&f.name) else { continue };
-        if !f.is_directory {
-            entries.push(parts.iter().map(|p| p.to_string()).collect());
-        }
-    }
-    Ok(entries)
 }
 
 /// Whether the archive entries hold a plugin at `root` (raw path parts): its settings, voices or definitions
@@ -815,81 +802,6 @@ fn archive_note_candidates(entries: &[Vec<String>], root: Option<&[String]>) -> 
         .collect()
 }
 
-/// Extracts the ZIP's `wanted` (raw entry path to pack-relative path) into `dest`. Unsafe paths are skipped.
-fn extract_zip(
-    src: &Path,
-    dest: &Path,
-    wanted: &[(Vec<String>, Vec<String>)],
-    cancel: &AtomicBool,
-) -> Result<(), Fail> {
-    let error = |e: String| format!("{}: {e}", src.display());
-    let mut zip = rbr_formats::rbz::open(src).map_err(|e| error(e.to_string()))?;
-    for (from, to) in wanted {
-        cancelled(cancel)?;
-        let found = (0..zip.len()).find(|&k| {
-            zip.name_for_index(k)
-                .and_then(Result::ok)
-                .is_some_and(|n| safe_path(&n).is_some_and(|p| p == from.as_slice()))
-        });
-        let Some(k) = found else { continue };
-        let mut file = zip.by_index(k).map_err(|e| error(e.to_string()))?;
-        write_to(dest, to, &mut file)?;
-    }
-    Ok(())
-}
-
-/// Writes `reader` to `dest`/`parts`, making its folders. Voice and note files only ever arrive through the
-/// allowlists above.
-fn write_to(dest: &Path, parts: &[String], reader: &mut dyn Read) -> Result<(), Fail> {
-    let safe: Vec<&str> = parts.iter().map(String::as_str).collect();
-    let path = safe.iter().fold(dest.to_owned(), |p, part| p.join(part));
-    fs::create_dir_all(path.parent().unwrap_or(dest)).map_err(|e| format!("{}: {e}", path.display()))?;
-    let mut out = fs::File::create(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-    std::io::copy(reader, &mut out).map(drop).map_err(|e| format!("{}: {e}", path.display()))
-}
-
-/// Extracts the 7z's `wanted` (raw entry path to pack-relative path) into `dest`.
-fn extract_seven(
-    src: &Path,
-    dest: &Path,
-    wanted: &[(Vec<String>, Vec<String>)],
-    cancel: &AtomicBool,
-) -> Result<(), Fail> {
-    let error = |e: String| format!("{}: {e}", src.display());
-    let file = File::open(src).map_err(|e| error(e.to_string()))?;
-    let mut archive = sevenz_rust2::ArchiveReader::new(BufReader::new(file), sevenz_rust2::Password::empty())
-        .map_err(|e| error(e.to_string()))?;
-    let mut failed: Option<Fail> = None;
-    archive
-        .for_each_entries(|entry, reader| {
-            if failed.is_some() {
-                return Ok(false);
-            }
-            if cancel.load(Ordering::Relaxed) {
-                failed = Some("cancelled".into());
-                return Ok(false);
-            }
-            if entry.is_directory {
-                return Ok(true);
-            }
-            let Some(parts) = safe_path(&entry.name) else { return Ok(true) };
-            let parts: Vec<String> = parts.iter().map(|p| p.to_string()).collect();
-            if let Some((_, to)) = wanted.iter().find(|(from, _)| *from == parts) {
-                match write_to(dest, to, reader) {
-                    Ok(()) => Ok(true),
-                    Err(e) => {
-                        failed = Some(e);
-                        Ok(false)
-                    }
-                }
-            } else {
-                Ok(true)
-            }
-        })
-        .map_err(|e| error(e.to_string()))?;
-    failed.map_or(Ok(()), Err)
-}
-
 /// Imports the archive `src` (ZIP or 7z) as one atomic operation: the voice and the notes stage and validate
 /// first, and only then both publish (a notes publish failure rolls the just-published voice back). Note
 /// candidates that prune to no parseable note file fall back to a voice-only import, so an unrelated INI next
@@ -897,10 +809,14 @@ fn extract_seven(
 /// notes-only archive with no parseable notes fails loudly. Extraction errors propagate, never swallowed.
 fn import_archive(home: &Path, src: &Path, cancel: &AtomicBool) -> Result<Vec<String>, Fail> {
     let lower = src.to_string_lossy().to_ascii_lowercase();
-    let entries = match lower.ends_with(ZIP) {
-        true => zip_entries(src),
-        false => seven_entries(src),
-    }?;
+    let listed = match lower.ends_with(ZIP) {
+        true => crate::archive::zip_entries(src),
+        false => crate::archive::seven_entries(src),
+    }
+    .map_err(|e| format!("{}: {e}", src.display()))?;
+    // Raw path parts (no wrapper stripped, so a single-stage archive's stage folder keeps its name). Unsafe paths
+    // and directory entries are left out.
+    let entries: Vec<Vec<String>> = listed.into_iter().filter(|e| !e.dir).filter_map(|e| e.parts).collect();
     if entries.iter().all(|p| {
         let n = p.last().map(|n| n.to_ascii_lowercase()).unwrap_or_default();
         n.ends_with(".dll") || n.ends_with(".exe")
@@ -909,14 +825,7 @@ fn import_archive(home: &Path, src: &Path, cancel: &AtomicBool) -> Result<Vec<St
         return Err(format!("{}: no co-driver files in it, only executables", src.display()));
     }
     let name = pack_name(src);
-    let extract = |dest: &Path, wanted: &[(Vec<String>, Vec<String>)]| match src
-        .to_string_lossy()
-        .to_ascii_lowercase()
-        .ends_with(ZIP)
-    {
-        true => extract_zip(src, dest, wanted, cancel),
-        false => extract_seven(src, dest, wanted, cancel),
-    };
+    let extract = |dest: &Path, wanted: &[(Vec<String>, Vec<String>)]| extract_from(src, dest, wanted, cancel);
     let root = archive_plugin_root(&entries);
     let voice: Vec<(Vec<String>, Vec<String>)> = root
         .clone()
@@ -949,10 +858,11 @@ fn import_archive(home: &Path, src: &Path, cancel: &AtomicBool) -> Result<Vec<St
             Ok(note_files(d).len())
         }),
         (false, false) => {
-            let v = stage(home, VOICES_DIR, &name)?;
+            let (v, (styles, ranges)) = stage_voice(home, &name, cancel, |d, _| {
+                extract(d, &voice)?;
+                Ok(walk(d).len())
+            })?;
             let n = stage(home, NOTES_DIR, &name)?;
-            extract(&v.staged, &voice)?;
-            let (styles, ranges) = check_voice(&v.staged)?;
             extract_notes(src, &n.staged, &notes, cancel)?;
             if note_files(&n.staged).is_empty() {
                 // Only unrelated INIs beside a valid voice: keep the voice, drop the empty notes staging.
@@ -970,12 +880,23 @@ fn import_archive(home: &Path, src: &Path, cancel: &AtomicBool) -> Result<Vec<St
 /// does not parse as a note file.
 fn extract_notes(src: &Path, dest: &Path, notes: &[Vec<String>], cancel: &AtomicBool) -> Result<(), Fail> {
     let wanted: Vec<(Vec<String>, Vec<String>)> = notes.iter().map(|p| (p.clone(), p.clone())).collect();
-    match src.to_string_lossy().to_ascii_lowercase().ends_with(ZIP) {
-        true => extract_zip(src, dest, &wanted, cancel),
-        false => extract_seven(src, dest, &wanted, cancel),
-    }?;
+    extract_from(src, dest, &wanted, cancel)?;
     prune_not_notes(dest);
     cancelled(cancel)
+}
+
+/// Extracts the ZIP's or 7z's `wanted` (raw entry path to pack-relative path) into `dest`, stopping on cancel.
+fn extract_from(
+    src: &Path,
+    dest: &Path,
+    wanted: &[(Vec<String>, Vec<String>)],
+    cancel: &AtomicBool,
+) -> Result<(), Fail> {
+    let progress = &mut |_| cancelled(cancel);
+    match src.to_string_lossy().to_ascii_lowercase().ends_with(ZIP) {
+        true => crate::archive::extract_zip(src, dest, wanted, progress),
+        false => crate::archive::extract_seven(src, dest, wanted, progress),
+    }
 }
 
 /// Deletes the staged INIs that do not parse as note files.
@@ -1004,24 +925,24 @@ pub fn import(home: &Path, src: &Path, cancel: &AtomicBool) -> Result<Vec<String
     }
 }
 
-/// Removes the voice pack `name` from `home`.
-pub fn remove_voice(home: &Path, name: &str) -> Result<(), Fail> {
+/// Removes the owned pack `name` below `home/dir` (its folder when there).
+fn remove_pack(home: &Path, dir: &str, name: &str) -> Result<(), Fail> {
     let folder = safe_folder(name).ok_or_else(|| format!("a bad pack name {name}"))?;
-    let path = home.join(VOICES_DIR).join(folder);
+    let path = home.join(dir).join(folder);
     match path.is_dir() {
         true => fs::remove_dir_all(&path).map_err(|e| format!("{}: {e}", path.display())),
         false => Ok(()),
     }
 }
 
+/// Removes the voice pack `name` from `home`.
+pub fn remove_voice(home: &Path, name: &str) -> Result<(), Fail> {
+    remove_pack(home, VOICES_DIR, name)
+}
+
 /// Removes the note pack `name` from `home`.
 pub fn remove_notes(home: &Path, name: &str) -> Result<(), Fail> {
-    let folder = safe_folder(name).ok_or_else(|| format!("a bad pack name {name}"))?;
-    let path = home.join(NOTES_DIR).join(folder);
-    match path.is_dir() {
-        true => fs::remove_dir_all(&path).map_err(|e| format!("{}: {e}", path.display())),
-        false => Ok(()),
-    }
+    remove_pack(home, NOTES_DIR, name)
 }
 
 /// The command line's `--import-codriver SRC`, into the player's folder.
@@ -1064,7 +985,7 @@ impl Form {
         }
         self.cached_notes_map = map;
         self.cached_notes_dirty = false;
-        let found = self.catalog.maps.iter().find(|m| m.number == map);
+        let found = self.catalog.map(map);
         let names = found.and_then(|m| m.stages.first()).map(|stage| self.stage_note_names(stage));
         let stage = found.map(|m| m.name()).unwrap_or_default();
         let voice = self.codriver_mods.as_ref().and_then(|m| m.voice(self.codriver_voice.as_deref()));
@@ -1199,7 +1120,7 @@ impl Form {
                 )
                 .clicked()
             {
-                if let Some(src) = install::pick_folder("The co-driver download's folder") {
+                if let Some(src) = crate::job::pick_folder("The co-driver download's folder") {
                     self.import_codriver_from(src);
                 }
             }
@@ -1211,7 +1132,7 @@ impl Form {
                 )
                 .clicked()
             {
-                if let Some(src) = crate::disc_install::pick_file("The co-driver download's .zip/.7z archive") {
+                if let Some(src) = crate::job::pick_file("The co-driver download's .zip/.7z archive") {
                     self.import_codriver_from(src);
                 }
             }
@@ -1252,17 +1173,11 @@ impl Form {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs::File;
 
     fn write(path: &Path, text: &str) {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, text).unwrap();
-    }
-
-    fn temp(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("rbr-codriver-packs-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
     }
 
     fn imported(home: &Path, src: &Path) -> Result<Vec<String>, String> {
@@ -1291,7 +1206,7 @@ mod tests {
 
     #[test]
     fn an_extracted_plugin_folder_imports_and_loads() {
-        let dir = temp("folder");
+        let dir = crate::test_dir("codriver-folder");
         let src = dir.join("download");
         plugin_source(&src);
         let home = dir.join("home");
@@ -1314,7 +1229,7 @@ mod tests {
 
     #[test]
     fn a_wrapper_directory_and_a_direct_pacenote_folder_import() {
-        let dir = temp("wrapper");
+        let dir = crate::test_dir("codriver-wrapper");
         let inner = dir.join("download").join("wrapper");
         plugin_source(&inner.join("Pacenote"));
         let home = dir.join("home");
@@ -1327,7 +1242,7 @@ mod tests {
 
     #[test]
     fn a_whole_install_is_a_copy_source_only() {
-        let dir = temp("install");
+        let dir = crate::test_dir("codriver-install");
         let install = dir.join("rsf");
         plugin_source(&install.join("Plugins/Pacenote"));
         notes_source(&install.join("Plugins/NGPCarMenu/MyPacenotes"), "Tanner");
@@ -1345,7 +1260,7 @@ mod tests {
 
     #[test]
     fn audio_without_definitions_fails_actionably_and_leaves_nothing() {
-        let dir = temp("audio-only");
+        let dir = crate::test_dir("codriver-audio-only");
         let src = dir.join("voice");
         write(&src.join("sounds/english/steve/one_left.ogg"), "OggS fake");
         let home = dir.join("home");
@@ -1363,7 +1278,7 @@ mod tests {
 
     #[test]
     fn packs_with_the_same_rbr_ini_stay_isolated() {
-        let dir = temp("isolated");
+        let dir = crate::test_dir("codriver-isolated");
         for (pack, id) in [("a", 0), ("b", 7)] {
             let src = dir.join(pack);
             write(&src.join("config/pacenotes/Rbr.ini"), "[PACKAGE::RBR]\nfile=calls.ini\n");
@@ -1395,7 +1310,7 @@ mod tests {
 
     #[test]
     fn zip_wrapper_and_unsafe_paths() {
-        let dir = temp("zip");
+        let dir = crate::test_dir("codriver-zip");
         let src = dir.join("download");
         plugin_source(&src);
         // A ZIP with a wrapper directory.
@@ -1450,7 +1365,7 @@ mod tests {
 
     #[test]
     fn seven_z_and_notes_only_archives() {
-        let dir = temp("seven");
+        let dir = crate::test_dir("codriver-seven");
         let src = dir.join("notes-src");
         notes_source(&src, "Tanner");
         let archive = dir.join("tanner-notes.7z");
@@ -1475,7 +1390,7 @@ mod tests {
 
     #[test]
     fn missing_parts_are_named_not_panics() {
-        let dir = temp("parts");
+        let dir = crate::test_dir("codriver-parts");
         let home = dir.join("home");
         // Ranges without styles (or voices) fail with the missing part, instead of indexing an empty list.
         let ranges_only = dir.join("ranges-only");
@@ -1501,7 +1416,7 @@ mod tests {
     #[cfg(unix)]
     fn symlinks_are_neither_followed_nor_copied() {
         use std::os::unix::fs::symlink;
-        let dir = temp("symlinks");
+        let dir = crate::test_dir("codriver-symlinks");
         let src = dir.join("download");
         plugin_source(&src);
         // A loop back to the source itself, and a file link to another pack's file: neither is followed.
@@ -1521,7 +1436,7 @@ mod tests {
 
     #[test]
     fn single_stage_sources_keep_their_stage() {
-        let dir = temp("single-stage");
+        let dir = crate::test_dir("codriver-single-stage");
         let home = dir.join("home");
         let note = "[PACENOTES]\ncount = 1\n\n[P0]\ntype = 16\ndistance = 100.0\nflag = 0\n";
         // A bare stage folder: its own name stays over its notes.
@@ -1561,7 +1476,7 @@ mod tests {
     /// they add to the stage's name, counted by stage; `_default` exports make none; the highest edited copy plays.
     #[test]
     fn note_sets_are_named_after_the_stage() {
-        let dir = temp("sets");
+        let dir = crate::test_dir("codriver-sets");
         let note = "[PACENOTES]\ncount = 1\n\n[P0]\ntype = 16\ndistance = 1.0\nflag = 0\n";
         for stage in ["Tanner", "Tanner II", "Mlynky"] {
             write(&dir.join(format!("{stage}/{stage} LuppisV3.ini")), note);
@@ -1600,7 +1515,7 @@ mod tests {
 
     #[test]
     fn a_failed_combined_import_publishes_nothing() {
-        let dir = temp("atomic");
+        let dir = crate::test_dir("codriver-atomic");
         let home = dir.join("home");
         let voice = dir.join("voice");
         plugin_source(&voice);
@@ -1637,7 +1552,7 @@ mod tests {
 
     #[test]
     fn wrapper_plugin_layouts_import() {
-        let dir = temp("wrapper-layouts");
+        let dir = crate::test_dir("codriver-wrapper-layouts");
         let home = dir.join("home");
         // Folder sources: the plugin under a wrapper, as `Pacenote` or `Plugins/Pacenote`.
         for (case, plugin) in [("folder-pacenote", "wrapper/Pacenote"), ("folder-install", "wrapper/Plugins/Pacenote")]
@@ -1678,7 +1593,7 @@ mod tests {
 
     #[test]
     fn a_voice_archive_with_an_unrelated_ini_keeps_the_voice() {
-        let dir = temp("unrelated-ini");
+        let dir = crate::test_dir("codriver-unrelated-ini");
         let home = dir.join("home");
         // A valid voice with an unrelated INI next to it: the voice imports alone, nothing pruned loudly.
         let src = dir.join("download");
@@ -1711,7 +1626,7 @@ mod tests {
 
     #[test]
     fn a_cancel_after_staging_publishes_nothing() {
-        let dir = temp("late-cancel");
+        let dir = crate::test_dir("codriver-late-cancel");
         let home = dir.join("home");
         let src = dir.join("voice");
         plugin_source(&src);
@@ -1731,7 +1646,7 @@ mod tests {
 
     #[test]
     fn a_second_publish_failure_rolls_the_voice_back() {
-        let dir = temp("rollback");
+        let dir = crate::test_dir("codriver-rollback");
         let home = dir.join("home");
         let no_cancel = AtomicBool::new(false);
         // A notes publish that cannot rename (its staging is gone): the just-published voice is removed again,
@@ -1754,7 +1669,7 @@ mod tests {
 
     #[test]
     fn corrupt_packs_list_their_validation_problem() {
-        let dir = temp("corrupt-list");
+        let dir = crate::test_dir("codriver-corrupt-list");
         let home = dir.join("home");
         let broken = home.join(VOICES_DIR).join("broken");
         // A style naming a package file that is not there: the lists see no missing part, but loading dangles.
@@ -1773,7 +1688,7 @@ mod tests {
 
     #[test]
     fn default_voice_follows_the_installed_spelling() {
-        let dir = temp("default-voice");
+        let dir = crate::test_dir("codriver-default-voice");
         let src = dir.join("pack");
         plugin_source(&src);
         let mods = crate::command::CodriverMods::from_dir(src.clone()).unwrap();
@@ -1795,9 +1710,9 @@ mod tests {
 
     #[test]
     fn owned_packs_list_with_their_problems() {
-        use crate::disc_install::Progress;
+        use crate::job::Progress;
         use std::sync::atomic::AtomicBool;
-        let dir = temp("list");
+        let dir = crate::test_dir("codriver-list");
         let src = dir.join("voice");
         plugin_source(&src);
         let home = dir.join("home");
@@ -1814,7 +1729,7 @@ mod tests {
     /// One style per file, one range set per file: identical files do not differ, a changed take does.
     #[test]
     fn differing_style_and_range_sets_are_detected() {
-        let dir = temp("differ");
+        let dir = crate::test_dir("codriver-differ");
         let write_style = |name: &str, take: &str| {
             write(
                 &dir.join(format!("config/pacenotes/{name}")),

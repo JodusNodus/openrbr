@@ -1,6 +1,6 @@
-//! The window steps: `CSolid::VfEx` (0x52d110) takes the body to the end of its window, `CSolid::VfDx` (0x52cfd0)
-//! takes it back to a fraction `a` of the window. `progress` (`+0x290`) is the fraction already taken. Both move the
-//! orientation and the position, register a free body in its cell, then refresh the state through the host.
+//! The window steps: the rest step takes the body to the end of its window, the back step takes it back to a
+//! fraction `a` of the window. `progress` is the fraction already taken. Both move the orientation and the position,
+//! register a free body in its cell, then refresh the state through the host.
 
 use super::host::{CellHost, HostUnavailable, StateHost};
 use super::layout::{Body, Vec4, CELL_LINK};
@@ -11,15 +11,15 @@ fn blend(v: f32, a: f32, s: f32, d: f32) -> f32 {
     v * a + s * d
 }
 
-/// `VfEx`: advances the body by the rest of its window, `a` seconds of the window's time. The move takes
-/// `s = (1 - progress) * a` of the velocity; the turn takes half of `s` (the asm halves it for the quaternion only).
+/// Advances the body by the rest of its window, `a` seconds of the window's time. The move takes `s = (1 -
+/// progress) * a` of the velocity; the turn takes half of `s` (halved for the quaternion only).
 pub fn advance_rest(body: &mut Body, a: f32, host: &mut (impl CellHost + StateHost)) -> Result<(), HostUnavailable> {
     if body.progress >= 1.0 {
         return Ok(());
     }
     let s = (1.0 - body.progress) * a;
     let w = body.angular_velocity;
-    // The asm's 0.5 (the float at 0x795e18 of RichardBurnsRally_SSE.exe) halves `s` for the turn only.
+    // 0.5 halves `s` for the turn only.
     let h = s * 0.5;
     let half_turn = Quat { x: w.x * h, y: w.y * h, z: w.z * h, w: 1.0 };
     body.orientation = normalize(mul(half_turn, body.orientation));
@@ -34,8 +34,8 @@ pub fn advance_rest(body: &mut Body, a: f32, host: &mut (impl CellHost + StateHo
     Ok(())
 }
 
-/// `VfDx`: moves the body back to fraction `a` of its window. The orientation and the position blend the current
-/// values (scaled by `a`) with the window's start values (`start_orientation`, `start_position`, scaled by `1 - a`).
+/// Moves the body back to fraction `a` of its window. The orientation and the position blend the current values
+/// (scaled by `a`) with the window's start values (`start_orientation`, `start_position`, scaled by `1 - a`).
 pub fn back_step(body: &mut Body, a: f32, host: &mut (impl CellHost + StateHost)) -> Result<(), HostUnavailable> {
     if a >= body.progress {
         return Ok(());

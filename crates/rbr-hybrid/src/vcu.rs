@@ -36,7 +36,7 @@ pub const SET_1ED0: u32 = 0x4f1ed0; // Lights: neutral light
 pub const QUERY_SLIP: u32 = 0x536fe0; // E50_QuerySlip (fastcall on the scratch)
 
 const fn bind(addr: u32, name: &'static str, run: crate::BindingFn) -> Binding {
-    Binding { addr, name, subsystem: "vcu", run }
+    crate::bind("vcu", addr, name, run)
 }
 
 pub static BINDINGS: [Binding; 16] = [

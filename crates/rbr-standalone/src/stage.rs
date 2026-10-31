@@ -15,6 +15,8 @@ use crate::{autopilot, boot};
 pub struct StageData {
     pub markers: StageMarkers,
     pub track: Vec<DriveLineRecord>,
+    /// The track's values, computed once for `Game`, the dash and the autopilot.
+    pub track_values: Vec<f32>,
     pub number: u32,
     /// The stage's reference times from `misc/times.ini`, when the file has the stage.
     pub reference: Option<StageTimes>,
@@ -55,11 +57,22 @@ pub fn stage_data(data: &Data, stage: &str, car: u32) -> Result<StageData, Strin
         })
         .ok_or_else(|| format!("{stage}.trk: no driveline"))?;
     let obstacles = autopilot::obstacles(&trk);
+    let track_values = track.iter().map(|r| r.value).collect();
     let (number, _) = stage_files::parts(stage).ok_or_else(|| format!("{stage}: not track-<number>_<variant>"))?;
     let misc = data.resolve("Root/misc.rbz").ok_or("Root/misc.rbz: not found")?;
     let reference = times::read(&misc).map_err(|e| e.to_string())?.into_iter().find(|t| t.stage == number);
     let interactive_handle_end = boot::INTERACTIVE_HANDLE_BASE + interactive_count as u32;
-    Ok(StageData { markers, track, number, reference, car, interactive_handle_end, obstacles, finish_zone })
+    Ok(StageData {
+        markers,
+        track,
+        track_values,
+        number,
+        reference,
+        car,
+        interactive_handle_end,
+        obstacles,
+        finish_zone,
+    })
 }
 
 impl StageData {

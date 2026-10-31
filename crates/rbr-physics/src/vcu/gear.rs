@@ -1,23 +1,21 @@
-//! Gear logic (`CScratchSim::GearboxUpdate`, 0x537160): the launch-time shift requests for gears 0,
-//! 1 and 2 and the shift requests on the rpm thresholds of every gear, with the shift lockout that
-//! follows each request. The asm decides the branches and the NaN behaviour: a comparison that is
-//! false for NaN goes to the same place as in the asm. `src/rbr/RBR_E50_Sim.cpp` is a skeleton and
-//! differs in the gear 1 downshift (it tests `!(rpm > 5000)`; the asm tests `rpm > 5000`).
+//! Gear logic: the launch-time shift requests for gears 0, 1 and 2 and the shift requests on the rpm thresholds
+//! of every gear, with the shift lockout that follows each request. The branches and the NaN behaviour are fixed:
+//! a comparison that is false for NaN goes to the same place. The gear 1 downshift tests `rpm > 5000`, not its
+//! negation.
 
 use super::cut::check_slip;
 use super::layout::{Def, Gearbox, Pedals, State, Tuning, GEARS, RPM_PER_RAD_S};
 
-/// The constants of the asm, by address (see notes/physics.md "VCU").
-const HALF_LIMIT: f32 = 0.5; // 0x795e18
-const LOW_PEDAL: f32 = 0.3; // 0x72afcc
-const HIGH_PEDAL: f32 = 0.9; // 0x795e90
-const SECOND_GEAR_TIMER_LIMIT: f32 = 0.4; // 0x72f664
-const NEUTRAL_TIMER_LIMIT: f32 = -0.4; // 0x73b6fc
+/// The gear logic's thresholds (see notes/physics.md "VCU").
+const HALF_LIMIT: f32 = 0.5;
+const LOW_PEDAL: f32 = 0.3;
+const HIGH_PEDAL: f32 = 0.9;
+const SECOND_GEAR_TIMER_LIMIT: f32 = 0.4;
+const NEUTRAL_TIMER_LIMIT: f32 = -0.4;
 
 /// What the gear logic reads outside the drive and the state: the scratch's flags and pedals, the
-/// engine speed (`CDrive::Get4520`, rad/s), the car speed (`CCar::Get15F8`, rounded to float as the
-/// asm stores it), the frame time, and the gear count of the drive's own definition (the one
-/// `CDrive::Set47B0` clamps to; it is not the scratch's `Def`).
+/// engine speed (rad/s), the car speed (rounded to float as it is stored), the frame time, and the gear count
+/// of the drive's own definition (the one the gear setter clamps to; it is not the scratch's `Def`).
 #[derive(Clone, Copy, Debug)]
 pub struct Input {
     pub launch_enabled: u32,
@@ -81,8 +79,7 @@ pub(super) fn gear_index(gear: u32) -> usize {
     (gear as usize).min(GEARS - 1)
 }
 
-/// `CDrive::Set47B0`: moves the commanded gear by `delta`, held to 0..gear_count-1, and sets the
-/// changed flag.
+/// Moves the commanded gear by `delta`, held to 0..gear_count-1, and sets the changed flag.
 pub(super) fn request(drive: &mut Gearbox, gear_count: u32, delta: i32) {
     let top = gear_count as i32 - 1;
     let next = drive.commanded as i32 + delta;
@@ -96,8 +93,8 @@ pub(super) fn request(drive: &mut Gearbox, gear_count: u32, delta: i32) {
     drive.changed = 1;
 }
 
-/// `CDrive::M6840` (0x506840): the commanded gear for `value`, which is kept when it is below the gear count
-/// (signed), else 1. Unlike `request`, a negative value is kept, and there is no clamp at 0.
+/// The commanded gear for `value`, which is kept when it is below the gear count (signed), else 1. Unlike
+/// `request`, a negative value is kept, and there is no clamp at 0.
 pub fn commanded_gear(gear_count: u32, value: u32) -> u32 {
     if (value as i32) < gear_count as i32 {
         value
@@ -106,13 +103,13 @@ pub fn commanded_gear(gear_count: u32, value: u32) -> u32 {
     }
 }
 
-/// `CDrive::M6840` on the gearbox that FlagDispatch writes: the commanded gear, and the request flag.
+/// On the gearbox that the flag dispatch writes: the commanded gear, and the request flag.
 pub(super) fn set_gear(drive: &mut Gearbox, gear_count: u32, value: u32) {
     drive.commanded = commanded_gear(gear_count, value);
     drive.changed = 1;
 }
 
-/// `IsZero2C` and `IsZero2Cb` (identical in the asm): the shift lockout has run out. NaN is not zero.
+/// The shift lockout has run out. NaN is not zero.
 fn lockout_clear(state: &State) -> bool {
     state.shift_lockout == 0.0
 }

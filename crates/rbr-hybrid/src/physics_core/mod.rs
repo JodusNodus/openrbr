@@ -43,6 +43,10 @@ const SPRING_EAX_AT: u32 = 0x70;
 /// The temporaries the walk's point takes, below the entry's return slot (as `rigid_body`'s).
 const TEMPS: u32 = 0x100;
 
+const fn bind(addr: u32, name: &'static str, run: crate::BindingFn) -> Binding {
+    crate::bind("physics_core", addr, name, run)
+}
+
 pub static BINDINGS: [Binding; 45] = [
     bind(SPRING, "E45PSmalls::M29E0", spring_run),
     bind(PULL, "E45PSmalls::M2BC0", pull_run),
@@ -90,7 +94,3 @@ pub static BINDINGS: [Binding; 45] = [
     bind(0x521910, "E45Smalls::M1910", mounted_set_state),
     bind(0x521980, "E45_M1980", mounted_pose_update),
 ];
-
-const fn bind(addr: u32, name: &'static str, run: crate::BindingFn) -> Binding {
-    Binding { addr, name, subsystem: "physics_core", run }
-}

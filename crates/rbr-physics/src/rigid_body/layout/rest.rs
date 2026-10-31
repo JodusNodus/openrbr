@@ -1,6 +1,5 @@
 //! The solid's rest and window slots: the filing, wake and sleep, `E43Vf158`.
 
-use super::scratch_state::store_quat;
 use super::sleep_body::Body;
 use super::vtable_target;
 use crate::mem::Mem;
@@ -40,9 +39,9 @@ pub fn store_body_event(mem: &mut Mem, at: u32, event: &BodyEvent) {
     mem.set_u32(at, event.kind);
     mem.set_u32(at + 0x4, event.owner);
     event.position.store(mem, at + 0x10);
-    store_quat(mem, at + 0x20, event.orientation);
+    event.orientation.store(mem, at + 0x20);
     event.position_again.store(mem, at + 0x30);
-    store_quat(mem, at + 0x40, event.orientation_again);
+    event.orientation_again.store(mem, at + 0x40);
 }
 
 /// `CSolid::E43Vf90` (0x52bf30, slot 36) on the body at `this`: `sleep::wake_up`, the body's slot 18,

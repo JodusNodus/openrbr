@@ -14,10 +14,13 @@ use rbr_formats::markers::{self, StageMarkers};
 use rbr_formats::trk::{self, ChunkPayload};
 use rbr_gameplay::driveline::sample_x;
 use rbr_gameplay::timing::{advance_time, CheckpointKind, TimeCard, TimeKeeper, CLOCK_START};
-use rbr_recording::peek::{PeekFile, Probe, Record, Value};
+use rbr_recording::peek::{PeekFile, Probe, Record};
 use rbr_recording::{read_f32, Frame, Frames};
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
+
+mod common;
+use common::{peeked_f32, peeked_u32, read};
 
 /// `PhysicsEngine.MaxTimeStep` (`physics.lsp`, 0.0070), as `CDef` +0x1608c holds it.
 const MAX_TIME_STEP: f32 = 0.007;
@@ -46,33 +49,9 @@ fn driveline_values(trk_path: &Path) -> Vec<f32> {
         .unwrap_or_else(|| panic!("{}: no driveline records", trk_path.display()))
 }
 
-fn read(path: &Path) -> Vec<u8> {
-    std::fs::read(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
-}
-
 fn stage_markers(maps: &Path, stage: &str) -> StageMarkers {
     let dls = maps.join(format!("{stage}.dls"));
     markers::parse(&read(&dls)).unwrap_or_else(|e| panic!("{}: {e}", dls.display()))
-}
-
-/// The peek's value of the named probe in `record`.
-fn peeked(record: &Record, probes: &[Probe], name: &str) -> Value {
-    let index = probes.iter().position(|probe| probe.name == name).unwrap_or_else(|| panic!("no probe {name}"));
-    record.value(index).expect("record holds every probe")
-}
-
-fn peeked_u32(record: &Record, probes: &[Probe], name: &str) -> u32 {
-    match peeked(record, probes, name) {
-        Value::U32(v) => v,
-        other => panic!("{name}: {other:?}, expected u32"),
-    }
-}
-
-fn peeked_f32(record: &Record, probes: &[Probe], name: &str) -> f32 {
-    match peeked(record, probes, name) {
-        Value::F32(v) => v,
-        other => panic!("{name}: {other:?}, expected f32"),
-    }
 }
 
 /// A double the peek writes as two u32 halves, `<name>_lo` and `<name>_hi`.

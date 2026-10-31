@@ -10,6 +10,11 @@ fn record(x: f32, value: f32) -> DriveLineRecord {
     }
 }
 
+/// The controller on `track`, with its values as a stage gives them.
+fn driver(track: &[DriveLineRecord], top: f32) -> Driver<'_> {
+    Driver::new(track, track.iter().map(|r| r.value).collect(), top, None)
+}
+
 #[test]
 fn the_spline_passes_its_records_and_the_parameter_inverts_the_distance() {
     let track = [record(0.0, 0.0), record(10.0, 10.0), record(20.0, 20.0)];
@@ -31,7 +36,7 @@ fn aim_takes_a_point_and_an_optional_coast() {
 #[test]
 fn a_straight_plans_the_top_speed_and_steers_ahead() {
     let track: Vec<_> = (0..40).map(|i| record(10.0 * i as f32, 10.0 * i as f32)).collect();
-    let mut driver = Driver::new(&track, TOP_SPEED, None);
+    let mut driver = driver(&track, TOP_SPEED);
     assert_eq!(driver.target_speed(0.0), TOP_SPEED);
     // Facing +x (body -Y is forward: the identity quaternion faces -y, so turn 90 degrees about z).
     let half = std::f32::consts::FRAC_1_SQRT_2;
@@ -52,7 +57,7 @@ fn a_chicane_is_passed_prop_by_prop_and_slowly() {
     // Along +x (left is +y): a box right of the line at 50 m, one left of it at 61 m (RSF 468's at 722 and 733 m).
     let track: Vec<_> = (0..40).map(|i| record(10.0 * i as f32, 10.0 * i as f32)).collect();
     let square = |x: f32, y: f32| Obstacle { footprint: vec![[x, y], [x + 1.0, y], [x + 1.0, y + 1.0], [x, y + 1.0]] };
-    let driver = Driver::new(&track, TOP_SPEED, None).with_obstacles(&[square(50.0, -1.0), square(61.0, 0.3)]);
+    let driver = driver(&track, TOP_SPEED).with_obstacles(&[square(50.0, -1.0), square(61.0, 0.3)]);
     assert_eq!(driver.props.len(), 2);
     assert_eq!(driver.dodge(30.0, 45.0), 0.0);
     assert_eq!(driver.dodge(40.0, 65.0), CLEAR);
@@ -64,7 +69,7 @@ fn a_chicane_is_passed_prop_by_prop_and_slowly() {
 #[test]
 fn a_car_leaning_to_its_right_steers_right() {
     let track: Vec<_> = (0..40).map(|i| record(10.0 * i as f32, 10.0 * i as f32)).collect();
-    let mut driver = Driver::new(&track, TOP_SPEED, None);
+    let mut driver = driver(&track, TOP_SPEED);
     // Facing +x and rolled 0.4 rad about it: the up axis leans towards -y, the car's right.
     let (half, (s, c)) = (std::f32::consts::FRAC_1_SQRT_2, 0.2f32.sin_cos());
     let pose = CarPose {
@@ -80,7 +85,7 @@ fn a_car_leaning_to_its_right_steers_right() {
 #[test]
 fn under_ngp_a_standing_start_revs_in_neutral_and_a_bogged_car_starts_again() {
     let track: Vec<_> = (0..40).map(|i| record(10.0 * i as f32, 10.0 * i as f32)).collect();
-    let mut driver = Driver::new(&track, TOP_SPEED, None).with_step(1.0 / 720.0).with_limit(8500.0);
+    let mut driver = driver(&track, TOP_SPEED).with_step(1.0 / 720.0).with_limit(8500.0);
     let half = std::f32::consts::FRAC_1_SQRT_2;
     let sense = |speed: f32, gear: u32, engine: f32| Sense {
         pose: CarPose { position: [5.0, 0.0, 0.0], orientation: [0.0, 0.0, half, half], velocity: [speed, 0.0, 0.0] },
@@ -105,7 +110,7 @@ fn under_ngp_a_standing_start_revs_in_neutral_and_a_bogged_car_starts_again() {
 #[test]
 fn a_stuck_car_backs_up_shifts_back_to_first_and_gives_up_after_the_attempts() {
     let track: Vec<_> = (0..40).map(|i| record(10.0 * i as f32, 10.0 * i as f32)).collect();
-    let mut driver = Driver::new(&track, TOP_SPEED, None);
+    let mut driver = driver(&track, TOP_SPEED);
     let half = std::f32::consts::FRAC_1_SQRT_2;
     let sense = |speed: f32, gear: u32| Sense {
         pose: CarPose { position: [5.0, 0.0, 0.0], orientation: [0.0, 0.0, half, half], velocity: [speed, 0.0, 0.0] },
@@ -204,7 +209,7 @@ fn no_retail_segment_is_fitted() {
 #[test]
 fn an_outside_assistance_hold_brakes_and_ends_the_recovery() {
     let track: Vec<_> = (0..40).map(|i| record(10.0 * i as f32, 10.0 * i as f32)).collect();
-    let mut driver = Driver::new(&track, TOP_SPEED, None);
+    let mut driver = driver(&track, TOP_SPEED);
     driver.mode = Mode::Reverse(0);
     driver.slow = 100;
     let half = std::f32::consts::FRAC_1_SQRT_2;

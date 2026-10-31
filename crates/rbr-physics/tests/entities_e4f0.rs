@@ -3,7 +3,7 @@
 
 mod common;
 
-use common::{check_windows, load, map_windows, Call};
+use common::{check_windows, load, map_windows, Call, Window};
 use rbr_physics::entities::hinge_car_transform::{forward_through_car, CarPathCalls};
 use rbr_physics::entities::store::HingeStore;
 use rbr_physics::mem::Mem;
@@ -86,7 +86,7 @@ impl Recorded<'_> {
             self.next,
             inner.args
         );
-        for (_, at, _, pre, post) in &inner.windows {
+        for Window { index: _, at, len: _, before: pre, after: post } in &inner.windows {
             self.mem.map(*at, pre);
             self.mem.map(*at, post);
         }

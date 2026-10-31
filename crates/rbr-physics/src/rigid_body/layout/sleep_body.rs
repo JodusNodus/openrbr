@@ -2,7 +2,6 @@
 
 use super::contacts::{HOOK, RING_TAIL};
 use super::rest::{ACTIVE, VERY_SOFT};
-use super::scratch_state::{load_quat, store_quat};
 use super::{
     ACCEL_ANGULAR_EST, ACCEL_ANGULAR_FILT, ACCEL_LINEAR_EST, ACCEL_LINEAR_FILT, ANGULAR_ACCEL, ANGULAR_VELOCITY,
     DEF_ANGULAR_SLEEP_VELOCITY, DEF_INVERSE_MASS, DEF_LINEAR_SLEEP_VELOCITY, DEF_LOCAL_INVERSE_INERTIA, DEF_SLEEPABLE,
@@ -150,10 +149,10 @@ impl Body {
             sleep_timer: mem.f32(this + SLEEP_TIMER),
             sleep_armed: mem.u32(this + 0x274),
             is_active: mem.u32(this + ACTIVE),
-            orientation: load_quat(mem, this + ORIENTATION),
+            orientation: Quat::load(mem, this + ORIENTATION),
             position: Vec4::load(mem, this + POSITION),
             progress: mem.f32(this + WINDOW_PROGRESS),
-            start_orientation: load_quat(mem, this + START_ORIENTATION),
+            start_orientation: Quat::load(mem, this + START_ORIENTATION),
             start_position: Vec4::load(mem, this + START_POSITION),
             start_linear_velocity: Vec4::load(mem, this + START_LINEAR_VELOCITY),
             start_angular_velocity: Vec4::load(mem, this + START_ANGULAR_VELOCITY),
@@ -189,10 +188,10 @@ impl Body {
         mem.set_f32(this + SLEEP_TIMER, self.sleep_timer);
         mem.set_u32(this + 0x274, self.sleep_armed);
         mem.set_u32(this + ACTIVE, self.is_active);
-        store_quat(mem, this + ORIENTATION, self.orientation);
+        self.orientation.store(mem, this + ORIENTATION);
         self.position.store(mem, this + POSITION);
         mem.set_f32(this + WINDOW_PROGRESS, self.progress);
-        store_quat(mem, this + START_ORIENTATION, self.start_orientation);
+        self.start_orientation.store(mem, this + START_ORIENTATION);
         self.start_position.store(mem, this + START_POSITION);
         self.start_linear_velocity.store(mem, this + START_LINEAR_VELOCITY);
         self.start_angular_velocity.store(mem, this + START_ANGULAR_VELOCITY);

@@ -65,7 +65,7 @@ impl Choice {
                 let hint = automatic.as_ref().map_or("Choose your NGP.dll".into(), |p| p.display().to_string());
                 ui.add(egui::TextEdit::singleline(&mut self.path).hint_text(hint).desired_width(420.0));
                 if ui.button("Browse…").clicked() {
-                    if let Some(path) = crate::disc_install::pick_file("Choose NGP 7.4.778's NGP.dll") {
+                    if let Some(path) = crate::job::pick_file("Choose NGP 7.4.778's NGP.dll") {
                         self.path = path;
                     }
                 }
@@ -89,7 +89,7 @@ mod tests {
     use super::*;
 
     fn root(name: &str) -> PathBuf {
-        let root = std::env::temp_dir().join(format!("rbr-dll-choice-{}-{name}", std::process::id()));
+        let root = crate::test_dir(&format!("dll-{name}"));
         std::fs::create_dir_all(root.join("Plugins")).unwrap();
         root
     }

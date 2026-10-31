@@ -13,6 +13,9 @@ use rbr_gameplay::markers::{
 };
 use std::collections::BTreeMap;
 
+mod common;
+use common::hex;
+
 const TICK: u32 = 0x4783b0;
 const SLOT_ID: u32 = 0x4b55e0;
 const FLAG_ID: u32 = 0x4b5540;
@@ -47,10 +50,6 @@ struct Call {
     st0: f64,
     windows: BTreeMap<u32, Window>,
     inner: Vec<Inner>,
-}
-
-fn hex(s: &str) -> Vec<u8> {
-    (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap()).collect()
 }
 
 fn parse(text: &str) -> Vec<Call> {

@@ -17,10 +17,11 @@
 //! (position and normal), optional UVs, an unused 4-byte stream, a `u16` triangle list, faces that
 //! name a `FaceBlock<N>` shader slot, and, for damageable panels, a morph block.
 
-use crate::sg_framing::{self, le_bytes, FrameError};
+use crate::le::le_bytes;
+use crate::sg_framing;
 use std::collections::HashMap;
-use std::fmt::{self, Display, Formatter};
 
+pub use crate::sg_framing::FileKind;
 pub use crate::sg_framing::BANNER;
 
 pub const KIND_GEOMETRY: u32 = 0;
@@ -44,61 +45,12 @@ pub const STREAM_AUX: u32 = 0x10;
 
 pub use crate::sg_framing::Record;
 
-/// Failure to read a model.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Error {
-    /// The file does not start with [`BANNER`].
-    BadBanner,
-    /// A record header length other than 12.
-    HeaderLength { offset: usize, length: u32 },
-    /// A record header or body runs past the end of the file.
-    Truncated { offset: usize },
-    /// A body is shorter than its layout, or a count is negative.
-    BadBody { offset: usize, what: &'static str },
-    /// A body ends before its layout does.
-    Leftover { offset: usize, unread: usize },
-    /// Geometry, camera, helper, collision or shadow record with a subtype this reader does not know.
-    UnknownSubtype { offset: usize, kind: u32, subtype: u32 },
-}
-
-impl Display for Error {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::BadBanner => write!(f, "not an sgc model (banner mismatch)"),
-            Error::HeaderLength { offset, length } => {
-                write!(f, "record at {offset:#x}: header length {length}, expected 12")
-            }
-            Error::Truncated { offset } => write!(f, "record at {offset:#x} runs past the file"),
-            Error::BadBody { offset, what } => write!(f, "record at {offset:#x}: {what}"),
-            Error::Leftover { offset, unread } => {
-                write!(f, "record at {offset:#x}: {unread} bytes unread")
-            }
-            Error::UnknownSubtype { offset, kind, subtype } => {
-                write!(f, "record at {offset:#x}: kind {kind}, unknown subtype {subtype}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for Error {}
-
-impl FrameError for Error {
-    fn bad_banner() -> Self {
-        Error::BadBanner
-    }
-    fn header_length(offset: usize, length: u32) -> Self {
-        Error::HeaderLength { offset, length }
-    }
-    fn truncated(offset: usize) -> Self {
-        Error::Truncated { offset }
-    }
-    fn bad_body(offset: usize, what: &'static str) -> Self {
-        Error::BadBody { offset, what }
-    }
-    fn leftover(offset: usize, unread: usize) -> Self {
-        Error::Leftover { offset, unread }
-    }
-}
+/// Failure to read a model. The variants live in [`sg_framing::Error`](crate::sg_framing::Error).
+///
+/// The car reader never constructs [`Trailing`](crate::sg_framing::Error::Trailing) or
+/// [`UnknownBinding`](crate::sg_framing::Error::UnknownBinding); the banner
+/// reports [`FileKind::Sgc`].
+pub type Error = crate::sg_framing::Error;
 
 /// A decoded record. Records the loader does not read keep only their kind and subtype.
 #[derive(Debug, Clone, PartialEq)]
@@ -242,7 +194,7 @@ pub struct MorphTarget {
 
 /// Reads the banner and the record list. Records must tile the file exactly.
 pub fn records(bytes: &[u8]) -> Result<Vec<Record<'_>>, Error> {
-    sg_framing::records(bytes)
+    sg_framing::records(bytes, FileKind::Sgc)
 }
 
 /// Decodes every record of a model in file order.
@@ -465,7 +417,7 @@ fn shadow(r: &mut Reader<'_>) -> Result<(), Error> {
     r.skip_items(element_count, 16)
 }
 
-type Reader<'a> = sg_framing::Reader<'a, Error>;
+type Reader<'a> = sg_framing::Reader<'a>;
 
 impl Reader<'_> {
     /// Skips a zero word ending the body. Community models (the RSF cars' `evo_IX.sgc`) end every damageable mesh
@@ -551,7 +503,7 @@ mod tests {
     fn rejects_bad_banner_and_header_length() {
         let mut bytes = file(&[]);
         bytes[0] = b'x';
-        assert_eq!(parse(&bytes), Err(Error::BadBanner));
+        assert_eq!(parse(&bytes), Err(Error::BadBanner { kind: FileKind::Sgc }));
 
         let mut bytes = file(&[(KIND_HELPER, SUBTYPE_HELPER, node_body("parent", 1, -1))]);
         bytes[BANNER.len()] = 16;
