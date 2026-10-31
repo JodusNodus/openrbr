@@ -61,6 +61,11 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   on too (Delta cockpit 1080p, M3 Pro, 2026-10-31). The turn is undone on the model-space point before the car's
   motion: a separate wheel-to-previous matrix changed Metal's fast-math code for the car's pixels (a chase still by
   up to 2/255).
+  Glass over the car (the dash below the windscreen, the cabin behind the windows, lamp lenses) gathers as the rest:
+  the mask takes the frame new only where the stage is behind the glass (2026-10-31). The lower windscreen (alpha about
+  0.9 at its grazing angle) was taken new every frame, its dash edges and reflected cabin never smoothed; its
+  frame-to-frame change halves (Fiesta Rally3 cockpit), rain drops and wipers as before. All 34 shots change: cockpits'
+  lower windscreens, chase views' rear windows and tail lights smoother, the view through them slightly softer.
   Dark specks on the car's silhouette in a still chase view (3 pixels over 20 luma below their neighbours; 34 with
   off) are the thin dark sliver's real coverage, not a history lock: the raw jittered frames alternate dark and
   bright at those pixels.
@@ -911,6 +916,10 @@ launcher "Mirrors" (default every frame). Off: no passes, the frame byte-identic
 - View: `crop * VP * R`, R the reflection across the glass, crop the glass's screen box with x flipped, z row for an
   oblique near plane 1 cm past the glass. Image about 1:1 with the glass, 32 px steps, at most 1024 x 512. Rates take
   turns between mirrors.
+- Under TAA each image is drawn with its own sub-texel jitter (Halton by the layer's draws), which the glass samples it
+  by, so the main view's resolve gathers its edges (2026-10-31, no cost). The windscreen's curve shears its image low on
+  the pane: an edge along a texel row showed as fins about 10 texels long, halved by a 2048 image (tried for Ultra,
+  +1 ms) and only softened by a blur or FXAA; the jitter with TAA's glass-over-the-car rule removes them at 1024.
 - Passes draw the stage to 300 m, sky, fog, the car, ghosts, the game's particles, rain and lamps, with the frame's
   sun cascades and exposure; no prepass, light shafts, cubes or bloom. Only the glass's pipelines have `MIRRORS`: on
   in the shared shader it cost 1.1 ms a frame at 1440p (M-series).
@@ -973,6 +982,13 @@ stage objects ~25 s first; the ground's atlases 8 to 14 s more. Cached, a stage 
 backdrop and the course tape showed no difference. Missing textures go through one run of the binary over a folder:
 track-41_M with ACCENT 73.6 s before, 27.0 s (2026-10-26). Tried and dropped: shrinking 2048 sources to 1024
 before the 4x (4.9 s; smears them).
+Dial textures (the cockpit of a car with an RBRHUD gauge pack, `Image::Dial`) are upscaled too (user's call,
+2026-11-01), from the car's own texture's size: RBRHUD's 13 bases larger than their car's (the Clio Rally3's 4096
+against 2048) are smooth resizes of it, their finest octave 0.45 to 0.71 of the car's detail. The needles and
+displays keep the pack's texels, scaled to the target's. Clio 4K cockpit: edges crisper, the dash's grain smoothed,
+the small switch labels garbled. Reference cockpits 0.35 to 2.86 % RMSE, upscale off byte-identical; the target
+gets the base's mip chain (+21 MB at 4096, the dials redrawn into every level: a Clio redraw 0.92 ms GPU against
+0.60, `--profile` with the dials redrawn each frame).
 Not packaged: the download takes Real-ESRGAN v0.2.5.0's release zip (macOS universal, Linux and Windows x86_64; none for ARM Linux) and the
 model's ncnn files from upscayl/custom-models at 500e6a0, each checked by SHA-256.
 

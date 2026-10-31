@@ -435,7 +435,14 @@ impl Face {
             migrate(&mut base, &Rgba::decode(&own), &rects);
             remapped = dds::rgba8_file(base.width, base.height, &base.pixels);
         }
+        // The config places its elements in texels of the base as the pack has it.
         let base = dds::parse(&remapped).map_err(|_| unreadable())?;
+        let texels = (base.width, base.height);
+        // A pack's base larger than the car's own texture is a smooth resize of it (RBRHUD's 13 such: their finest
+        // octave holds half to two thirds of the next one's detail), so its art is the car's size.
+        let art = own
+            .and_then(|b| dds::parse(b).ok())
+            .map_or(texels, |own| (own.width.min(texels.0), own.height.min(texels.1)));
         // A mask that does not read leaves the face unlit, not undrawn.
         let glow = (config.emissive_mask.as_deref())
             .and_then(|name| file(name).ok())
@@ -443,17 +450,16 @@ impl Face {
         let atlas = Atlas::parse(&String::from_utf8_lossy(&file(&config.atlas)?));
         let sprites =
             read_image(&file(&atlas.texture)?, &atlas.texture).ok_or(Skipped::Unreadable(atlas.texture.clone()))?;
-        let size = (base.width, base.height);
         for key in &keys {
             if let Some(texture) = stage.textures.get_mut(key) {
-                texture.image = Some(Image::Dial { base: remapped.clone(), glow: glow.clone() });
+                texture.image = Some(Image::Dial { base: remapped.clone(), glow: glow.clone(), texels, art });
             }
         }
         let mut face = Face {
             keys,
             atlas,
             sprites: Arc::new(sprites),
-            size,
+            size: texels,
             regions: Vec::new(),
             needles: vec![None; config.elements.len()],
             drawn: None,
@@ -581,7 +587,7 @@ impl Face {
         let mut sprites = Vec::with_capacity(quads.len());
         quads.iter().for_each(|q| q.sprites(&self.sprites, &mut sprites));
         self.drawn = Some(quads);
-        Some(gpu::Draw { keys: self.keys.clone(), atlas: Arc::clone(&self.sprites), rects, sprites })
+        Some(gpu::Draw { keys: self.keys.clone(), atlas: Arc::clone(&self.sprites), size: self.size, rects, sprites })
     }
 }
 
