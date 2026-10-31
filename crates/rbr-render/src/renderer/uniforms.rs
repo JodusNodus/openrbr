@@ -43,6 +43,9 @@ pub(super) struct ModeUniform {
     /// The near ground's detail window in its first texture's uv (low u and v, width and height; zero for none;
     /// [`terrain_detail::window`](crate::terrain_detail::window)).
     pub(super) detail: [f32; 4],
+    /// A lit lamp's part's glow colour and the share of it kept by day (`Shade::glow`, `LAMP_GLOW` in `night.wgsl`
+    /// times it).
+    pub(super) lamp: [f32; 4],
 }
 
 /// The frame uniform (`Frame` in `shader.wgsl`): the clip matrix and its inverse, the eye, and the stage's haze and

@@ -131,8 +131,7 @@ struct Mode {
     // FresnelMin, FresnelMax, Kf; w 1 when `specular_texture` holds the car's dirt map (`stage::Shade::dirt`).
     fresnel: vec4<f32>,
     // x 1: an emissive mask in `glow_texture` (`backlit`: a dial's, the start board's); y 1 when its alpha counts (not
-    // DXT1); z 1 when it glows by day too (the start board's lamps); w 1: a lit lamp's part glows red
-    // (`stage::Shade::glow_red`).
+    // DXT1); z 1 when it glows by day too (the start board's lamps).
     glow: vec4<f32>,
     // x a glass pane's share of the mud film (`stage::Shade::grime`), 0 for none; y 1: interior glass
     // (`stage::Shade::tint`); z 1 for a wheel's or mud flap's dirt spatter (`stage::Shade::spatter`).
@@ -140,6 +139,8 @@ struct Mode {
     // The near ground's detail window in texture 0's uv (low u and v, width and height; z 0 for none;
     // `terrain_detail`).
     detail: vec4<f32>,
+    // A lit lamp's part's glow colour (`stage::Shade::glow`), times `LAMP_GLOW`; w the share of it kept by day.
+    lamp: vec4<f32>,
 }
 
 // False for a pipeline whose draws have no alpha test (`renderer::PipelineKey::alpha_test`): its shader then has no
@@ -1053,9 +1054,11 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         colour = colour + cabin_sheen(v, n, view);
     }
     colour = colour + glint;
-    // A lit lamp's part (`stage::Shade::glow`) glows (ours), a tail or brake lamp's taken by name in the lamp's red.
+    // A lit lamp's part (`stage::Shade::glow`) glows (ours): by day `mode.lamp.w` of it, by night and at dusk, as the
+    // lamps light the stage, all of it.
     if (lit_class() == 3u) {
-        colour = max(colour, first.rgb * LAMP_GLOW * select(vec3<f32>(1.0), LAMP_RED, mode.glow.w != 0.0));
+        let level = mix(mode.lamp.w, 1.0, select(frame.dusk.w, 1.0, night));
+        colour = max(colour, first.rgb * LAMP_GLOW * mode.lamp.rgb * level);
     }
     colour = backlit(colour, first.rgb, v.uv0, night, dot(n, view));
     // The scrape (`CarPaint`, `CarPaintInt`): the scrape texel times the diffuse light (`t3 * v0`, no highlight or

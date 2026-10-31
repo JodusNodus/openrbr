@@ -356,7 +356,9 @@ swaps the `Predicate = on/off` parts and restarts the flare fade.
   with a `Switch = true` part switches. Ours: the headlight key (L) steps main beam, dipped, off (with the tail
   lights).
 - Ours: only headlight records draw a flare; the rear lamps show as their lit parts, which glow (`LAMP_GLOW`) day
-  and night. The game's rear sprites read as blobs by day.
+  and night, a tail lamp's by day at 0.3 of it (`lights::TAIL_DAY`, about 8 cd against a brake lamp's 100) so braking
+  shows (2026-10-31; golden Gabiria Escort chase 0.6 % RMSE, night shots byte-identical). The game's rear sprites read
+  as blobs by day.
 - Ours: a lamp's lit part the game never draws (on the `light` or `brake` box, or `Predicate = NotUsed`), named
   `e_light_lf_lit`, `e_light_lb_lit`, `e_light_brake_lb_lit` and so on, follows its lamp by name, with its unlit pair
   `e_light_lb` when that one's box does not switch it (`lights::Switch::of_part`, 2026-10-31; user: "whatever is

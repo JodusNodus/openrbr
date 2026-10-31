@@ -179,11 +179,9 @@ pub struct Shade {
     pub kf: f32,
     /// `CarGlass`: the Fresnel term adds to the alpha (`alpha = t0.a + 0.5 * F * Kf`).
     pub glass: bool,
-    /// A lit lamp's part (`lights::Switch`): glows (renderer addition).
-    pub glow: bool,
-    /// A lit tail or brake lamp's part that takes its lamp by its name (`lights::Switch::named`): glows in the lamp's
-    /// red, not in its texture's colour (ours).
-    pub glow_red: bool,
+    /// A lit lamp's part (`lights::Switch`): glows, its texture times this colour, by day times its fourth
+    /// (renderer addition, `lights::Switch::glow`).
+    pub glow: Option<[f32; 4]>,
     /// A window's crack overlay (ours, [`crate::crack_decal`]): its normal comes from the crack texture's alpha, so
     /// the cracks catch the light.
     pub crack: bool,
@@ -203,7 +201,8 @@ pub struct Shade {
 }
 
 impl Shade {
-    fn bits(&self) -> [u32; 8] {
+    fn bits(&self) -> [u32; 12] {
+        let glow = self.glow.unwrap_or_default().map(f32::to_bits);
         [
             self.ka.to_bits(),
             self.kd.to_bits(),
@@ -213,13 +212,16 @@ impl Shade {
             self.fresnel_max.to_bits(),
             self.kf.to_bits(),
             u32::from(self.glass)
-                | u32::from(self.glow) << 1
+                | u32::from(self.glow.is_some()) << 1
                 | u32::from(self.crack) << 2
                 | u32::from(self.grime) << 3
                 | u32::from(self.tint) << 11
                 | u32::from(self.spatter) << 12
-                | u32::from(self.window) << 13
-                | u32::from(self.glow_red) << 14,
+                | u32::from(self.window) << 13,
+            glow[0],
+            glow[1],
+            glow[2],
+            glow[3],
         ]
     }
 }

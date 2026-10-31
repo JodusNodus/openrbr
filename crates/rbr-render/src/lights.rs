@@ -20,6 +20,12 @@ use rbr_formats::ini::Section;
 
 /// The brake pedal value above which the brake lights are on (`CCarLightSystem`: the value sent to the drive's brake).
 pub const BRAKE_ON: f32 = 0.1;
+/// The tail and brake lamps' colour: their records' (255, 0, 0 in 351 of the installed cars' 409, 2026-10-31).
+const LAMP_RED: [f32; 3] = [1.0, 0.0, 0.0];
+/// How bright a tail lamp's lit part glows by day against the other lamps' (ours): about 8 cd against a brake lamp's
+/// 100 ([`CANDELA`]), it barely reads in sunlight, so braking shows. By night, and at dusk as the lamps light the stage,
+/// it glows as the others do (all the lamps' parts outshine the dark there).
+const TAIL_DAY: f32 = 0.3;
 /// Brightness of a flare facing the eye head on, from the game's alpha of 114.75 out of 255 (0x101b4398, 0.45).
 const PEAK: f32 = 0.45;
 /// How far a flare sits from its lamp toward the eye, metres (`CHH_Car::RenderLights`, 0x101b41e8).
@@ -231,6 +237,17 @@ impl Switch {
         };
         let (kind, lamp, _) = Kind::of_box(&lamp_box)?;
         Some(Switch { kind, lamp, lit, glass: false, named: true })
+    }
+
+    /// What a lit part of the lamp glows in, its texture times this colour (ours; `LAMP_GLOW` in `night.wgsl` over
+    /// it), and the share of it kept by day: a tail or brake lamp's part taken by its name glows in the lamp's red
+    /// ([`LAMP_RED`]), not its texture's colour, and a tail lamp keeps [`TAIL_DAY`].
+    pub fn glow(&self) -> [f32; 4] {
+        let [r, g, b] = match self.kind {
+            Kind::Tail | Kind::Brake if self.named => LAMP_RED,
+            _ => [1.0; 3],
+        };
+        [r, g, b, if self.kind == Kind::Tail { TAIL_DAY } else { 1.0 }]
     }
 
     /// Whether the part is drawn with `inputs`. The glass is whole unless the game says otherwise.

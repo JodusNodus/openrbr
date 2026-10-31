@@ -173,7 +173,7 @@ impl Views {
 
 /// A draw's lit class (`mode.lit`, `LIT` in `shader.wgsl`): 0 unlit, 1 lit, 2 glass, 3 a lit lamp's part, 4 a crack.
 pub(super) fn lit_class(shade: Option<&Shade>) -> u32 {
-    shade.map_or(0, |s| match (s.glow, s.crack) {
+    shade.map_or(0, |s| match (s.glow.is_some(), s.crack) {
         (true, _) => 3,
         (_, true) => 4,
         _ => 1 + u32::from(s.glass),
@@ -211,8 +211,9 @@ pub(super) fn bind_group(
             f32::from(u8::from(glow.is_some())),
             f32::from(u8::from(glow.is_some_and(|g| g.alpha))),
             f32::from(u8::from(glow.is_some_and(|g| g.day))),
-            f32::from(u8::from(key.shade.is_some_and(|s| s.glow_red))),
+            0.0,
         ],
+        lamp: key.shade.and_then(|s| s.glow).unwrap_or_default(),
         grime: key.shade.map_or([0.0; 4], |s| {
             [
                 f32::from(s.grime) / 10.0,
