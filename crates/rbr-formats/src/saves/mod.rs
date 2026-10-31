@@ -335,6 +335,32 @@ mod tests {
     }
 
     #[test]
+    fn short_reads_end_at_the_reader() {
+        let bytes = [1, 0, 0, 0, 0x50, 0x41];
+        let mut r = Reader::new(&bytes);
+        assert_eq!(r.u32().unwrap(), 1);
+        assert_eq!(r.at(), 4);
+        assert_eq!(r.bytes(2).unwrap(), b"PA");
+        // A failed read leaves the position: every short read names it.
+        assert_eq!(r.bytes(1), Err(Error::Eof { at: 6 }));
+        assert_eq!(r.at(), 6);
+        assert_eq!(r.u32(), Err(Error::Eof { at: 6 }));
+        assert_eq!(r.words::<2>(), Err(Error::Eof { at: 6 }));
+        assert_eq!(r.array::<4>(), Err(Error::Eof { at: 6 }));
+        assert_eq!(r.tag(*b"PAXX"), Err(Error::Eof { at: 6 }));
+        // A words read stops at the first missing word.
+        let mut r = Reader::new(&[1, 0, 0, 0, 2, 0]);
+        assert_eq!(r.words::<2>(), Err(Error::Eof { at: 4 }));
+        // A tag names its mismatch at the tag's offset; the rest is what is left.
+        let mut r = Reader::new(b"TESQextra");
+        r.tag(*b"TESQ").unwrap();
+        assert_eq!(r.tag(*b"ITPO"), Err(Error::Tag { at: 4, found: *b"extr", want: *b"ITPO" }));
+        assert_eq!(r.at(), 8);
+        assert_eq!(r.rest(), b"a");
+        assert_eq!(r.at(), 9);
+    }
+
+    #[test]
     fn save_dir_lists_and_stores() {
         let game = std::env::temp_dir().join(format!("rbr-saves-{}", std::process::id()));
         let dir = SaveDir::new(&game);

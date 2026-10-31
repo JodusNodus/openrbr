@@ -193,10 +193,8 @@ pub fn setup_stream(text: &[u8]) -> Vec<u8> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn after_season_round_trips() {
-        let season = super::super::season::sample();
-        let after = AfterSeason {
+    fn sample_after(season: &Season) -> AfterSeason {
+        AfterSeason {
             stores: Stores {
                 drivers: season
                     .drivers
@@ -217,11 +215,47 @@ mod tests {
             setup_slot: 0,
             damage: DamageBlock { handler: vec![7; HANDLER_WORDS], b17838: 0, tyre: 4, w1783c: 0, w1660814: 1 },
             setup: setup_stream(b"x"),
-        };
+        }
+    }
+
+    /// The stores' bytes: five words per stored driver, sixteen per car, eight per team.
+    fn stores_len(season: &Season) -> usize {
+        (season.drivers.iter().filter(|d| d.id >= 0).count() * 5 + season.drivers.len() * 16 + 7 * 8) * 4
+    }
+
+    #[test]
+    fn after_season_round_trips() {
+        let season = super::super::season::sample();
+        let after = sample_after(&season);
         let bytes = after.write();
         assert_eq!(&bytes[bytes.len() - 4..], b"PFOE");
         assert_eq!(after.setup, b"(x)\0");
         assert_eq!(AfterSeason::parse(&season, &bytes), Ok(after));
         assert!(AfterSeason::parse(&season, b"PFOE").is_err());
+    }
+
+    #[test]
+    fn truncation_points_end_where_they_stop() {
+        let season = super::super::season::sample();
+        let bytes = sample_after(&season).write();
+        let stores = stores_len(&season);
+        // Mid-stores, mid-stores, mid-stores-end tag, mid-mark word.
+        for (cut, at) in [(0, 0), (100, 100), (stores + 2, stores), (stores + 6, stores + 4)] {
+            assert_eq!(AfterSeason::parse(&season, &bytes[..cut]), Err(Error::Eof { at }), "cut at {cut}");
+        }
+    }
+
+    #[test]
+    fn a_changed_mark_word_names_its_offset() {
+        let season = super::super::season::sample();
+        let bytes = sample_after(&season).write();
+        let mark_at = stores_len(&season) + 4;
+        assert_eq!(&bytes[mark_at..mark_at + 4], &MARK.to_le_bytes());
+        let mut bad = bytes.clone();
+        bad[mark_at] = 0;
+        assert_eq!(
+            AfterSeason::parse(&season, &bad),
+            Err(Error::Tag { at: mark_at, found: [0; 4], want: MARK.to_le_bytes() })
+        );
     }
 }

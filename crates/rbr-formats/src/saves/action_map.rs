@@ -146,6 +146,22 @@ mod tests {
     }
 
     #[test]
+    fn truncation_points_end_where_they_stop() {
+        let map = ActionMap {
+            records: vec![Record {
+                devices: vec![SYS_KEYBOARD],
+                bindings: vec![Binding { device: 0, object: 0xcb04, action: 1 }],
+            }],
+        };
+        let bytes = map.write();
+        // Tag, version, count, the two counts, one GUID, one binding.
+        assert_eq!(bytes.len(), 12 + 8 + 16 + 12);
+        for (cut, at) in [(0, 0), (2, 0), (10, 8), (25, 20), (47, 44)] {
+            assert_eq!(ActionMap::read(&bytes[..cut]), Err(Error::Eof { at }), "cut at {cut}");
+        }
+    }
+
+    #[test]
     fn a_map_round_trips() {
         let map = ActionMap {
             records: vec![Record {
