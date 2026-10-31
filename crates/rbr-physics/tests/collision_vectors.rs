@@ -7,7 +7,7 @@
 
 mod common;
 
-use common::{Call, Inner, shared_mem};
+use common::{shared_mem, Call, Inner};
 use rbr_physics::collision::{contact_solver, face_sweep, grid_contact, layout, overlap, triangle};
 use rbr_physics::fpu::Precision;
 use rbr_physics::math::vec::Vec3;

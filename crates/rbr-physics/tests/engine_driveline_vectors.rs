@@ -7,7 +7,7 @@
 mod common;
 
 use common::Inner;
-use common::{check_windows, load, map_windows, shared_windows, Call, Window};
+use common::{check_st0_nan_tolerant, check_windows, inner_window_at, load, map_windows, shared_windows, Call, Window};
 use rbr_physics::engine_driveline::store::EngineStore;
 use rbr_physics::engine_driveline::{drive, drive_curve, drive_leaf, drive_worker, engine, layout, sim};
 use rbr_physics::fpu::Precision;
@@ -34,17 +34,6 @@ const GET_4540: u32 = 0x504540;
 
 /// Checks the port's st0 against the recorded one. Any NaN matches any NaN: the sign of the default NaN differs
 /// between x86 and arm64 (rbr-recomp `notes/rust-physics.md`, "Platform: default NaN").
-fn check_st0(call: &Call, st0: impl Into<f64>, name: &str) {
-    let want = f64::from_bits(call.st0_bits);
-    let got: f64 = st0.into();
-    assert!(
-        got.to_bits() == want.to_bits() || (got.is_nan() && want.is_nan()),
-        "{name} call {}: st0 {got} vs {want} ({})",
-        call.index,
-        call.branch
-    );
-}
-
 #[test]
 fn table_lerp_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
@@ -61,7 +50,7 @@ fn table_lerp_matches_original_calls() {
             f32::from_bits(call.args[2]),
             f32::from_bits(call.args[3]),
         );
-        check_st0(call, st0, "E41_TableLerp");
+        check_st0_nan_tolerant(call, st0, "E41_TableLerp");
         check_windows(call, &mem, "E41_TableLerp");
     }
     eprintln!("E41_TableLerp: {} calls match", calls.len());
@@ -94,7 +83,7 @@ fn curve_eta_matches_original_calls() {
         let mem = map_windows(call);
         let curve = mem.curve_knots(call.args[0], call.args[2] as i32 as usize);
         let st0 = sim::curve_eta(&curve, f32::from_bits(call.args[1]));
-        check_st0(call, st0, "E41_CurveEta");
+        check_st0_nan_tolerant(call, st0, "E41_CurveEta");
         check_windows(call, &mem, "E41_CurveEta");
     }
     eprintln!("E41_CurveEta: {} calls match", calls.len());
@@ -133,7 +122,7 @@ fn sim410_matches_original_calls() {
         let options = layout::EngineOptions::load(&mem, objects.options);
         let st0 = sim::abs_rpm_term(&def, &mut state, &options);
         state.store(&mut mem, objects.state);
-        check_st0(call, st0, "CEngine::Sim410");
+        check_st0_nan_tolerant(call, st0, "CEngine::Sim410");
         check_windows(call, &mem, "CEngine::Sim410");
     }
     eprintln!("CEngine::Sim410: {} calls match", calls.len());
@@ -243,7 +232,7 @@ fn drive_getters_match_original_calls() {
             let mem = map_windows(call);
             let state = layout::DriveState::load(&mem, layout::DriveObjects::at(&mem, call.args[0]).state);
             let st0 = if addr == GET_4520 { drive::engine_speed(&state) } else { drive::drive_speed_key(&state) };
-            check_st0(call, st0, name);
+            check_st0_nan_tolerant(call, st0, name);
             check_windows(call, &mem, name);
         }
         eprintln!("{name}: {} calls match", calls.len());
@@ -315,7 +304,7 @@ fn sim_e470_matches_original_calls() {
         let options = layout::EngineOptions::load(&mem, objects.options);
         let st0 =
             engine::rev_gate(state.speed, this.pedal.value, options.rev_gate, layout::EngineTuning::STOCK.rev_gate);
-        check_st0(call, st0, "CEngine::SimE470");
+        check_st0_nan_tolerant(call, st0, "CEngine::SimE470");
         check_windows(call, &mem, "CEngine::SimE470");
     }
     eprintln!("CEngine::SimE470: {} calls match", calls.len());
@@ -348,7 +337,7 @@ fn sim_ec40_matches_original_calls() {
         let q = call.args[2];
         let s: [f32; 12] = std::array::from_fn(|k| mem.f32(q + 4 * k as u32));
         let st0 = engine::exhaust_blend(&row, &s);
-        check_st0(call, st0, "CEngine::SimEC40");
+        check_st0_nan_tolerant(call, st0, "CEngine::SimEC40");
         check_windows(call, &mem, "CEngine::SimEC40");
     }
     eprintln!("CEngine::SimEC40: {} calls match", calls.len());
@@ -423,7 +412,7 @@ fn sim_e660_matches_original_calls() {
         let mut state = layout::EngineState::load(&mem, objects.state);
         let st0 = engine::torque_sum(&def, &options, &mut state, f32::from_bits(call.args[1]));
         state.store(&mut mem, objects.state);
-        check_st0(call, st0, "CEngine::SimE660");
+        check_st0_nan_tolerant(call, st0, "CEngine::SimE660");
         check_windows(call, &mem, "CEngine::SimE660");
     }
     eprintln!("CEngine::SimE660: {} calls match", calls.len());
@@ -552,7 +541,7 @@ fn each_st0<R: Into<f64>>(addr: u32, name: &str, port: impl Fn(&mut rbr_physics:
     for call in &calls {
         let mut mem = map_windows(call);
         let st0 = port(&mut mem, call);
-        check_st0(call, st0, name);
+        check_st0_nan_tolerant(call, st0, name);
         check_windows(call, &mem, name);
     }
     eprintln!("{name}: {} calls match", calls.len());
@@ -730,7 +719,7 @@ fn each_worker_st0<R: Into<f64>>(addr: u32, name: &str, port: impl Fn(&mut rbr_p
     for call in &calls {
         let mut mem = worker_mem(call);
         let st0 = port(&mut mem, call);
-        check_st0(call, st0, name);
+        check_st0_nan_tolerant(call, st0, name);
         check_windows(call, &mem, name);
     }
     eprintln!("{name}: {} calls match", calls.len());
@@ -931,12 +920,6 @@ impl<'a> Externals<'a> {
 }
 
 /// The pre and post bytes of the window at `at` of an external call.
-fn inner_window(call: &Inner, at: u32) -> (&[u8], &[u8]) {
-    let Window { index: _, at: _, len: _, before: pre, after: post } =
-        call.windows.iter().find(|w| w.at == at).unwrap_or_else(|| panic!("no window at {at:#x} in the external call"));
-    (pre, post)
-}
-
 fn float_bytes(values: &[f32]) -> Vec<u8> {
     values.iter().flat_map(|v| v.to_le_bytes()).collect()
 }
@@ -948,9 +931,9 @@ fn floats<const N: usize>(bytes: &[u8]) -> [f32; N] {
 impl drive_worker::MatInverseHost for Externals<'_> {
     fn mat4_inverse_transposed(&mut self, mat: [f32; 16]) -> [f32; 16] {
         let call = self.take(STEP4990);
-        let (input, _) = inner_window(call, call.args[0]);
+        let (input, _) = inner_window_at(call, call.args[0]);
         assert_eq!(input, float_bytes(&mat), "E39_Step4990 call {}: the matrix", self.next - 1);
-        floats(inner_window(call, call.args[1]).1)
+        floats(inner_window_at(call, call.args[1]).1)
     }
 }
 
@@ -958,9 +941,9 @@ impl drive_worker::MatVecHost for Externals<'_> {
     fn mat_vec(&mut self, m: [f32; 16], v: [f32; 4]) -> [f32; 4] {
         let call = self.take(MATVEC);
         let n = self.next - 1;
-        assert_eq!(inner_window(call, call.args[0]).0, float_bytes(&m), "E39_MatVec call {n}: the matrix");
-        assert_eq!(inner_window(call, call.args[1]).0, float_bytes(&v), "E39_MatVec call {n}: the vector");
-        floats(inner_window(call, call.args[2]).1)
+        assert_eq!(inner_window_at(call, call.args[0]).0, float_bytes(&m), "E39_MatVec call {n}: the matrix");
+        assert_eq!(inner_window_at(call, call.args[1]).0, float_bytes(&v), "E39_MatVec call {n}: the vector");
+        floats(inner_window_at(call, call.args[2]).1)
     }
 }
 
@@ -1205,7 +1188,7 @@ fn sim8d90_matches_original_calls() {
         let mut host = Sim43Externals { inner: &call.inner, next: 0, mem: mem.clone() };
         let st0 = layout::sim8d90(&mut host, &mut mem, call.args[0], call.args[1], call.args[2]);
         assert_eq!(host.next, call.inner.len(), "E43EngineSim::Sim8D90 call {}: externals", call.index);
-        check_st0(call, st0, "E43EngineSim::Sim8D90");
+        check_st0_nan_tolerant(call, st0, "E43EngineSim::Sim8D90");
         check_windows(call, &mem, "E43EngineSim::Sim8D90");
     }
     eprintln!("E43EngineSim::Sim8D90: {} calls match", calls.len());
@@ -1252,7 +1235,7 @@ fn sim8e20_matches_original_calls() {
             &layout::EngineTuning::STOCK,
         );
         assert_eq!(host.next, call.inner.len(), "E43EngineSim::Sim8E20 call {}: externals", call.index);
-        check_st0(call, st0, "E43EngineSim::Sim8E20");
+        check_st0_nan_tolerant(call, st0, "E43EngineSim::Sim8E20");
         check_windows_nan(call, &mem, "E43EngineSim::Sim8E20");
     }
     eprintln!("E43EngineSim::Sim8E20: {} calls match", calls.len());
@@ -1385,7 +1368,7 @@ fn sample_big_matches_original_calls() {
     for call in &calls {
         let mem = map_windows(call);
         let got = layout::sample_big(&mem, call.args[0], call.args[1], f32::from_bits(call.args[2]));
-        check_st0(call, got, "CDriveLine::SampleBig");
+        check_st0_nan_tolerant(call, got, "CDriveLine::SampleBig");
         check_windows(call, &mem, "CDriveLine::SampleBig");
     }
     eprintln!("CDriveLine::SampleBig: {} calls match", calls.len());

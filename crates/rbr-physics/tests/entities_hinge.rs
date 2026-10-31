@@ -7,7 +7,7 @@
 
 mod common;
 
-use common::{check_windows, load, map_windows, Call, Inner};
+use common::{check_windows, load, map_windows, st0_of, Call, Inner};
 use rbr_physics::entities::hinge_limits::{self, LimitBranch};
 use rbr_physics::entities::layout;
 use rbr_physics::entities::store::HingeStore;
@@ -20,11 +20,6 @@ const SIM_CF10: u32 = 0x51CF10;
 const SIM_EA80: u32 = 0x51EA80;
 const CRT_SIN: u32 = 0x53F3B0;
 const CRT_COS: u32 = 0x53F3A0;
-
-/// The f32 port value as the record holds it (st0 as f64 bits, exact): sign and all.
-fn st0_of(value: f32) -> u64 {
-    (value as f64).to_bits()
-}
 
 /// The record's st0 rounded to f32 (the store the asm makes).
 fn stored_as_f32(st0_bits: u64) -> u32 {

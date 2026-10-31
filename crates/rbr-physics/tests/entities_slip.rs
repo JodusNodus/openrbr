@@ -7,7 +7,7 @@
 
 mod common;
 
-use common::{check_windows, load, map_windows, Call, Inner, Window};
+use common::{check_windows, load, map_windows, st0_of, Call, Inner, Window};
 use rbr_physics::entities::hinge_slip::{self, SlipCalls, SlipHandles};
 use rbr_physics::entities::store::HingeStore;
 use rbr_physics::mem::Mem;
@@ -15,11 +15,6 @@ use rbr_physics::mem::Mem;
 const VAR: &str = "RBR_ENT_VECTORS";
 const SIM_CFF0: u32 = 0x51CFF0;
 const WALK_MB560: u32 = 0x51B560;
-
-/// The f32 port value as the record holds it (st0 as f64 bits, exact).
-fn st0_of(value: f32) -> u64 {
-    (value as f64).to_bits()
-}
 
 /// The answers to the port's calls: the walks are the record's, in order, and the copy is made in memory.
 struct Answers<'a> {

@@ -5,7 +5,7 @@
 
 mod common;
 
-use common::{load, map_windows, shared_windows, After, Call, Inner, Window};
+use common::{load, map_windows, shared_windows, vec4_of, After, Call, Inner, Window};
 use rbr_physics::car_body::transform::FRAME;
 use rbr_physics::fpu::Precision;
 use rbr_physics::math::vec::{clear_vec4, Vec4};
@@ -39,11 +39,6 @@ fn xform_from_record(call: &Call) -> impl FnOnce(u32, Vec4) -> Vec4 + '_ {
 
 fn bytes_of(v: Vec4) -> Vec<u8> {
     [v.x, v.y, v.z, v.w].iter().flat_map(|f| f.to_bits().to_le_bytes()).collect()
-}
-
-fn vec4_of(bytes: &[u8]) -> Vec4 {
-    let f = |i: usize| f32::from_bits(u32::from_le_bytes(bytes[4 * i..4 * i + 4].try_into().unwrap()));
-    Vec4 { x: f(0), y: f(1), z: f(2), w: f(3) }
 }
 
 /// Replays every recorded call of `addr`: `port` runs the port on the call's memory, then every window must hold the

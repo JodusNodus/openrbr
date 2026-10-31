@@ -5,8 +5,8 @@
 mod common;
 
 use common::{
-    check_window_list, check_windows, load, load_inner, map_window_list, map_windows, shared_windows, Call, Inner,
-    Window,
+    check_st0, check_window_list, check_windows, inner_window, load, load_inner, map_window_list, map_windows,
+    shared_windows, vec4_of, Call, Inner, Window,
 };
 use rbr_physics::car_body::accessors;
 use rbr_physics::car_body::assist::{AssistCalls, RetireCalls};
@@ -84,10 +84,6 @@ fn check_set_dirty_only(call: &Call, at: u32, name: &str) {
 }
 
 /// The x87 result of a float function, as the record holds it (f64 bits of the value).
-fn check_st0(call: &Call, value: f32, name: &str) {
-    assert_eq!((value as f64).to_bits(), call.st0_bits, "{name} call {}: st0", call.index);
-}
-
 /// Two f32 words are the same value, or both NaN (the sign of a NaN is the platform's default NaN, not compared).
 fn same_word(ours: u32, theirs: u32) -> bool {
     ours == theirs || (f32::from_bits(ours).is_nan() && f32::from_bits(theirs).is_nan())
@@ -257,10 +253,6 @@ fn xform_6870_matches_original_calls() {
 }
 
 /// The window `k` of an inner call: `k` counts the spec's `windows` in order (not the argument index).
-fn inner_window(inner: &Inner, k: usize) -> &Window {
-    inner.windows.iter().find(|w| w.index == k).unwrap_or_else(|| panic!("inner call {:#x}: no window {k}", inner.addr))
-}
-
 /// Writes window `k` of an inner call as it was after the call, at `at`: the external's effect on the car's memory.
 fn write_output(mem: &mut Mem, inner: &Inner, k: usize, at: u32) {
     let Window { index: _, at: _, len: _, before: _, after: output } = inner_window(inner, k);
@@ -1815,12 +1807,6 @@ const SIGNAL_MANAGER: u32 = 0x893600;
 const TAG_520940: u32 = 0x520940;
 const E43_VFEC: u32 = 0x51a040;
 const E43_VF150: u32 = 0x51a370;
-
-/// The lanes of a recorded 16-byte vector (four words).
-fn vec4_of(bytes: &[u8]) -> Vec4 {
-    let lane = |k: usize| f32::from_le_bytes(bytes[4 * k..4 * k + 4].try_into().unwrap());
-    Vec4 { x: lane(0), y: lane(1), z: lane(2), w: lane(3) }
-}
 
 /// Answers the edge's externals from the record, in call order: BodyCompose (its zero input and its output lanes), the
 /// AddEdge on the grid (the edge it is given), and E43Vf20 on the car.
