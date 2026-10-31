@@ -323,6 +323,11 @@ probably fit the wrong hour.
   gravel/snow/spare wheels, `k_` and `d_` parts; the interior `i_*` only in the cockpit, the bonnet view draws the
   exterior (user). `--hide-wheel` drops the interior parts the steering turns (one mesh on the 911 SC Grp4 and the
   i20 WRC 2020, dash and gauges kept).
+- The steering wheel is the interior meshes whose node is `i_steeringwheel` (`MeshDamage::steering`), not the meshes
+  centred near the node: rim and column in one mesh have their centre off the hub (Delta HF 4WD GrpA 0.17 m; the old
+  0.12 m match missed it, the Escort Cosworth, Focus 2006, Impreza 95 and Polo R5 too; `tests/steering_data.rs`, 42
+  installed RSF cars, all with the node). Delta frames: wheel static before, turning after; Escort, Clio R3 and M3
+  cockpit shots byte-identical.
 - Lighting per class from `<car>_shader_settings_clear.ini` with the stage's light (`car/shading.rs`); Schlick
   `F0 = 0.125` (`c91`). `c41`, `c67`, `c68`, `c90` unproven.
 - Reflection: a 128-texel surroundings cube, as the game's; the load-time probes (`renderer/probes.rs`) for the

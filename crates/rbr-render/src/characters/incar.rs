@@ -56,8 +56,6 @@ const CODRIVER_LOOP: f64 = 14.133333;
 const DRIVER_INI: &str = "misc/lm_driver.ini";
 /// Seconds per recorded substep.
 const SUBSTEP: f32 = rbr_recording::STEP_SECONDS;
-/// Model-space distance within which an interior mesh's centre is the steering wheel's node, m (ours).
-pub const WHEEL_MATCH_METRES: f32 = 0.12;
 
 /// `app:LoadHumanCharacter` and the clip calls of a crew script.
 #[derive(Default)]
@@ -320,13 +318,13 @@ impl Crew {
         self.ring.playing()
     }
 
-    /// The steering wheel's turn in car model space, for [`crate::playback::Playback::turn`]: the interior mesh
-    /// centred within [`WHEEL_MATCH_METRES`] of the wheel's node turns by the matrix.
-    pub fn wheel_turn(&self) -> Option<(Vec3, f32, Mat4)> {
+    /// The steering wheel's turn in car model space, for [`crate::playback::Playback::turn`]: the interior
+    /// `i_steeringwheel` meshes turn by the matrix. `None` without the node.
+    pub fn wheel_turn(&self) -> Option<Mat4> {
         let node = self.wheel?;
         let angle = crew::wheel_angle(self.steer, self.rig.settings.max_steer);
         // The sign is the clip's: its hands turn about the node's `z` by `+angle` (about 45° of the wheel's 60°).
-        Some((node.w_axis.truncate(), WHEEL_MATCH_METRES, node * Mat4::from_rotation_z(angle) * node.inverse()))
+        Some(node * Mat4::from_rotation_z(angle) * node.inverse())
     }
 
     /// Poses and skins the crew in the car whose model space goes to stage space by `body`, or hides them when not

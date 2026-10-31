@@ -96,6 +96,10 @@ pub struct MeshDamage {
     /// The window slot ([`window_slot`]) of a window's part, by its node name: the pane seen from inside takes what its
     /// texture lets through (`crate::glass::Tints`).
     pub window: Option<usize>,
+    /// The interior steering-wheel mesh (`i_steeringwheel`, by its node name): the steering turns it, and
+    /// `viewer --hide-wheel` hides it. A rim with its column has its bounds centre away from the hub (the Lancia
+    /// Delta HF 4WD GrpA's is 0.17 m off), so the mesh is marked by its node, not found by its centre.
+    pub steering: bool,
 }
 
 /// A scrape amount as the vertex colour's alpha byte.

@@ -370,6 +370,7 @@ fn load_set(
         let lamp = lights::Switch::of_part(part, &parts);
         let detach = detach_part(&mesh.node.name);
         let wheel = wheel_of(&mesh.node.name).map(|(_, k)| k);
+        let steering = mesh.node.name.eq_ignore_ascii_case("i_steeringwheel");
         let mirror = cabin::Mirror::of_part(&mesh.node.name);
         let window = damage::window_slot(&mesh.node.name);
         groups.extend(built.meshes.into_iter().map(|(order, mut placed, effect)| {
@@ -383,7 +384,7 @@ fn load_set(
                     shade.window = true;
                 }
             }
-            (order, placed, MeshDamage { lamp, detach, wheel, mirror, window, ..effect })
+            (order, placed, MeshDamage { lamp, detach, wheel, mirror, window, steering, ..effect })
         }));
         if let Some(window) = damage::window_slot(&mesh.node.name) {
             let style = FaceStyle {
