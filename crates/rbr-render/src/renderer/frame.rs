@@ -699,6 +699,11 @@ impl Renderer {
                 stats.meshes_culled += 1;
                 continue;
             }
+            // The backdrop's pieces, which have no bounds (no reach, no levels), outside the view draw nothing.
+            if mesh.backdrop_bounds.is_some_and(|(center, half_extent)| !frustum.intersects_box(center, half_extent)) {
+                stats.meshes_culled += 1;
+                continue;
+            }
             if let Some((center, half_extent)) = mesh.bounds {
                 if !frustum.intersects_box(center, half_extent) || (with_car && mesh.cell_hidden(view_projection)) {
                     stats.meshes_culled += 1;

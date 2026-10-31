@@ -42,7 +42,7 @@ pub(super) struct GpuMesh {
     /// A sky dome over the stage ([`crate::sky_dome`]): drawn, but no caster (and left out under `Enhance::sky`).
     pub(super) sky_dome: bool,
     /// For the backdrop's meshes (world-anchored sky faces, which have no `bounds`: the views draw them at the far
-    /// plane), the centre and half extents of their vertices, by which the sun's maps cull them.
+    /// plane), the centre and half extents of their vertices, by which the views and the sun's maps cull them.
     pub(super) backdrop_bounds: Option<(Vec3, Vec3)>,
 }
 

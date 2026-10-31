@@ -155,6 +155,9 @@ Rally3 Evo, 1280x720: 63.9 fps render, replay 16920 of 16920 frames equal, video
   reference installs run low's 200 m).
 - Visibility cells `(2,10)` (`visibility.rs` `CELL_REACH`/`DRAW_REACH`/`CUBE_REACH`): ours draws to 3 km, so from
   a crest the stage shows rather than the coarse backdrop (61_M from 80 m up: 27k to 70k triangles).
+- The backdrop's pieces have no bounds (no reach, no levels); each view culls them by their vertices' box
+  (`GpuMesh::backdrop_bounds`, 2026-10-31): 580 chase 2.04M to 1.85M triangles, surroundings cube face 0.51 to
+  0.35 ms, frames byte-identical.
 - Object lanes `(1,1)` (`stage::OBJECT_ALPHA_REF`, kind-byte address modes).
 - Interactive props `(1,6)` (`stage/mod.rs` `InteractivePose`): every retail record drawn at its placement while its
   cell shows; live moves a woken prop by its solid's pose. The car's glass (no depth write) goes over them.
