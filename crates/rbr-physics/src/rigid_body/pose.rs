@@ -1,20 +1,19 @@
-//! `CSolid::VfC8` (0x52c8f0, slot 0x20 `IntegratePose`): the body's pose step. The orientation turns by the angular
-//! velocity over `a` (`q <- normalize((w*a/2, 1) * q)`), the position moves along the linear velocity (`p <- p + v*a`),
-//! and the body is registered in its cell (root bodies) or its position goes to the parent frame (child bodies). A
-//! contact sample is taken when the step flags have bit 3 set. The calls into other code go through `PoseHost`, in
-//! the original's order; their effects on the body are the body fields the host can't see (see the README).
+//! The body's pose step: the orientation turns by the angular velocity over `a` (`q <- normalize((w*a/2, 1) * q)`),
+//! the position moves along the linear velocity (`p <- p + v*a`), and the body is registered in its cell (root
+//! bodies) or its position goes to the parent frame (child bodies). A contact sample is taken when the step flags
+//! have bit 3 set. The calls into other code go through `PoseHost`, in order; their effects on the body are the body
+//! fields the host can't see (see the README).
 
 use super::host::{CellHost, HostUnavailable};
 use super::layout::{Body, ParentFrame, Vec4, CELL_LINK};
 use crate::math::quat::{mul, normalize, Quat};
 
-/// The calls `VfC8` makes outside the body: the parent transform, the cell registration (`CellHost`) and the contact
-/// sample.
+/// The calls the pose step makes outside the body: the parent transform, the cell registration (`CellHost`) and the
+/// contact sample.
 pub trait PoseHost: CellHost {
-    /// Child bodies: the position in the parent frame (the parent's slot 0x30, then `E33Mat34::ComposeA`). The
-    /// result is used only by the contact sample.
+    /// Child bodies: the position in the parent frame. The result is used only by the contact sample.
     fn to_parent_frame(&mut self, local: Vec4) -> Vec4;
-    /// `CDriveLine::SampleBig` at `at` with the body's current sample: returns the new sample.
+    /// The drive-line sample at `at` with the body's current sample: returns the new sample.
     fn sample_big(&mut self, at: Vec4, value: f32) -> f32;
 }
 
@@ -45,8 +44,8 @@ pub fn pose_step(
         };
         body.orientation = normalize(mul(half_turn, body.orientation));
     }
-    // The position's new value, the last write of this step. Its four lanes come from the linear velocity (x87
-    // free, SSE: lane * a, then + the position).
+    // The position's new value, the last write of this step. Its four lanes come from the linear velocity: lane * a,
+    // then + the position.
     let next = if update_position {
         let v = body.linear_velocity;
         Vec4 {

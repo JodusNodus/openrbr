@@ -42,9 +42,9 @@ pub struct RingHeader {
     pub count: u32,
 }
 
-/// `CSolid`: `this` is the body, `definition` its `CSolid::CDef`, `state` its `E47SolidState`.
+/// `this` is the body, `definition` its definition, `state` its solid state.
 pub trait RigidStore: Raw {
-    /// Reads the body at `this`. The memory must cover the object (0x3d0 bytes).
+    /// Reads the body at `this`. The memory must cover the whole object.
     fn body(&self, this: u32) -> Body;
     fn store_body(&mut self, this: u32, body: &Body);
     /// The sleep and mass settings of the body's definition.
@@ -64,7 +64,7 @@ pub trait RigidStore: Raw {
 
     /// The matrix and origin the row loops transform by (the origin's `w` is zero).
     fn row_frame(&self, this: u32) -> RowFrame;
-    /// The body's matrix words (nine from `+0x110`).
+    /// The body's matrix words (nine).
     fn matrix_words(&self, this: u32) -> [f32; 9];
     /// The body's matrix as the row scaling takes it.
     fn matrix(&self, this: u32) -> Mat;
@@ -74,7 +74,7 @@ pub trait RigidStore: Raw {
     fn store_linear_velocity(&mut self, this: u32, value: Vec4);
     /// The address of the body's linear velocity (what the clamp returns).
     fn linear_velocity_at(&self, this: u32) -> u32;
-    /// The body's `E47SolidState`.
+    /// The body's solid state.
     fn state_at(&self, this: u32) -> u32;
     /// The orientation and the position (zero `w`) at the window's start.
     fn start_orientation(&self, this: u32) -> Quat;
@@ -83,15 +83,16 @@ pub trait RigidStore: Raw {
     /// The two limits the velocity clamp reads from the physics settings.
     fn impulse_limits(&self) -> (f32, f32);
 
-    /// `BigA`'s inputs: the contact at `contact`, the body's inverse mass, the world's time step and the sample test.
+    /// The contact worker's inputs: the contact at `contact`, the body's inverse mass, the world's time step and
+    /// the sample test.
     fn contact_input(&self, this: u32, contact: u32, range: f32) -> Input;
     /// The contact list's count, `None` when the body has no list.
     fn contact_count(&self, this: u32) -> Option<u32>;
     /// The hook and the ring tail of the body, zero when absent.
     fn hook(&self, this: u32) -> u32;
     fn ring_tail(&self, this: u32) -> u32;
-    /// The pair `E43Vf128` gives the hook: the word the hook takes is the first when the pair's third lane passes the
-    /// physics half, else the second.
+    /// The pair the impulse tail gives the hook: the word the hook takes is the first when the pair's third lane
+    /// passes the physics half, else the second.
     fn hook_pair(&self, pair: u32) -> HookPair;
     fn ring_header(&self, ring: u32) -> RingHeader;
     /// Writes the entry at `index`: its three words and the vector at `src`.
@@ -103,6 +104,6 @@ pub trait RigidStore: Raw {
     fn store_scratch_accum(&mut self, this: u32, value: Vec4);
 
     fn state_rotation(&self, state: u32) -> StateRotation;
-    /// The state's refreshed matrix (nine words from `+0x30`).
+    /// The state's refreshed matrix (nine words).
     fn store_state_matrix(&mut self, state: u32, matrix: [f32; 9]);
 }

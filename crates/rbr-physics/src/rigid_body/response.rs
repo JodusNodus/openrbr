@@ -1,22 +1,21 @@
-//! `CSolid::E43Vf140` (slot 80, 0x52a570): the body's response to a point, the velocity of the body at the point. With
-//! no parent (`CSolid+0x44` is 0) it is `w x d + v`, with `d` the point less the body's position, in the C++'s order
-//! (`(w1*d2 + v0) - w2*d1` and so on, lane by lane). With a parent the call takes the parent's slot-80 response to the
-//! point, plus the same term for the point in the parent's frame (`ComposeA`) transformed by the parent (`MB560`). The
-//! parent path's calls go through `ResponseHost`.
+//! The body's response to a point: the velocity of the body at the point. With no parent it is `w x d + v`, with
+//! `d` the point less the body's position, in the order `(w1*d2 + v0) - w2*d1` and so on, lane by lane. With a parent
+//! the call takes the parent's response to the point, plus the same term for the point in the parent's frame,
+//! transformed by the parent. The parent path's calls go through `ResponseHost`.
 
 use super::layout::{Body, Vec4};
 
 /// The calls the parent path makes outside the body.
 pub trait ResponseHost {
-    /// The parent's slot 80 (`E47S80_2::S80`): the parent's response to the point.
+    /// The parent's response to the point.
     fn parent_response(&mut self, parent: u32, point: Vec4) -> Vec4;
-    /// `E33Mat34::ComposeA` (0x51b4c0) on the point, with the E43PairWalk global as ecx: the point in the parent's frame.
+    /// The point in the parent's frame.
     fn compose(&mut self, parent: u32, point: Vec4) -> Vec4;
-    /// `E43PairWalk::MB560` (0x51b560) on `v`, with the parent as the matrix.
+    /// The parent's transform of `v`.
     fn parent_transform(&mut self, parent: u32, v: Vec4) -> Vec4;
 }
 
-/// `(w x d) + v` in the C++'s order: each lane is `(w * d + v) - w * d`, the first product added to `v`.
+/// `(w x d) + v`: each lane is `(w * d + v) - w * d`, the first product added to `v`.
 fn cross_plus(w: Vec4, d: Vec4, v: Vec4) -> Vec4 {
     Vec4 {
         x: (w.y * d.z + v.x) - w.z * d.y,
@@ -26,7 +25,7 @@ fn cross_plus(w: Vec4, d: Vec4, v: Vec4) -> Vec4 {
     }
 }
 
-/// The response to `point` (`CSolid::E43Vf140`).
+/// The response to `point`.
 pub fn response(body: &Body, point: Vec4, host: &mut impl ResponseHost) -> Vec4 {
     let w = body.angular_velocity;
     let v = body.linear_velocity;
