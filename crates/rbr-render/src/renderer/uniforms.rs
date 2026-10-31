@@ -325,6 +325,8 @@ impl Renderer {
         };
         let cloud_height = if cloud_volume { super::cloud_volume::shadow_height(a) } else { 0.0 };
         let dirt = self.car_dirt.look(self.enhance.particles, self.wetness);
+        // Once: a pass over every mesh's draws (0.035 ms on 580), which the frames took six times.
+        let car_bounds = self.car_bounds();
         let mut uniforms = [FrameUniform::zeroed(); 3];
         for (index, (slot, (matrix, haze, [start, end], (shadow, ground), anchored, depth))) in uniforms
             .iter_mut()
@@ -387,8 +389,8 @@ impl Renderer {
                 occlusion: [
                     0.0,
                     cloud_height,
-                    self.car_bounds().map_or(0.0, |(low, _)| low.y),
-                    f32::from(u8::from(self.car_bounds().is_some())),
+                    car_bounds.map_or(0.0, |(low, _)| low.y),
+                    f32::from(u8::from(car_bounds.is_some())),
                 ],
                 ground_grid: self.ground_light.as_ref().map_or([0.0; 4], |g| g.grid),
                 day_sun: day.map_or([0.0; 4], |d| d.sun),
