@@ -813,22 +813,19 @@ pub fn step<S: VcuStore>(
 impl VcuStore for Mem {
     /// Reads a speed map of `n` records at `at`.
     fn speed_map(&self, at: u32, n: usize) -> Vec<SpeedKnot> {
-        let mem = self;
         (0..n as u32)
-            .map(|k| SpeedKnot { key: mem.f32(at + 0x20 * k + 0x0c), value: mem.f32(at + 0x20 * k + 0x1c) })
+            .map(|k| SpeedKnot { key: self.f32(at + 0x20 * k + 0x0c), value: self.f32(at + 0x20 * k + 0x1c) })
             .collect()
     }
 
     /// Reads a pedal map of `n` knots at `at`.
     fn pedal_map(&self, at: u32, n: usize) -> Vec<Knot> {
-        let mem = self;
-        (0..n as u32).map(|k| Knot { value: mem.f32(at + 0x10 * k + 0x0c) }).collect()
+        (0..n as u32).map(|k| Knot { value: self.f32(at + 0x10 * k + 0x0c) }).collect()
     }
 
     /// Reads the setup at `at`. The memory must cover the whole object (0xcac bytes).
     fn def(&self, at: u32) -> Def {
-        let mem = self;
-        let f = |off: u32| mem.f32(at + off);
+        let f = |off: u32| self.f32(at + off);
         Def {
             gear_upshift_rpm: std::array::from_fn(|k| f(GEAR_UPSHIFT_RPM + 0x20 * k as u32)),
             gear_downshift_rpm: std::array::from_fn(|k| f(GEAR_DOWNSHIFT_RPM + 0x20 * k as u32)),
@@ -838,29 +835,28 @@ impl VcuStore for Mem {
             rpm_limit: f(RPM_LIMIT),
             centre_diff_handbrake_release: f(CENTRE_DIFF_HANDBRAKE_RELEASE),
             left_foot_brake_threshold: f(LEFT_FOOT_BRAKE_THRESHOLD),
-            gear_count: mem.u32(at + 0x654),
-            centre_throttle_lock: mem.pedal_map(at + CENTRE_THROTTLE_LOCK, KNOTS),
-            centre_brake_lock: mem.pedal_map(at + CENTRE_BRAKE_LOCK, KNOTS),
-            centre_speed_lock: mem.speed_map(at + CENTRE_SPEED_LOCK, KNOTS),
-            lf_centre_throttle_lock: mem.pedal_map(at + LF_CENTRE_THROTTLE_LOCK, KNOTS),
-            lf_centre_brake_lock: mem.pedal_map(at + LF_CENTRE_BRAKE_LOCK, KNOTS),
-            lf_centre_speed_lock: mem.speed_map(at + LF_CENTRE_SPEED_LOCK, KNOTS),
-            front_throttle_lock: mem.pedal_map(at + FRONT_THROTTLE_LOCK, KNOTS),
-            front_brake_lock: mem.pedal_map(at + FRONT_BRAKE_LOCK, KNOTS),
-            front_speed_lock: mem.speed_map(at + FRONT_SPEED_LOCK, KNOTS),
-            rear_throttle_lock: mem.pedal_map(at + REAR_THROTTLE_LOCK, KNOTS),
-            rear_brake_lock: mem.pedal_map(at + REAR_BRAKE_LOCK, KNOTS),
-            rear_speed_lock: mem.speed_map(at + REAR_SPEED_LOCK, KNOTS),
+            gear_count: self.u32(at + 0x654),
+            centre_throttle_lock: self.pedal_map(at + CENTRE_THROTTLE_LOCK, KNOTS),
+            centre_brake_lock: self.pedal_map(at + CENTRE_BRAKE_LOCK, KNOTS),
+            centre_speed_lock: self.speed_map(at + CENTRE_SPEED_LOCK, KNOTS),
+            lf_centre_throttle_lock: self.pedal_map(at + LF_CENTRE_THROTTLE_LOCK, KNOTS),
+            lf_centre_brake_lock: self.pedal_map(at + LF_CENTRE_BRAKE_LOCK, KNOTS),
+            lf_centre_speed_lock: self.speed_map(at + LF_CENTRE_SPEED_LOCK, KNOTS),
+            front_throttle_lock: self.pedal_map(at + FRONT_THROTTLE_LOCK, KNOTS),
+            front_brake_lock: self.pedal_map(at + FRONT_BRAKE_LOCK, KNOTS),
+            front_speed_lock: self.speed_map(at + FRONT_SPEED_LOCK, KNOTS),
+            rear_throttle_lock: self.pedal_map(at + REAR_THROTTLE_LOCK, KNOTS),
+            rear_brake_lock: self.pedal_map(at + REAR_BRAKE_LOCK, KNOTS),
+            rear_speed_lock: self.speed_map(at + REAR_SPEED_LOCK, KNOTS),
         }
     }
 
     /// Reads the maps of the setup at `setup`.
     fn knot_maps(&self, setup: u32) -> KnotMaps {
-        let mem = self;
-        let pedal = |at: u32| load_triples(mem, setup + at, 0x10);
+        let pedal = |at: u32| load_triples(self, setup + at, 0x10);
         let speed = |keys: u32, values: u32| SpeedWords {
-            keys: load_triples(mem, setup + keys, 0x10),
-            values: load_triples(mem, setup + values, 0x10),
+            keys: load_triples(self, setup + keys, 0x10),
+            values: load_triples(self, setup + values, 0x10),
         };
         KnotMaps {
             centre_throttle: pedal(0x070),
@@ -880,202 +876,183 @@ impl VcuStore for Mem {
 
     /// Writes the maps into the CDef at `def`.
     fn store_knot_maps(&mut self, def: u32, value: &KnotMaps) {
-        let mem = self;
-        store_triples(mem, def + 0x1b0, 0x10, &value.centre_throttle);
-        store_triples(mem, def + 0x260, 0x10, &value.centre_brake);
-        store_triples(mem, def + 0x470, 0x10, &value.lf_centre_throttle);
-        store_triples(mem, def + 0x520, 0x10, &value.lf_centre_brake);
-        store_triples(mem, def + 0x730, 0x10, &value.front_throttle);
-        store_triples(mem, def + 0x7e0, 0x10, &value.front_brake);
-        store_triples(mem, def + 0x9f0, 0x10, &value.rear_throttle);
-        store_triples(mem, def + 0xaa0, 0x10, &value.rear_brake);
-        store_speed(mem, def + 0x310, def + 0x320, &value.centre_speed);
-        store_speed(mem, def + 0x5d0, def + 0x5e0, &value.lf_centre_speed);
-        store_speed(mem, def + 0x890, def + 0x8a0, &value.front_speed);
-        store_speed(mem, def + 0xb50, def + 0xb60, &value.rear_speed);
+        store_triples(self, def + 0x1b0, 0x10, &value.centre_throttle);
+        store_triples(self, def + 0x260, 0x10, &value.centre_brake);
+        store_triples(self, def + 0x470, 0x10, &value.lf_centre_throttle);
+        store_triples(self, def + 0x520, 0x10, &value.lf_centre_brake);
+        store_triples(self, def + 0x730, 0x10, &value.front_throttle);
+        store_triples(self, def + 0x7e0, 0x10, &value.front_brake);
+        store_triples(self, def + 0x9f0, 0x10, &value.rear_throttle);
+        store_triples(self, def + 0xaa0, 0x10, &value.rear_brake);
+        store_speed(self, def + 0x310, def + 0x320, &value.centre_speed);
+        store_speed(self, def + 0x5d0, def + 0x5e0, &value.lf_centre_speed);
+        store_speed(self, def + 0x890, def + 0x8a0, &value.front_speed);
+        store_speed(self, def + 0xb50, def + 0xb60, &value.rear_speed);
     }
 
     fn setup_flags(&self, setup: u32) -> SetupFlags {
-        let mem = self;
         SetupFlags {
-            launch: mem.u32(setup + 0x18),
-            slip_gate_rpm: mem.u32(setup + 0x28),
-            slip_gate_speed: mem.u32(setup + 0x38),
-            launch_mode_when_off: mem.u32(setup + 0x48),
+            launch: self.u32(setup + 0x18),
+            slip_gate_rpm: self.u32(setup + 0x28),
+            slip_gate_speed: self.u32(setup + 0x38),
+            launch_mode_when_off: self.u32(setup + 0x48),
         }
     }
 
     fn state(&self, at: u32) -> State {
-        let mem = self;
         State {
-            shift_lockout: mem.f32(at + SHIFT_LOCKOUT),
-            launch_clutch: mem.f32(at + LAUNCH_CLUTCH),
-            launch_clutch_dirty: mem.u32(at + LAUNCH_CLUTCH_DIRTY),
-            pedal_swap: mem.u32(at + PEDAL_SWAP),
-            gear_timer: mem.f32(at + GEAR_TIMER),
-            shift_cooldown: mem.f32(at + SHIFT_COOLDOWN),
+            shift_lockout: self.f32(at + SHIFT_LOCKOUT),
+            launch_clutch: self.f32(at + LAUNCH_CLUTCH),
+            launch_clutch_dirty: self.u32(at + LAUNCH_CLUTCH_DIRTY),
+            pedal_swap: self.u32(at + PEDAL_SWAP),
+            gear_timer: self.f32(at + GEAR_TIMER),
+            shift_cooldown: self.f32(at + SHIFT_COOLDOWN),
         }
     }
 
     fn store_state(&mut self, at: u32, value: &State) {
-        let mem = self;
-        mem.set_f32(at + SHIFT_LOCKOUT, value.shift_lockout);
-        mem.set_f32(at + LAUNCH_CLUTCH, value.launch_clutch);
-        mem.set_u32(at + LAUNCH_CLUTCH_DIRTY, value.launch_clutch_dirty);
-        mem.set_u32(at + PEDAL_SWAP, value.pedal_swap);
-        mem.set_f32(at + GEAR_TIMER, value.gear_timer);
-        mem.set_f32(at + SHIFT_COOLDOWN, value.shift_cooldown);
+        self.set_f32(at + SHIFT_LOCKOUT, value.shift_lockout);
+        self.set_f32(at + LAUNCH_CLUTCH, value.launch_clutch);
+        self.set_u32(at + LAUNCH_CLUTCH_DIRTY, value.launch_clutch_dirty);
+        self.set_u32(at + PEDAL_SWAP, value.pedal_swap);
+        self.set_f32(at + GEAR_TIMER, value.gear_timer);
+        self.set_f32(at + SHIFT_COOLDOWN, value.shift_cooldown);
     }
 
     fn gearbox(&self, at: u32) -> Gearbox {
-        let mem = self;
         Gearbox {
-            gear: mem.u32(at + DRIVE_STATE_GEAR),
-            commanded: mem.u32(at + DRIVE_STATE_COMMANDED_GEAR),
-            changed: mem.u32(at + 0x56c),
-            slip: mem.u32(at + 0x55c),
+            gear: self.u32(at + DRIVE_STATE_GEAR),
+            commanded: self.u32(at + DRIVE_STATE_COMMANDED_GEAR),
+            changed: self.u32(at + 0x56c),
+            slip: self.u32(at + 0x55c),
         }
     }
 
     fn store_gearbox(&mut self, at: u32, value: &Gearbox) {
-        let mem = self;
-        mem.set_u32(at + DRIVE_STATE_GEAR, value.gear);
-        mem.set_u32(at + DRIVE_STATE_COMMANDED_GEAR, value.commanded);
-        mem.set_u32(at + 0x56c, value.changed);
-        mem.set_u32(at + 0x55c, value.slip);
+        self.set_u32(at + DRIVE_STATE_GEAR, value.gear);
+        self.set_u32(at + DRIVE_STATE_COMMANDED_GEAR, value.commanded);
+        self.set_u32(at + 0x56c, value.changed);
+        self.set_u32(at + 0x55c, value.slip);
     }
 
     /// Gear count of the drive's own definition (`[drive + 4] + 0x654`), which `CDrive::Set47B0` clamps to.
     fn gear_count(&self, drive: u32) -> u32 {
-        let mem = self;
-        mem.u32(mem.u32(drive + 0x4) + 0x654)
+        self.u32(self.u32(drive + 0x4) + 0x654)
     }
 
     fn reals(&self, drive: u32) -> Reals {
-        let mem = self;
         Reals {
-            throttle: mem.f32(drive + 0x2c),
-            brake: mem.f32(drive + 0x3c),
-            brake_scaled: mem.f32(drive + 0x70),
-            clutch_slip: mem.f32(drive + 0x60),
-            brake_scale: mem.f32(mem.u32(drive + 0x04) + 0x620),
+            throttle: self.f32(drive + 0x2c),
+            brake: self.f32(drive + 0x3c),
+            brake_scaled: self.f32(drive + 0x70),
+            clutch_slip: self.f32(drive + 0x60),
+            brake_scale: self.f32(self.u32(drive + 0x04) + 0x620),
         }
     }
 
     fn store_reals(&mut self, drive: u32, value: &Reals) {
-        let mem = self;
         for (dirty, value, v) in [
             (0x28, 0x2c, value.throttle),
             (0x38, 0x3c, value.brake),
             (0x6c, 0x70, value.brake_scaled),
             (0x5c, 0x60, value.clutch_slip),
         ] {
-            mem.set_u32(drive + dirty, 1);
-            mem.set_f32(drive + value, v);
+            self.set_u32(drive + dirty, 1);
+            self.set_f32(drive + value, v);
         }
     }
 
     fn outputs(&self, drive: u32) -> Outputs {
-        let mem = self;
-        Outputs { locks: mem.locks(drive), reals: mem.reals(drive) }
+        Outputs { locks: self.locks(drive), reals: self.reals(drive) }
     }
 
     fn store_outputs(&mut self, drive: u32, value: &Outputs) {
-        let mem = self;
-        mem.store_locks(drive, &value.locks);
-        mem.store_reals(drive, &value.reals);
+        self.store_locks(drive, &value.locks);
+        self.store_reals(drive, &value.reals);
     }
 
     fn gear_ratios(&self, drive: u32) -> GearRatios {
-        let mem = self;
-        let def = mem.u32(drive + 0x04);
+        let def = self.u32(drive + 0x04);
         GearRatios {
-            lim: std::array::from_fn(|g| mem.f32(def + 0x644 + 0x50 * g as u32)),
-            div: std::array::from_fn(|g| mem.f32(def + 0x694 + 0x50 * g as u32)),
+            lim: std::array::from_fn(|g| self.f32(def + 0x644 + 0x50 * g as u32)),
+            div: std::array::from_fn(|g| self.f32(def + 0x694 + 0x50 * g as u32)),
         }
     }
 
     fn locks(&self, drive: u32) -> Locks {
-        let mem = self;
-        let d8 = mem.u32(drive + 0x08);
-        let def = mem.u32(drive + 0x04);
+        let d8 = self.u32(drive + 0x08);
+        let def = self.u32(drive + 0x04);
         Locks {
-            ratio: std::array::from_fn(|ch| mem.f32(d8 + 0x14 * ch as u32 + 0x0c)),
-            enabled: mem.u32(mem.u32(drive + 0x170) + 0x90) != 0,
-            max_torque: std::array::from_fn(|ch| mem.f32(def + 0x58 + 0x60 * ch as u32)),
-            torque: std::array::from_fn(|ch| mem.f32(d8 + 0x14 * ch as u32 + 0x18)),
+            ratio: std::array::from_fn(|ch| self.f32(d8 + 0x14 * ch as u32 + 0x0c)),
+            enabled: self.u32(self.u32(drive + 0x170) + 0x90) != 0,
+            max_torque: std::array::from_fn(|ch| self.f32(def + 0x58 + 0x60 * ch as u32)),
+            torque: std::array::from_fn(|ch| self.f32(d8 + 0x14 * ch as u32 + 0x18)),
         }
     }
 
     /// Writes the locks back. Only the torques change; the ratios and the maximum torques are inputs here.
     fn store_locks(&mut self, drive: u32, value: &Locks) {
-        let mem = self;
-        let d8 = mem.u32(drive + 0x08);
+        let d8 = self.u32(drive + 0x08);
         for (ch, &torque) in value.torque.iter().enumerate() {
-            mem.set_f32(d8 + 0x14 * ch as u32 + 0x18, torque);
+            self.set_f32(d8 + 0x14 * ch as u32 + 0x18, torque);
         }
     }
 
     fn pedals(&self, scratch: u32) -> Pedals {
-        let mem = self;
         Pedals {
-            throttle: mem.f32(scratch + SCRATCH_THROTTLE),
-            brake: mem.f32(scratch + SCRATCH_BRAKE),
-            handbrake: mem.f32(scratch + SCRATCH_HANDBRAKE),
+            throttle: self.f32(scratch + SCRATCH_THROTTLE),
+            brake: self.f32(scratch + SCRATCH_BRAKE),
+            handbrake: self.f32(scratch + SCRATCH_HANDBRAKE),
         }
     }
 
     fn store_pedals(&mut self, scratch: u32, value: &Pedals) {
-        let mem = self;
-        mem.set_f32(scratch + SCRATCH_THROTTLE, value.throttle);
-        mem.set_f32(scratch + SCRATCH_BRAKE, value.brake);
-        mem.set_f32(scratch + SCRATCH_HANDBRAKE, value.handbrake);
+        self.set_f32(scratch + SCRATCH_THROTTLE, value.throttle);
+        self.set_f32(scratch + SCRATCH_BRAKE, value.brake);
+        self.set_f32(scratch + SCRATCH_HANDBRAKE, value.handbrake);
     }
 
     fn packet(&self, at: u32) -> Packet {
-        let mem = self;
         Packet {
-            pedals: Pedals { throttle: mem.f32(at), brake: mem.f32(at + 0x04), handbrake: mem.f32(at + 0x08) },
-            fixed_clutch: mem.f32(at + 0x0c),
-            unknown_10: mem.u32(at + 0x10),
-            flags: mem.u8(at + 0x14),
-            value: mem.u32(at + 0x18),
+            pedals: Pedals { throttle: self.f32(at), brake: self.f32(at + 0x04), handbrake: self.f32(at + 0x08) },
+            fixed_clutch: self.f32(at + 0x0c),
+            unknown_10: self.u32(at + 0x10),
+            flags: self.u8(at + 0x14),
+            value: self.u32(at + 0x18),
         }
     }
 
     fn scratch(&self, at: u32) -> Scratch {
-        let mem = self;
         Scratch {
-            def: mem.u32(at + SCRATCH_DEF),
-            state: mem.u32(at + SCRATCH_STATE),
-            pedals: mem.pedals(at),
-            fixed_clutch: mem.f32(at + SCRATCH_FIXED_CLUTCH),
-            unknown_18: mem.u32(at + SCRATCH_UNKNOWN_18),
-            launch_enabled: mem.u32(at + SCRATCH_LAUNCH_ENABLED),
-            launch_mode: mem.u32(at + SCRATCH_LAUNCH_MODE),
-            vcu_enabled: mem.u32(at + SCRATCH_VCU_ENABLED),
-            slip_gate_rpm: mem.u32(at + SCRATCH_SLIP_GATE_RPM),
-            slip_gate_speed: mem.u32(at + SCRATCH_SLIP_GATE_SPEED),
-            engine: mem.u32(at + SCRATCH_ENGINE),
-            drive: mem.u32(at + SCRATCH_DRIVE),
-            lights: mem.u32(at + SCRATCH_LIGHTS),
+            def: self.u32(at + SCRATCH_DEF),
+            state: self.u32(at + SCRATCH_STATE),
+            pedals: self.pedals(at),
+            fixed_clutch: self.f32(at + SCRATCH_FIXED_CLUTCH),
+            unknown_18: self.u32(at + SCRATCH_UNKNOWN_18),
+            launch_enabled: self.u32(at + SCRATCH_LAUNCH_ENABLED),
+            launch_mode: self.u32(at + SCRATCH_LAUNCH_MODE),
+            vcu_enabled: self.u32(at + SCRATCH_VCU_ENABLED),
+            slip_gate_rpm: self.u32(at + SCRATCH_SLIP_GATE_RPM),
+            slip_gate_speed: self.u32(at + SCRATCH_SLIP_GATE_SPEED),
+            engine: self.u32(at + SCRATCH_ENGINE),
+            drive: self.u32(at + SCRATCH_DRIVE),
+            lights: self.u32(at + SCRATCH_LIGHTS),
         }
     }
 
     fn store_scratch(&mut self, at: u32, value: &Scratch) {
-        let mem = self;
-        mem.set_u32(at + SCRATCH_DEF, value.def);
-        mem.set_u32(at + SCRATCH_STATE, value.state);
-        mem.store_pedals(at, &value.pedals);
-        mem.set_f32(at + SCRATCH_FIXED_CLUTCH, value.fixed_clutch);
-        mem.set_u32(at + SCRATCH_UNKNOWN_18, value.unknown_18);
-        mem.set_u32(at + SCRATCH_LAUNCH_ENABLED, value.launch_enabled);
-        mem.set_u32(at + SCRATCH_LAUNCH_MODE, value.launch_mode);
-        mem.set_u32(at + SCRATCH_VCU_ENABLED, value.vcu_enabled);
-        mem.set_u32(at + SCRATCH_SLIP_GATE_RPM, value.slip_gate_rpm);
-        mem.set_u32(at + SCRATCH_SLIP_GATE_SPEED, value.slip_gate_speed);
-        mem.set_u32(at + SCRATCH_ENGINE, value.engine);
-        mem.set_u32(at + SCRATCH_DRIVE, value.drive);
-        mem.set_u32(at + SCRATCH_LIGHTS, value.lights);
+        self.set_u32(at + SCRATCH_DEF, value.def);
+        self.set_u32(at + SCRATCH_STATE, value.state);
+        self.store_pedals(at, &value.pedals);
+        self.set_f32(at + SCRATCH_FIXED_CLUTCH, value.fixed_clutch);
+        self.set_u32(at + SCRATCH_UNKNOWN_18, value.unknown_18);
+        self.set_u32(at + SCRATCH_LAUNCH_ENABLED, value.launch_enabled);
+        self.set_u32(at + SCRATCH_LAUNCH_MODE, value.launch_mode);
+        self.set_u32(at + SCRATCH_VCU_ENABLED, value.vcu_enabled);
+        self.set_u32(at + SCRATCH_SLIP_GATE_RPM, value.slip_gate_rpm);
+        self.set_u32(at + SCRATCH_SLIP_GATE_SPEED, value.slip_gate_speed);
+        self.set_u32(at + SCRATCH_ENGINE, value.engine);
+        self.set_u32(at + SCRATCH_DRIVE, value.drive);
+        self.set_u32(at + SCRATCH_LIGHTS, value.lights);
     }
 }

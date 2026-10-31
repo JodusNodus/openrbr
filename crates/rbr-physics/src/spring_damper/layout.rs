@@ -420,75 +420,70 @@ impl SpringStore for Mem {
 
     /// Reads the fields needed by the reached spring-damper functions.
     fn definition(&self, at: u32) -> Definition {
-        let mem = self;
         Definition {
-            debug_id: mem.u32(at + DEFINITION_DEBUG_ID),
-            bump_stop_pos: real_value(mem, at + DEFINITION_BUMP_STOP_POS),
-            droop_stop_pos: real_value(mem, at + DEFINITION_DROOP_STOP_POS),
-            spring_free_length: real_value(mem, at + DEFINITION_SPRING_FREE_LENGTH),
-            spring_rate: real_value(mem, at + DEFINITION_SPRING_RATE),
-            helper_min_length: real_value(mem, at + DEFINITION_HELPER_MIN_LENGTH),
-            helper_length: real_value(mem, at + DEFINITION_HELPER_LENGTH),
-            helper_rate: real_value(mem, at + DEFINITION_HELPER_RATE),
-            bump_stop_rate: real_value(mem, at + DEFINITION_BUMP_STOP_RATE),
-            droop_stop_rate: real_value(mem, at + DEFINITION_DROOP_STOP_RATE),
-            damp_bump: real_value(mem, at + DEFINITION_DAMP_BUMP),
-            damp_rebound: real_value(mem, at + DEFINITION_DAMP_REBOUND),
-            stop_damp: real_value(mem, at + DEFINITION_STOP_DAMP),
-            hs_break_bump: real_value(mem, at + DEFINITION_HS_BREAK_BUMP),
-            hs_break_rebound: real_value(mem, at + DEFINITION_HS_BREAK_REBOUND),
-            hs_damp_bump: real_value(mem, at + DEFINITION_HS_DAMP_BUMP),
-            hs_damp_rebound: real_value(mem, at + DEFINITION_HS_DAMP_REBOUND),
+            debug_id: self.u32(at + DEFINITION_DEBUG_ID),
+            bump_stop_pos: real_value(self, at + DEFINITION_BUMP_STOP_POS),
+            droop_stop_pos: real_value(self, at + DEFINITION_DROOP_STOP_POS),
+            spring_free_length: real_value(self, at + DEFINITION_SPRING_FREE_LENGTH),
+            spring_rate: real_value(self, at + DEFINITION_SPRING_RATE),
+            helper_min_length: real_value(self, at + DEFINITION_HELPER_MIN_LENGTH),
+            helper_length: real_value(self, at + DEFINITION_HELPER_LENGTH),
+            helper_rate: real_value(self, at + DEFINITION_HELPER_RATE),
+            bump_stop_rate: real_value(self, at + DEFINITION_BUMP_STOP_RATE),
+            droop_stop_rate: real_value(self, at + DEFINITION_DROOP_STOP_RATE),
+            damp_bump: real_value(self, at + DEFINITION_DAMP_BUMP),
+            damp_rebound: real_value(self, at + DEFINITION_DAMP_REBOUND),
+            stop_damp: real_value(self, at + DEFINITION_STOP_DAMP),
+            hs_break_bump: real_value(self, at + DEFINITION_HS_BREAK_BUMP),
+            hs_break_rebound: real_value(self, at + DEFINITION_HS_BREAK_REBOUND),
+            hs_damp_bump: real_value(self, at + DEFINITION_HS_DAMP_BUMP),
+            hs_damp_rebound: real_value(self, at + DEFINITION_HS_DAMP_REBOUND),
         }
     }
 
     /// Reads the nine setup values that CopyStateToDef adopts.
     fn setup_values(&self, at: u32) -> SetupValues {
-        let mem = self;
         SetupValues {
-            spring_free_length: real_value(mem, at + SETUP_SPRING_FREE_LENGTH),
-            spring_rate: real_value(mem, at + SETUP_SPRING_RATE),
-            helper_min_length: real_value(mem, at + SETUP_HELPER_MIN_LENGTH),
-            helper_length: real_value(mem, at + SETUP_HELPER_LENGTH),
-            helper_rate: real_value(mem, at + SETUP_HELPER_RATE),
-            damp_bump: real_value(mem, at + SETUP_DAMP_BUMP),
-            damp_rebound: real_value(mem, at + SETUP_DAMP_REBOUND),
-            hs_break_bump: real_value(mem, at + SETUP_HS_BREAK_BUMP),
-            hs_damp_bump: real_value(mem, at + SETUP_HS_DAMP_BUMP),
+            spring_free_length: real_value(self, at + SETUP_SPRING_FREE_LENGTH),
+            spring_rate: real_value(self, at + SETUP_SPRING_RATE),
+            helper_min_length: real_value(self, at + SETUP_HELPER_MIN_LENGTH),
+            helper_length: real_value(self, at + SETUP_HELPER_LENGTH),
+            helper_rate: real_value(self, at + SETUP_HELPER_RATE),
+            damp_bump: real_value(self, at + SETUP_DAMP_BUMP),
+            damp_rebound: real_value(self, at + SETUP_DAMP_REBOUND),
+            hs_break_bump: real_value(self, at + SETUP_HS_BREAK_BUMP),
+            hs_damp_bump: real_value(self, at + SETUP_HS_DAMP_BUMP),
         }
     }
 
     fn store_setup_values(&mut self, definition_at: u32, definition: &Definition) {
-        let mem = self;
         // CopyStateToDef copies each CReal's label, dirty word, and value, in this order.
-        write_real_body(mem, definition_at + DEFINITION_SPRING_FREE_LENGTH, definition.spring_free_length);
-        write_real_body(mem, definition_at + DEFINITION_SPRING_RATE, definition.spring_rate);
-        write_real_body(mem, definition_at + DEFINITION_HELPER_MIN_LENGTH, definition.helper_min_length);
-        write_real_body(mem, definition_at + DEFINITION_HELPER_LENGTH, definition.helper_length);
-        write_real_body(mem, definition_at + DEFINITION_HELPER_RATE, definition.helper_rate);
-        write_real_body(mem, definition_at + DEFINITION_DAMP_BUMP, definition.damp_bump);
-        write_real_body(mem, definition_at + DEFINITION_DAMP_REBOUND, definition.damp_rebound);
-        write_real_body(mem, definition_at + DEFINITION_HS_BREAK_BUMP, definition.hs_break_bump);
-        write_real_body(mem, definition_at + DEFINITION_HS_DAMP_BUMP, definition.hs_damp_bump);
+        write_real_body(self, definition_at + DEFINITION_SPRING_FREE_LENGTH, definition.spring_free_length);
+        write_real_body(self, definition_at + DEFINITION_SPRING_RATE, definition.spring_rate);
+        write_real_body(self, definition_at + DEFINITION_HELPER_MIN_LENGTH, definition.helper_min_length);
+        write_real_body(self, definition_at + DEFINITION_HELPER_LENGTH, definition.helper_length);
+        write_real_body(self, definition_at + DEFINITION_HELPER_RATE, definition.helper_rate);
+        write_real_body(self, definition_at + DEFINITION_DAMP_BUMP, definition.damp_bump);
+        write_real_body(self, definition_at + DEFINITION_DAMP_REBOUND, definition.damp_rebound);
+        write_real_body(self, definition_at + DEFINITION_HS_BREAK_BUMP, definition.hs_break_bump);
+        write_real_body(self, definition_at + DEFINITION_HS_DAMP_BUMP, definition.hs_damp_bump);
     }
 
     fn state(&self, at: u32) -> State {
-        let mem = self;
         State {
-            damp_bump_eff: mem.f32(at + STATE_DAMP_BUMP_EFF),
-            damp_rebound_eff: mem.f32(at + STATE_DAMP_REBOUND_EFF),
-            hs_damp_bump_eff: mem.f32(at + STATE_HS_DAMP_BUMP_EFF),
-            owner: mem.u32(at + STATE_OWNER),
-            last_deflection: real_value(mem, at + STATE_LAST_DEFLECTION),
-            unknown_value: mem.u32(at + STATE_UNKNOWN),
+            damp_bump_eff: self.f32(at + STATE_DAMP_BUMP_EFF),
+            damp_rebound_eff: self.f32(at + STATE_DAMP_REBOUND_EFF),
+            hs_damp_bump_eff: self.f32(at + STATE_HS_DAMP_BUMP_EFF),
+            owner: self.u32(at + STATE_OWNER),
+            last_deflection: real_value(self, at + STATE_LAST_DEFLECTION),
+            unknown_value: self.u32(at + STATE_UNKNOWN),
         }
     }
 
     fn store_effective_damping(&mut self, at: u32, value: State) {
-        let mem = self;
-        mem.set_f32(at + STATE_DAMP_BUMP_EFF, value.damp_bump_eff);
-        mem.set_f32(at + STATE_DAMP_REBOUND_EFF, value.damp_rebound_eff);
-        mem.set_f32(at + STATE_HS_DAMP_BUMP_EFF, value.hs_damp_bump_eff);
+        self.set_f32(at + STATE_DAMP_BUMP_EFF, value.damp_bump_eff);
+        self.set_f32(at + STATE_DAMP_REBOUND_EFF, value.damp_rebound_eff);
+        self.set_f32(at + STATE_HS_DAMP_BUMP_EFF, value.hs_damp_bump_eff);
     }
 
     fn store_rebound_damping(&mut self, at: u32, value: State) {
@@ -501,36 +496,33 @@ impl SpringStore for Mem {
     }
 
     fn controller(&self, at: u32) -> Controller {
-        let mem = self;
         Controller {
-            mode: mem.u32(at + MODE) as i32,
-            high_speed_hold: mem.u32(at + HIGH_SPEED_HOLD) as i32,
+            mode: self.u32(at + MODE) as i32,
+            high_speed_hold: self.u32(at + HIGH_SPEED_HOLD) as i32,
             signal: DamperSignal {
-                owner_id: mem.u32(at + SIGNAL_ID),
-                peak_velocity: mem.f32(at + SIGNAL_PEAK),
-                bump_velocity: mem.f32(at + SIGNAL_BUMP),
-                droop_velocity: mem.f32(at + SIGNAL_DROOP),
-                valid: mem.u32(at + SIGNAL_VALID) as i32,
+                owner_id: self.u32(at + SIGNAL_ID),
+                peak_velocity: self.f32(at + SIGNAL_PEAK),
+                bump_velocity: self.f32(at + SIGNAL_BUMP),
+                droop_velocity: self.f32(at + SIGNAL_DROOP),
+                valid: self.u32(at + SIGNAL_VALID) as i32,
             },
         }
     }
 
     fn store_step_state(&mut self, at: u32, value: Controller) {
-        let mem = self;
-        mem.set_u32(at + MODE, value.mode as u32);
-        mem.set_u32(at + HIGH_SPEED_HOLD, value.high_speed_hold as u32);
-        mem.set_f32(at + SIGNAL_PEAK, value.signal.peak_velocity);
-        mem.set_f32(at + SIGNAL_BUMP, value.signal.bump_velocity);
-        mem.set_f32(at + SIGNAL_DROOP, value.signal.droop_velocity);
+        self.set_u32(at + MODE, value.mode as u32);
+        self.set_u32(at + HIGH_SPEED_HOLD, value.high_speed_hold as u32);
+        self.set_f32(at + SIGNAL_PEAK, value.signal.peak_velocity);
+        self.set_f32(at + SIGNAL_BUMP, value.signal.bump_velocity);
+        self.set_f32(at + SIGNAL_DROOP, value.signal.droop_velocity);
     }
 
     fn store_signal(&mut self, at: u32, value: DamperSignal) {
-        let mem = self;
-        mem.set_u32(at + SIGNAL_ID, value.owner_id);
-        mem.set_f32(at + SIGNAL_PEAK, value.peak_velocity);
-        mem.set_f32(at + SIGNAL_BUMP, value.bump_velocity);
-        mem.set_f32(at + SIGNAL_DROOP, value.droop_velocity);
-        mem.set_u32(at + SIGNAL_VALID, value.valid as u32);
+        self.set_u32(at + SIGNAL_ID, value.owner_id);
+        self.set_f32(at + SIGNAL_PEAK, value.peak_velocity);
+        self.set_f32(at + SIGNAL_BUMP, value.bump_velocity);
+        self.set_f32(at + SIGNAL_DROOP, value.droop_velocity);
+        self.set_u32(at + SIGNAL_VALID, value.valid as u32);
     }
 
     fn fade_state(&self, at: u32) -> FadeState {
@@ -551,70 +543,62 @@ impl SpringStore for Mem {
     }
 
     fn load_update_terms(&self, at: u32) -> UpdateTerms {
-        let mem = self;
         UpdateTerms {
-            scale: mem.f32(at),
-            numerator: mem.f32(at + 4),
-            denominator: mem.f32(at + 8),
-            response: mem.f32(at + 12),
+            scale: self.f32(at),
+            numerator: self.f32(at + 4),
+            denominator: self.f32(at + 8),
+            response: self.f32(at + 12),
         }
     }
 
     fn store_update_terms(&mut self, at: u32, terms: UpdateTerms) {
-        let mem = self;
-        mem.set_f32(at, terms.scale);
-        mem.set_f32(at + 4, terms.numerator);
-        mem.set_f32(at + 8, terms.denominator);
-        mem.set_f32(at + 12, terms.response);
+        self.set_f32(at, terms.scale);
+        self.set_f32(at + 4, terms.numerator);
+        self.set_f32(at + 8, terms.denominator);
+        self.set_f32(at + 12, terms.response);
     }
 
     fn load_blend_terms(&self, at: u32) -> BlendTerms {
-        let mem = self;
-        BlendTerms { weight: mem.f32(at), value: mem.f32(at + 4), response: mem.f32(at + 8), scale: mem.f32(at + 12) }
+        BlendTerms { weight: self.f32(at), value: self.f32(at + 4), response: self.f32(at + 8), scale: self.f32(at + 12) }
     }
 
     fn store_blend_terms(&mut self, at: u32, value: BlendTerms) {
-        let mem = self;
-        mem.set_f32(at, value.weight);
-        mem.set_f32(at + 4, value.value);
-        mem.set_f32(at + 8, value.response);
-        mem.set_f32(at + 12, value.scale);
+        self.set_f32(at, value.weight);
+        self.set_f32(at + 4, value.value);
+        self.set_f32(at + 8, value.response);
+        self.set_f32(at + 12, value.scale);
     }
 
     fn load_relaxation(&self, at: u32) -> Relaxation {
-        let mem = self;
         Relaxation {
-            remaining: mem.f32(at),
-            accumulated: mem.f32(at + 4),
-            response: mem.f32(at + 8),
-            scale: mem.f32(at + 12),
+            remaining: self.f32(at),
+            accumulated: self.f32(at + 4),
+            response: self.f32(at + 8),
+            scale: self.f32(at + 12),
         }
     }
 
     fn store_relaxation(&mut self, at: u32, value: Relaxation) {
-        let mem = self;
-        mem.set_f32(at, value.remaining);
-        mem.set_f32(at + 4, value.accumulated);
-        mem.set_f32(at + 8, value.response);
-        mem.set_f32(at + 12, value.scale);
+        self.set_f32(at, value.remaining);
+        self.set_f32(at + 4, value.accumulated);
+        self.set_f32(at + 8, value.response);
+        self.set_f32(at + 12, value.scale);
     }
 
     fn load_force_terms(&self, at: u32) -> ForceTerms {
-        let mem = self;
         ForceTerms {
-            multiplier: mem.f32(at),
-            accumulated_force: mem.f32(at + 4),
-            response: mem.f32(at + 8),
-            divisor: mem.f32(at + 12),
+            multiplier: self.f32(at),
+            accumulated_force: self.f32(at + 4),
+            response: self.f32(at + 8),
+            divisor: self.f32(at + 12),
         }
     }
 
     fn store_force_terms(&mut self, at: u32, value: ForceTerms) {
-        let mem = self;
-        mem.set_f32(at, value.multiplier);
-        mem.set_f32(at + 4, value.accumulated_force);
-        mem.set_f32(at + 8, value.response);
-        mem.set_f32(at + 12, value.divisor);
+        self.set_f32(at, value.multiplier);
+        self.set_f32(at + 4, value.accumulated_force);
+        self.set_f32(at + 8, value.response);
+        self.set_f32(at + 12, value.divisor);
     }
 
     fn load_heat_capacity(&self, at: u32) -> HeatCapacity {
