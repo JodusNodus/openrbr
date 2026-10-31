@@ -559,6 +559,7 @@ fn shown(interior: &[Mesh]) -> Vec<Tri> {
 
 /// Whether none of the `shown` triangles lies nearer than `distance` to `mount`'s eye along [`COCKPIT_LOOK`].
 fn clear(shown: &[Tri], mount: Mount, distance: f32) -> bool {
+    let shown = near(shown, mount.eye, distance);
     let (ahead, right, up) = axes(mount);
     COCKPIT_LOOK.iter().all(|&x| {
         COCKPIT_LOOK_UP.iter().all(|&y| {
@@ -574,6 +575,7 @@ fn clear(shown: &[Tri], mount: Mount, distance: f32) -> bool {
 /// eye [`SHAKE_DIP`] lower, along [`FRAME_COLUMNS`] by [`FRAME_ROWS`] lines across the default frame
 /// ([`coords::FOV_DEGREES`] across at 16:9, edges included).
 fn frame_clear(shown: &[Tri], mount: Mount, distance: f32) -> bool {
+    let shown = near(shown, mount.eye, distance + SHAKE_DIP);
     let (ahead, right, up) = axes(mount);
     let eyes = [mount.eye, mount.eye - Vec3::Y * SHAKE_DIP];
     let across = (coords::FOV_DEGREES.to_radians() * 0.5).tan();
@@ -590,6 +592,17 @@ fn frame_clear(shown: &[Tri], mount: Mount, distance: f32) -> bool {
             })
         })
     })
+}
+
+/// The `shown` triangles whose boxes come within `reach` of `eye` (and 1 cm for the rounding): no other lies nearer
+/// than `reach` along any line from it. The cockpit's lines tested against every interior triangle took 0.4 s a car.
+fn near(shown: &[Tri], eye: Vec3, reach: f32) -> Vec<Tri> {
+    let reach = reach + 0.01;
+    let within = |t: &[Vec3; 3]| {
+        let (low, high) = (t[0].min(t[1]).min(t[2]), t[0].max(t[1]).max(t[2]));
+        (low - eye).max(eye - high).max(Vec3::ZERO).length() <= reach
+    };
+    shown.iter().filter(|(t, _)| within(t)).copied().collect()
 }
 
 /// `mount`'s ahead, right and up, unit.
