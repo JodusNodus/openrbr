@@ -14,6 +14,7 @@
 //!
 //! Only the record table is read here; the data is sliced on demand by [`file_data`].
 
+use crate::le::u32_at;
 use std::fmt::{self, Display, Formatter};
 
 pub const MAGIC: &[u8; 8] = b"CHELALIC";
@@ -69,11 +70,6 @@ impl Display for Error {
 }
 
 impl std::error::Error for Error {}
-
-fn u32_at(bytes: &[u8], at: usize) -> Option<u32> {
-    let b = bytes.get(at..at.checked_add(4)?)?;
-    Some(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
-}
 
 /// Reads the record table of a whole archive. Entries come out in file order.
 pub fn parse(bytes: &[u8]) -> Result<Vec<Entry>, Error> {

@@ -31,6 +31,7 @@
 //! definition is the only unparsed region), so trailing or overlapping
 //! data is an error. All reads are bounds-checked.
 
+use crate::le::{self, Truncated, bytes_at, floats_of, read_u32_le, u32_of};
 use std::collections::HashSet;
 use std::fmt::{self, Display, Formatter};
 use std::ops::Range;
@@ -234,9 +235,7 @@ pub enum Error {
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Error::Truncated { offset, needed, len } => {
-                write!(f, "truncated at offset {offset}: need {needed} bytes but file is {len} bytes")
-            }
+            Error::Truncated { offset, needed, len } => le::fmt_truncated(f, *offset, *needed, *len),
             Error::BadMagic { found } => write!(f, "bad magic {found:#010x}"),
             Error::BadRoot { offset } => write!(f, "root object at {offset} is not type 4/3"),
             Error::BadCellMode { offset, mode } => {
@@ -264,35 +263,16 @@ impl Display for Error {
 
 impl std::error::Error for Error {}
 
+impl From<Truncated> for Error {
+    fn from(t: Truncated) -> Self {
+        Error::Truncated { offset: t.offset, needed: t.needed, len: t.len }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 struct Span {
     start: usize,
     end: usize,
-}
-
-fn bytes_at(bytes: &[u8], offset: usize, len: usize) -> Result<&[u8], Error> {
-    offset.checked_add(len).and_then(|end| bytes.get(offset..end)).ok_or(Error::Truncated {
-        offset,
-        needed: len,
-        len: bytes.len(),
-    })
-}
-
-fn u32_at(bytes: &[u8], offset: usize) -> Result<u32, Error> {
-    Ok(le_u32(bytes_at(bytes, offset, 4)?))
-}
-
-/// `b` must hold at least 4 bytes (callers take them from `bytes_at`).
-fn le_u32(b: &[u8]) -> u32 {
-    u32::from_le_bytes([b[0], b[1], b[2], b[3]])
-}
-
-fn le_f32(b: &[u8]) -> f32 {
-    f32::from_le_bytes([b[0], b[1], b[2], b[3]])
-}
-
-fn read_floats<const N: usize>(b: &[u8]) -> [f32; N] {
-    std::array::from_fn(|i| le_f32(&b[i * 4..]))
 }
 
 fn read_triangle(b: &[u8]) -> Triangle {
@@ -337,13 +317,13 @@ impl Triangle {
 /// Parses a whole `.col` buffer.
 pub fn parse(bytes: &[u8]) -> Result<ColFile, Error> {
     let header = bytes_at(bytes, 0, FILE_HEADER_LEN)?;
-    let magic = le_u32(header);
+    let magic = u32_of(header);
     if magic != MAGIC {
         return Err(Error::BadMagic { found: magic });
     }
-    let root_off = le_u32(&header[4..]) as usize;
-    let cell_count = le_u32(&header[8..]) as usize;
-    let table_off = le_u32(&header[12..]) as usize;
+    let root_off = u32_of(&header[4..]) as usize;
+    let cell_count = u32_of(&header[8..]) as usize;
+    let table_off = u32_of(&header[12..]) as usize;
     let table_len = cell_count.checked_mul(4).ok_or(Error::Truncated {
         offset: table_off,
         needed: usize::MAX,
@@ -358,12 +338,12 @@ pub fn parse(bytes: &[u8]) -> Result<ColFile, Error> {
     if root_raw[0] != ROOT_SUB || root_raw[1] != ROOT_MODE {
         return Err(Error::BadRoot { offset: root_off });
     }
-    let tree_off = root_off + le_u32(&root_raw[0x10..]) as usize;
-    let mesh_a_off = root_off + le_u32(&root_raw[0x1c..]) as usize;
-    let mesh_a_len = le_u32(&root_raw[0x18..]) as usize;
-    let mesh_b_off = root_off + le_u32(&root_raw[0x24..]) as usize;
-    let mesh_b_len = le_u32(&root_raw[0x20..]) as usize;
-    let wall_word = le_u32(&root_raw[0x14..]) as usize;
+    let tree_off = root_off + u32_of(&root_raw[0x10..]) as usize;
+    let mesh_a_off = root_off + u32_of(&root_raw[0x1c..]) as usize;
+    let mesh_a_len = u32_of(&root_raw[0x18..]) as usize;
+    let mesh_b_off = root_off + u32_of(&root_raw[0x24..]) as usize;
+    let mesh_b_len = u32_of(&root_raw[0x20..]) as usize;
+    let wall_word = u32_of(&root_raw[0x14..]) as usize;
     let wall_off = (wall_word != 0).then_some(root_off + wall_word);
 
     // The brake-wall definition runs from the header to the first following
@@ -390,7 +370,7 @@ pub fn parse(bytes: &[u8]) -> Result<ColFile, Error> {
     let mut cells = Vec::with_capacity(cell_count);
     let mut with_vertices = 0usize;
     for i in 0..cell_count {
-        let cell_off = u32_at(bytes, table_off + 4 * i)? as usize;
+        let cell_off = read_u32_le(bytes, table_off + 4 * i)? as usize;
         let cell = parse_cell(bytes, i, cell_off, &mut spans)?;
         if !cell.vertices.is_empty() {
             with_vertices += 1;
@@ -416,10 +396,10 @@ fn parse_cell(bytes: &[u8], index: usize, off: usize, spans: &mut Vec<Span>) -> 
     if raw[1] != CELL_MODE {
         return Err(Error::BadCellMode { offset: off, mode: raw[1] });
     }
-    let flags = le_u32(&raw[4..]);
-    let vertex_count = le_u32(&raw[8..]) as usize;
-    let vertex_rel = le_u32(&raw[12..]) as usize;
-    let tree_rel = le_u32(&raw[16..]) as usize;
+    let flags = u32_of(&raw[4..]);
+    let vertex_count = u32_of(&raw[8..]) as usize;
+    let vertex_rel = u32_of(&raw[12..]) as usize;
+    let tree_rel = u32_of(&raw[16..]) as usize;
     spans.push(Span { start: off, end: off + CELL_HEADER_LEN });
 
     let vertex_start = off + vertex_rel;
@@ -427,7 +407,7 @@ fn parse_cell(bytes: &[u8], index: usize, off: usize, spans: &mut Vec<Span>) -> 
     if vertex_count > 0 {
         spans.push(Span { start: vertex_start, end: vertex_start + vertex_count * VERTEX_LEN });
     }
-    let vertices = vertex_bytes.chunks_exact(VERTEX_LEN).map(read_floats::<3>).collect();
+    let vertices = vertex_bytes.chunks_exact(VERTEX_LEN).map(floats_of::<3>).collect();
 
     let tree = parse_tree(bytes, off + tree_rel, NO_MASK, spans)?;
     for t in &tree.triangles {
@@ -450,9 +430,9 @@ fn parse_tree(bytes: &[u8], base: usize, mask: u32, spans: &mut Vec<Span>) -> Re
     let mut pending = vec![(base, 0usize)];
     while let Some((off, index)) = pending.pop() {
         let raw = bytes_at(bytes, off, NODE_LEN)?;
-        let bounds = read_floats::<6>(raw);
-        let flags = le_u32(&raw[0x18..]);
-        let pointer = le_u32(&raw[0x1c..]) as usize;
+        let bounds = floats_of::<6>(raw);
+        let flags = u32_of(&raw[0x18..]);
+        let pointer = u32_of(&raw[0x1c..]) as usize;
         let kind = if flags & mask != 0 {
             NodeKind::Placeholder
         } else if flags & COUNT_MASK == 0 {
@@ -494,20 +474,20 @@ const EMPTY_NODE: Node = Node { bounds: [0.0; 6], flags: 0, kind: NodeKind::Empt
 /// node starts (76 of 76 retail definitions).
 fn parse_brake_wall(bytes: &[u8], off: usize) -> Result<Option<BrakeWall>, Error> {
     let head = bytes_at(bytes, off, 0x10)?;
-    let count = le_u32(&head[4..]) as usize;
+    let count = u32_of(&head[4..]) as usize;
     if count == 0 {
         return Ok(None);
     }
-    let points_off = off + le_u32(&head[8..]) as usize;
-    let root_off = off + le_u32(&head[12..]) as usize;
+    let points_off = off + u32_of(&head[8..]) as usize;
+    let root_off = off + u32_of(&head[12..]) as usize;
     let points = bytes_at(bytes, points_off, count * 8)?;
     if points_off + count * 8 != root_off {
         return Err(Error::BrakeWall { offset: off });
     }
     let root = bytes_at(bytes, root_off, 0x18)?;
     Ok(Some(BrakeWall {
-        points: points.chunks_exact(8).map(read_floats::<2>).collect(),
-        root_box: read_floats::<4>(root),
+        points: points.chunks_exact(8).map(floats_of::<2>).collect(),
+        root_box: floats_of::<4>(root),
     }))
 }
 
@@ -517,7 +497,7 @@ fn parse_meshes(bytes: &[u8], off: usize, count: usize, spans: &mut Vec<Span>) -
     }
     let raw = bytes_at(bytes, off, count * MESH_LEN)?;
     spans.push(Span { start: off, end: off + count * MESH_LEN });
-    Ok(raw.chunks_exact(MESH_LEN).map(|m| std::array::from_fn(|c| read_floats::<4>(&m[c * 16..]))).collect())
+    Ok(raw.chunks_exact(MESH_LEN).map(|m| std::array::from_fn(|c| floats_of::<4>(&m[c * 16..]))).collect())
 }
 
 /// Follows a cell's graft path from the root node: `depth` steps, each

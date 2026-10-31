@@ -1,70 +1,18 @@
 //! The `.lbs` chunk walk and the payload readers.
 
 use super::*;
+use crate::le::Reader;
 
-/// A read position inside `bytes`, valid up to `end`. Offsets are absolute
-/// file offsets.
-struct Cursor<'a> {
-    bytes: &'a [u8],
-    pos: usize,
-    end: usize,
+/// A read position inside `bytes`, valid up to `end`. Errors report the
+/// bytes left in scope, not the file length. Offsets are absolute file offsets.
+type Cursor<'a> = Reader<'a, Error>;
+
+fn malformed(c: &Cursor<'_>, what: &'static str) -> Error {
+    Error::Malformed { offset: c.pos(), what }
 }
 
-impl<'a> Cursor<'a> {
-    fn new(bytes: &'a [u8], pos: usize, end: usize) -> Self {
-        Cursor { bytes, pos, end }
-    }
-
-    fn truncated(&self, needed: usize) -> Error {
-        Error::Truncated { offset: self.pos, needed, len: self.end.saturating_sub(self.pos) }
-    }
-
-    fn malformed(&self, what: &'static str) -> Error {
-        Error::Malformed { offset: self.pos, what }
-    }
-
-    fn take(&mut self, n: usize) -> Result<&'a [u8], Error> {
-        let stop = self.pos.checked_add(n).filter(|&s| s <= self.end).ok_or_else(|| self.truncated(n))?;
-        let slice = self.bytes.get(self.pos..stop).ok_or_else(|| self.truncated(n))?;
-        self.pos = stop;
-        Ok(slice)
-    }
-
-    /// A NUL-terminated string, without the NUL.
-    fn cstring(&mut self) -> Result<&'a [u8], Error> {
-        let rest = self.bytes.get(self.pos..self.end).ok_or_else(|| self.truncated(1))?;
-        let len = rest.iter().position(|&b| b == 0).ok_or_else(|| self.truncated(1))?;
-        let s = self.take(len)?;
-        self.take(1)?;
-        Ok(s)
-    }
-
-    fn u8(&mut self) -> Result<u8, Error> {
-        Ok(self.take(1)?[0])
-    }
-
-    fn u32(&mut self) -> Result<u32, Error> {
-        let b = self.take(4)?;
-        Ok(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
-    }
-
-    fn f32s<const N: usize>(&mut self) -> Result<[f32; N], Error> {
-        let b = self.take(N * 4)?;
-        let mut out = [0.0f32; N];
-        for (i, v) in out.iter_mut().enumerate() {
-            let at = i * 4;
-            *v = f32::from_bits(u32::from_le_bytes([b[at], b[at + 1], b[at + 2], b[at + 3]]));
-        }
-        Ok(out)
-    }
-
-    fn bounds(&mut self) -> Result<Bounds, Error> {
-        Ok(Bounds { center: self.f32s::<3>()?, half_extent: self.f32s::<3>()? })
-    }
-
-    fn is_empty(&self) -> bool {
-        self.pos == self.end
-    }
+fn bounds(c: &mut Cursor<'_>) -> Result<Bounds, Error> {
+    Ok(Bounds { center: c.f32s::<3>()?, half_extent: c.f32s::<3>()? })
 }
 
 /// Parses a whole `.lbs` buffer. Chunks must tile it exactly.
@@ -72,17 +20,17 @@ pub fn parse(bytes: &[u8]) -> Result<Lbs<'_>, Error> {
     let mut chunks = Vec::new();
     let mut pos = 0usize;
     while pos < bytes.len() {
-        let mut head = Cursor::new(bytes, pos, bytes.len());
+        let mut head = Cursor::within(bytes, pos, bytes.len());
         let header_len = head.u32()?;
         if header_len != 8 {
             return Err(Error::Header { offset: pos, len: header_len as usize });
         }
         let kind = (head.u32()?, head.u32()?);
         let payload_len = head.u32()? as usize;
-        let payload_start = head.pos;
+        let payload_start = head.pos();
         let payload = head.take(payload_len)?;
         let payload_end = payload_start + payload.len();
-        chunks.push(chunk(kind, Cursor::new(bytes, payload_start, payload_end))?);
+        chunks.push(chunk(kind, Cursor::within(bytes, payload_start, payload_end))?);
         pos = payload_end;
     }
     Ok(Lbs { chunks })
@@ -107,12 +55,12 @@ fn chunk<'a>(kind: (u32, u32), mut c: Cursor<'a>) -> Result<Chunk<'a>, Error> {
         TRACK_VECTORS => Chunk::TrackVectors(track_vectors(&mut c)?),
         VISIBLE_OBJECTS => Chunk::VisibleObjects(visible_objects(&mut c)?),
         _ => {
-            let data = c.take(c.end - c.pos)?;
+            let data = c.take(c.remaining())?;
             return Ok(Chunk::Other { kind, data });
         }
     };
     if !c.is_empty() {
-        return Err(c.malformed("payload bytes after the last record"));
+        return Err(malformed(&c, "payload bytes after the last record"));
     }
     Ok(parsed)
 }
@@ -135,12 +83,12 @@ fn geometry_block<'a>(c: &mut Cursor<'a>) -> Result<GeometryBlock<'a>, Error> {
     let chunk_count = c.u32()?;
     let mut chunks = Vec::new();
     for _ in 0..chunk_count {
-        let at = c.pos;
+        let at = c.pos();
         let record: &[u8; RENDER_CHUNK_LEN] =
             c.take(RENDER_CHUNK_LEN)?.try_into().map_err(|_| c.truncated(RENDER_CHUNK_LEN))?;
         chunks.push(render_chunk(record, at)?);
     }
-    let bounds = c.bounds()?;
+    let bounds = bounds(c)?;
     Ok(GeometryBlock { views, chunks, bounds })
 }
 
@@ -154,12 +102,12 @@ fn geometry_view<'a>(c: &mut Cursor<'a>, stride: usize) -> Result<Option<Buffers
         return Ok(None);
     }
     if index_count & 0x8000_0000 != 0 {
-        return Err(c.malformed("view index count has bit 31 set"));
+        return Err(malformed(&c, "view index count has bit 31 set"));
     }
     let indices = c.take((index_count as usize).saturating_mul(2))?;
     let vertex_count = c.u32()?;
     if vertex_count & 0xf000_0000 != 0 {
-        return Err(c.malformed("view vertex count has flag bits set"));
+        return Err(malformed(&c, "view vertex count has flag bits set"));
     }
     let vertex_count = vertex_count as usize;
     let vertices = c.take(vertex_count.saturating_mul(stride))?;
@@ -236,7 +184,7 @@ fn interactive_objects<'a>(c: &mut Cursor<'a>) -> Result<InteractiveObjects<'a>,
     let object_count = c.u32()?;
     let mut objects = Vec::new();
     for _ in 0..object_count {
-        let name = c.cstring()?;
+        let name = c.take_cstr()?;
         let flag = c.u8()?;
         let draw_count = c.u32()?;
         let mut draws = Vec::new();
@@ -249,12 +197,12 @@ fn interactive_objects<'a>(c: &mut Cursor<'a>) -> Result<InteractiveObjects<'a>,
             let stride = c.u32()?;
             let index_count = c.u32()? as usize;
             let index_bytes =
-                index_count.checked_mul(2).ok_or_else(|| c.malformed("interactive index byte count overflow"))?;
+                index_count.checked_mul(2).ok_or_else(|| malformed(&c, "interactive index byte count overflow"))?;
             let indices = c.take(index_bytes)?;
             let vertex_count = c.u32()? as usize;
             let vertex_bytes = vertex_count
                 .checked_mul(vertex_size)
-                .ok_or_else(|| c.malformed("interactive vertex byte count overflow"))?;
+                .ok_or_else(|| malformed(&c, "interactive vertex byte count overflow"))?;
             let vertices = c.take(vertex_bytes)?;
             draws.push(InteractiveDraw {
                 flags,
@@ -281,7 +229,7 @@ fn interactive_objects<'a>(c: &mut Cursor<'a>) -> Result<InteractiveObjects<'a>,
 /// A named face and its items. `with_centre` is set for the sky dome (kind 0), whose items start
 /// with a position.
 fn sky<'a>(c: &mut Cursor<'a>, with_centre: bool) -> Result<Sky<'a>, Error> {
-    let name = c.cstring()?;
+    let name = c.take_cstr()?;
     let count = c.u32()?;
     let mut items = Vec::new();
     for _ in 0..count {
@@ -349,10 +297,10 @@ fn animation_objects<'a>(c: &mut Cursor<'a>) -> Result<AnimationObjects<'a>, Err
     let count = c.u32()? as usize;
     let mut items = Vec::new();
     for _ in 0..count {
-        let name = c.cstring()?;
+        let name = c.take_cstr()?;
         let dwords = [c.u32()?, c.u32()?, c.u32()?];
-        let material_a = c.cstring()?;
-        let material_b = c.cstring()?;
+        let material_a = c.take_cstr()?;
+        let material_b = c.take_cstr()?;
         let mut vectors = [[0.0f32; 3]; 5];
         for v in vectors.iter_mut() {
             *v = c.f32s::<3>()?;
@@ -368,7 +316,7 @@ fn container_objects<'a>(c: &mut Cursor<'a>) -> Result<ContainerObjects<'a>, Err
     let count = c.u32()? as usize;
     let mut items = Vec::new();
     for _ in 0..count {
-        items.push(ContainerObject { name: c.cstring()?, dwords: [c.u32()?, c.u32()?, c.u32()?] });
+        items.push(ContainerObject { name: c.take_cstr()?, dwords: [c.u32()?, c.u32()?, c.u32()?] });
     }
     Ok(ContainerObjects { items })
 }
@@ -403,7 +351,7 @@ fn surface_faces<'a>(c: &mut Cursor<'a>) -> Result<Vec<SurfaceFace<'a>>, Error> 
     let face_count = c.u32()? as usize;
     let mut faces = Vec::new();
     for _ in 0..face_count {
-        let name = c.cstring()?;
+        let name = c.take_cstr()?;
         c.take(1)?;
         let item_count = c.u32()? as usize;
         let mut items = Vec::new();
@@ -456,7 +404,7 @@ fn texture_table<'a>(c: &mut Cursor<'a>) -> Result<TextureTable<'a>, Error> {
         let dynamic = c.u32()? != 0;
         let one_bit_opacity = c.u32()? != 0;
         let opacity_map = c.u32()? != 0;
-        let name = c.cstring()?;
+        let name = c.take_cstr()?;
         entries.push(TextureTableEntry { mip_levels, dynamic, one_bit_opacity, opacity_map, name });
     }
     Ok(TextureTable { entries })
@@ -466,8 +414,8 @@ fn texture_table<'a>(c: &mut Cursor<'a>) -> Result<TextureTable<'a>, Error> {
 fn visible_objects(c: &mut Cursor<'_>) -> Result<VisibleObjects, Error> {
     const RECORD: usize = 4 * 12 + 3 * 4;
     let mut records = Vec::new();
-    while c.pos < c.end {
-        if c.end - c.pos < RECORD {
+    while !c.is_empty() {
+        if c.remaining() < RECORD {
             return Err(c.truncated(RECORD));
         }
         let mut vectors = [[0.0f32; 3]; 4];
@@ -496,7 +444,7 @@ fn object_item<'a>(c: &mut Cursor<'a>) -> Result<ObjectItem<'a>, Error> {
             let count = c.u32()? as usize;
             SecondIndices::Own(c.take(count.saturating_mul(2))?)
         }
-        _ => return Err(c.malformed("object item index flag is not 0, 1 or 2")),
+        _ => return Err(malformed(&c, "object item index flag is not 0, 1 or 2")),
     };
     let vertex_count = c.u32()? as usize;
     let (box_words, box_extra) = if has_box {
@@ -507,7 +455,7 @@ fn object_item<'a>(c: &mut Cursor<'a>) -> Result<ObjectItem<'a>, Error> {
         (None, None)
     };
     let vertices = c.take(vertex_count.saturating_mul(stride))?;
-    let bounds = c.bounds()?;
+    let bounds = bounds(c)?;
     Ok(ObjectItem {
         flags,
         kind,

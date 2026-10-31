@@ -35,6 +35,7 @@
 //! The strings bank names the ids (`event:/engine_int`): `STDT` holds a radix tree of path pieces, the ids, and
 //! for each id the tree node that ends its path.
 
+use crate::le::{f32_at, u16_at, u32_at};
 use std::collections::HashMap;
 use std::fmt;
 use std::ops::Range;
@@ -217,18 +218,6 @@ impl Bank {
 enum Node<'a> {
     Chunk([u8; 4], &'a [u8]),
     List([u8; 4], Vec<Node<'a>>),
-}
-
-fn u16_at(b: &[u8], at: usize) -> Option<u16> {
-    Some(u16::from_le_bytes(b.get(at..at + 2)?.try_into().ok()?))
-}
-
-fn u32_at(b: &[u8], at: usize) -> Option<u32> {
-    Some(u32::from_le_bytes(b.get(at..at + 4)?.try_into().ok()?))
-}
-
-fn f32_at(b: &[u8], at: usize) -> Option<f32> {
-    u32_at(b, at).map(f32::from_bits)
 }
 
 fn id_at(b: &[u8], at: usize) -> Option<Id> {

@@ -30,13 +30,13 @@ use super::*;
 /// pairs would corrupt (the second visit re-adds the base), surfacing as
 /// [`Error::Truncated`] instead of an access violation.
 pub fn relocate(bytes: &mut [u8], base: u32) -> Result<Relocated, Error> {
-    let magic = u32_at(bytes, 0)?;
+    let magic = read_u32_le(bytes, 0)?;
     if magic != MAGIC {
         return Err(Error::BadMagic { found: magic });
     }
-    let root_off = u32_at(bytes, 4)? as usize;
-    let cell_count = u32_at(bytes, 8)? as usize;
-    let table_off = u32_at(bytes, 12)? as usize;
+    let root_off = read_u32_le(bytes, 4)? as usize;
+    let cell_count = read_u32_le(bytes, 8)? as usize;
+    let table_off = read_u32_le(bytes, 12)? as usize;
     let table_len = cell_count.checked_mul(4).ok_or(Error::Truncated {
         offset: table_off,
         needed: usize::MAX,
@@ -48,8 +48,8 @@ pub fn relocate(bytes: &mut [u8], base: u32) -> Result<Relocated, Error> {
     if root_raw[0] != ROOT_SUB || root_raw[1] != ROOT_MODE {
         return Err(Error::BadRoot { offset: root_off });
     }
-    let tree_off = root_off + le_u32(&root_raw[0x10..]) as usize;
-    let root_vertices = le_u32(&root_raw[0x08..]);
+    let tree_off = root_off + u32_of(&root_raw[0x10..]) as usize;
+    let root_vertices = u32_of(&root_raw[0x08..]);
 
     let mut next_slot: u32 = 0;
     // Next free vertex slot, or [`Error::TooManyCells`] past 0x400.
@@ -71,7 +71,7 @@ pub fn relocate(bytes: &mut [u8], base: u32) -> Result<Relocated, Error> {
     let root_abs = abs_at(base, tree_off)?;
 
     for i in 0..cell_count {
-        let cell_off = u32_at(bytes, table_off + 4 * i)? as usize;
+        let cell_off = read_u32_le(bytes, table_off + 4 * i)? as usize;
         let mode = bytes_at(bytes, cell_off, CELL_HEADER_LEN)?[1];
         if mode == 2 {
             return Err(Error::AlreadyRelocated { offset: cell_off });
@@ -79,16 +79,16 @@ pub fn relocate(bytes: &mut [u8], base: u32) -> Result<Relocated, Error> {
         if mode != CELL_MODE {
             return Err(Error::BadCellMode { offset: cell_off, mode });
         }
-        if u32_at(bytes, cell_off + 8)? == 0 {
+        if read_u32_le(bytes, cell_off + 8)? == 0 {
             out.skipped += 1;
             continue;
         }
         let slot = take_slot(&mut next_slot, &mut out.slotted)?;
         bytes_at_mut(bytes, cell_off + 1, 1)?[0] = 2;
         bytes_at_mut(bytes, cell_off + 2, 2)?.copy_from_slice(&(slot as u16).to_le_bytes());
-        let cell_tree_off = cell_off + u32_at(bytes, cell_off + 16)? as usize;
+        let cell_tree_off = cell_off + read_u32_le(bytes, cell_off + 16)? as usize;
         relocate_tree(bytes, cell_tree_off, abs_at(base, cell_tree_off)?, NO_MASK, slot)?;
-        if graft(bytes, base, root_abs, cell_tree_off, u32_at(bytes, cell_off + 4)?, i)? {
+        if graft(bytes, base, root_abs, cell_tree_off, read_u32_le(bytes, cell_off + 4)?, i)? {
             out.grafted += 1;
         }
     }
@@ -121,8 +121,8 @@ fn relocate_tree(bytes: &mut [u8], tree_off: usize, tree_abs: u32, mask: u32, sl
     let mut pending = vec![tree_off];
     while let Some(off) = pending.pop() {
         let raw = bytes_at_mut(bytes, off, NODE_LEN)?;
-        let flags = le_u32(&raw[0x18..]);
-        let pointer = le_u32(&raw[0x1c..]);
+        let flags = u32_of(&raw[0x18..]);
+        let pointer = u32_of(&raw[0x1c..]);
         if flags & mask != 0 {
             continue;
         }
@@ -164,15 +164,15 @@ fn graft(
     let mut bits = flags;
     for _ in 0..depth - 1 {
         let off = off_at(base, node, len, cell)?;
-        node = u32_at(bytes, off + 0x1c)?.wrapping_add((bits & 1) * NODE_LEN as u32);
+        node = read_u32_le(bytes, off + 0x1c)?.wrapping_add((bits & 1) * NODE_LEN as u32);
         bits >>= 1;
     }
     let off = off_at(base, node, len, cell)?;
-    let target = u32_at(bytes, off + 0x1c)?.wrapping_add((bits & 1) * NODE_LEN as u32);
+    let target = read_u32_le(bytes, off + 0x1c)?.wrapping_add((bits & 1) * NODE_LEN as u32);
     let target_off = off_at(base, target, len, cell)?;
     let head = bytes_at(bytes, cell_tree_off, NODE_LEN)?.to_vec();
     bytes_at_mut(bytes, target_off, NODE_LEN)?.copy_from_slice(&head);
-    let cleared = u32_at(bytes, target_off + 0x18)? & !0x0020_0000;
+    let cleared = read_u32_le(bytes, target_off + 0x18)? & !0x0020_0000;
     put_u32_at(bytes, target_off + 0x18, cleared)?;
     Ok(true)
 }
