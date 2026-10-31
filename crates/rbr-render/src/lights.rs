@@ -183,11 +183,28 @@ pub struct Switch {
     pub lit: bool,
     /// A `lightglass_*` box: the part follows the lamp's glass, not its light.
     pub glass: bool,
+    /// The part takes its lamp by its name ([`Switch::of_part`]): the game never draws it lit, so its texture's colour
+    /// need not be the lamp's (the GC8's brake lamps' is a white reflector).
+    pub named: bool,
 }
 
 impl Switch {
-    /// The switch of a part that is a lamp's, or `None` for any other part.
-    pub fn of_part(part: &Section) -> Option<Switch> {
+    /// The switch of `part`, one of the car's `parts`, when it is a lamp's: by its switch box, or else by its name.
+    /// Ours: many RSF cars switch their rear lamps' lit parts on the `light` or `brake` box, or with
+    /// `Predicate = NotUsed`, so the game never draws them (the tail lamps of 43 installed cars, 2026-10-31). A rear
+    /// lamp's lit part, `e_light_lb_lit` and so on, that the game never draws follows its lamp, and so does its unlit
+    /// pair `e_light_lb` when that one's box does not switch it. A lit part the game always draws stays (the GC8's
+    /// is its reverse lamp's reflector, which glowed white).
+    pub fn of_part(part: &Section, parts: &[Section]) -> Option<Switch> {
+        Switch::of_box(part).or_else(|| {
+            let named = Switch::of_name(&part.name)?;
+            let lit = if named.lit { Some(part) } else { car_parts::section(parts, &format!("{}_lit", part.name)) };
+            lit.filter(|lit| Switch::of_box(lit).is_none() && !shown_at_start(lit)).map(|_| named)
+        })
+    }
+
+    /// The switch a part's box and predicate give, or `None`.
+    fn of_box(part: &Section) -> Option<Switch> {
         if !car_parts::is_switched(part) {
             return None;
         }
@@ -197,7 +214,24 @@ impl Switch {
             "off" => false,
             _ => return None,
         };
-        Some(Switch { kind, lamp, lit, glass })
+        Some(Switch { kind, lamp, lit, glass, named: false })
+    }
+
+    /// The rear lamp a part is by its name: `e_light_lb`, `e_light_rb` and `e_light_m` the tail lamps', with
+    /// `brake_` or `reverse_` after `e_light_` the brake or reverse lamps', and lit with `_lit` after.
+    fn of_name(name: &str) -> Option<Switch> {
+        let name = name.to_ascii_lowercase();
+        let (name, lit) = name.strip_suffix("_lit").map_or((name.as_str(), false), |name| (name, true));
+        let lamp = name.strip_prefix("e_light_")?;
+        let lamp_box = if lamp.starts_with("brake_") || lamp.starts_with("reverse_") {
+            lamp.to_owned()
+        } else {
+            format!("light_{lamp}")
+        };
+        match Kind::of_box(&lamp_box)? {
+            (Kind::Front, ..) => None,
+            (kind, lamp, _) => Some(Switch { kind, lamp, lit, glass: false, named: true }),
+        }
     }
 
     /// Whether the part is drawn with `inputs`. The glass is whole unless the game says otherwise.
@@ -208,6 +242,21 @@ impl Switch {
             lit(self.kind, self.lamp, inputs)
         };
         on == self.lit
+    }
+}
+
+/// Whether a part is shown at the stage start. The loader makes a part with `Switch = true` and a non-empty
+/// `SwitchBox` and `Predicate` a `CGeomObjectSwitch` (`FUN_1001fc70`, `FUN_1001fde0`), hidden until its box is set to
+/// its predicate (`FUN_10043090`). `CHH_World`'s vf14 (0x100690a0) sets every box whose name contains `light`, `brake`
+/// or `reverse` to `off` (its table also lists `lightglass` and `brakedisc`, which those already match); other boxes
+/// stay unset. So the unlit lights and brake discs (`Predicate = off`) are drawn and the lit ones are not.
+pub fn shown_at_start(part: &Section) -> bool {
+    let value = |key| part.get(key).filter(|v| !v.is_empty());
+    match (car_parts::is_switched(part), value("SwitchBox"), value("Predicate")) {
+        (true, Some(switch_box), Some(predicate)) => {
+            ["light", "brake", "reverse"].iter().any(|n| switch_box.contains(n)) && predicate == "off"
+        }
+        _ => true,
     }
 }
 
@@ -537,7 +586,7 @@ mod tests {
         assert!(lit(Kind::Front, 0, game) && !lit(Kind::Front, 1, game));
         assert!(lit(Kind::Brake, 0, game), "the game's switch, not the brake word");
         assert!(!lit(Kind::Reverse, 0, game), "the game's switch, not the HUD gear");
-        let glass = |lamp| Switch { kind: Kind::Front, lamp, lit: true, glass: true };
+        let glass = |lamp| Switch { kind: Kind::Front, lamp, lit: true, glass: true, named: false };
         assert!(glass(0).shown(game) && !glass(1).shown(game));
         assert!(glass(1).shown(Inputs::default()), "whole without the game's word");
         let dark = Inputs { game: Some(Lamps { master: 0, ..lamps }), ..game };
@@ -560,14 +609,48 @@ mod tests {
         let [lit_part, brake, glass, horn] = &parts[..] else {
             panic!("four sections");
         };
-        assert_eq!(Switch::of_part(lit_part), Some(Switch { kind: Kind::Front, lamp: 0, lit: true, glass: false }));
-        assert_eq!(Switch::of_part(brake), Some(Switch { kind: Kind::Brake, lamp: 0, lit: false, glass: false }));
-        assert_eq!(Switch::of_part(glass), Some(Switch { kind: Kind::Front, lamp: 0, lit: true, glass: true }));
-        assert_eq!(Switch::of_part(horn), None);
-        let unlit_brake = Switch { kind: Kind::Brake, lamp: 0, lit: false, glass: false };
+        assert_eq!(
+            Switch::of_part(lit_part, &parts),
+            Some(Switch { kind: Kind::Front, lamp: 0, lit: true, glass: false, named: false })
+        );
+        assert_eq!(
+            Switch::of_part(brake, &parts),
+            Some(Switch { kind: Kind::Brake, lamp: 0, lit: false, glass: false, named: false })
+        );
+        assert_eq!(
+            Switch::of_part(glass, &parts),
+            Some(Switch { kind: Kind::Front, lamp: 0, lit: true, glass: true, named: false })
+        );
+        assert_eq!(Switch::of_part(horn, &parts), None);
+        let unlit_brake = Switch { kind: Kind::Brake, lamp: 0, lit: false, glass: false, named: false };
         assert!(unlit_brake.shown(Inputs::default()));
         assert!(!unlit_brake.shown(Inputs { brake: 0.5, ..Inputs::default() }));
-        assert!(!Switch { kind: Kind::Front, lamp: 1, lit: false, glass: false }.shown(Inputs::default()));
+        assert!(!Switch { kind: Kind::Front, lamp: 1, lit: false, glass: false, named: false }.shown(Inputs::default()));
+    }
+
+    #[test]
+    fn rear_lamp_parts_the_game_never_lights_follow_their_lamp_by_name() {
+        let parts = sections(
+            "[e_light_lb]\r\nSwitch = false\r\nSwitchBox = light\r\nPredicate = off\r\n\
+             [e_light_lb_lit]\r\nSwitch = true\r\nSwitchBox = light_lb\r\nPredicate = NotUsed\r\n\
+             [e_light_brake_rb_lit]\r\nSwitch = true\r\nSwitchBox = brake\r\nPredicate = on\r\n\
+             [e_light_reverse_lb]\r\nSwitch = false\r\nSwitchBox = reverse_lb\r\nPredicate = off\r\n\
+             [e_light_reverse_lb_lit]\r\nSwitch = true\r\nSwitchBox = reverse_lb\r\nPredicate = on\r\n\
+             [e_light_rb]\r\nSwitch = true\r\nSwitchBox = light\r\nPredicate = NotUsed\r\n\
+             [e_light_rb_lit]\r\nSwitch = false\r\nSwitchBox = light\r\nPredicate = NotUsed\r\n\
+             [e_light_m]\r\nSwitch = false\r\nSwitchBox = light\r\nPredicate = NotUsed\r\n\
+             [e_light_lf_lit]\r\nSwitch = true\r\nSwitchBox = light\r\nPredicate = on\r\n",
+        );
+        let switch = |name| Switch::of_part(car_parts::section(&parts, name).unwrap(), &parts);
+        let tail = Switch { kind: Kind::Tail, lamp: 0, lit: true, glass: false, named: true };
+        assert_eq!(switch("e_light_lb_lit"), Some(tail));
+        assert_eq!(switch("e_light_lb"), Some(Switch { lit: false, ..tail }));
+        assert_eq!(switch("e_light_brake_rb_lit"), Some(Switch { kind: Kind::Brake, lamp: 1, ..tail }));
+        assert_eq!(switch("e_light_reverse_lb"), None, "its lit pair has its box");
+        assert_eq!(switch("e_light_rb_lit"), None, "the game always draws it");
+        assert_eq!(switch("e_light_rb"), None, "its lit pair is always drawn");
+        assert_eq!(switch("e_light_m"), None, "no lit pair");
+        assert_eq!(switch("e_light_lf_lit"), None, "the headlights keep their boxes");
     }
 
     #[test]

@@ -357,6 +357,16 @@ swaps the `Predicate = on/off` parts and restarts the flare fade.
   lights).
 - Ours: only headlight records draw a flare; the rear lamps show as their lit parts, which glow (`LAMP_GLOW`) day
   and night. The game's rear sprites read as blobs by day.
+- Ours: a rear lamp's lit part the game never draws (on the `light` or `brake` box, or `Predicate = NotUsed`), named
+  `e_light_lb_lit`, `e_light_brake_lb_lit` and so on, follows its lamp by name, with its unlit pair `e_light_lb` when
+  that one's box does not switch it (`lights::Switch::of_part`, 2026-10-31). Tail and brake ones glow in the records'
+  red (`LAMP_RED`), not their texture's: the GC8's brake parts are white reflectors, the M3 E30's and 911 SC's lit
+  textures light the indicator. 43 installed cars had dark tail lamps (night Sardian M3 chase); the GC8 brakes red
+  (rain Sipirkakim chase 0.6 % RMSE), other reference shots byte-identical. A lit part the game always draws stays
+  as drawn, no glow: the GC8's `e_light_lb_lit` (`Switch = false`) is its reverse lamp's reflector, which glowed white.
+  Still dark: the GC8's and MAZDA 323's tail lamps (that case), the Fiesta Rally2 23 as installed (its `<car>.ini`
+  lacks the `_lit` sections; both car-parts options have them, always drawn), and cars whose model has no `_lit` tail
+  mesh (Focus WRC 2006: its lamp is not seen from behind at all; Delta HF 4WD, Lancer Evo II, Fiesta WRC 2014).
 - Ours: each kind's light at a luminous intensity (headlight hot spot 20000 cd, tail 8, brake 100, reverse 150); a lamp
   in its state since the drive's first frame is settled, not fading (2026-10-25). The rear lamps shine in a flat band
   after ECE R7.

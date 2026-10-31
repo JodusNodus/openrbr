@@ -211,7 +211,7 @@ pub(super) fn bind_group(
             f32::from(u8::from(glow.is_some())),
             f32::from(u8::from(glow.is_some_and(|g| g.alpha))),
             f32::from(u8::from(glow.is_some_and(|g| g.day))),
-            0.0,
+            f32::from(u8::from(key.shade.is_some_and(|s| s.glow_red))),
         ],
         grime: key.shade.map_or([0.0; 4], |s| {
             [

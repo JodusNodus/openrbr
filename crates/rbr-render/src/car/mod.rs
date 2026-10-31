@@ -21,7 +21,7 @@
 //!
 //! Not drawn (see [`Skip`]): ghost parts, the overlay layers `texture_*`, the shadow planes `Plane_*`,
 //! the interior set `i_*` (the game draws it only in the in-car views), parts the car shows only in some
-//! states and hidden at the start (`Switch = true`, [`parts::shown_at_start`]), gravel and snow wheels and spare wheels (the tarmac ones stay at the same
+//! states and hidden at the start (`Switch = true`, [`lights::shown_at_start`]), gravel and snow wheels and spare wheels (the tarmac ones stay at the same
 //! nodes), and parts the 1.02 loader does not build (`k_`, `d_`). Wheels have no physics: they sit at their
 //! nodes.
 
@@ -123,7 +123,7 @@ pub enum Skip {
     Interior,
     /// Not in the interior set ([`load_interior`]): the outside views' parts.
     Exterior,
-    /// A switch part (`Switch = true`) whose box is not in its `Predicate` state at the start ([`parts::shown_at_start`]):
+    /// A switch part (`Switch = true`) whose box is not in its `Predicate` state at the start ([`lights::shown_at_start`]):
     /// the lit lights and the like.
     Switched,
     /// A gravel or snow wheel or spare wheel.
@@ -367,15 +367,16 @@ fn load_set(
         if !built.meshes.is_empty() {
             report.meshes_drawn += 1;
         }
-        let lamp = lights::Switch::of_part(part);
+        let lamp = lights::Switch::of_part(part, &parts);
         let detach = detach_part(&mesh.node.name);
         let wheel = wheel_of(&mesh.node.name).map(|(_, k)| k);
         let mirror = cabin::Mirror::of_part(&mesh.node.name);
         let window = damage::window_slot(&mesh.node.name);
         groups.extend(built.meshes.into_iter().map(|(order, mut placed, effect)| {
-            if lamp.is_some_and(|switch| switch.lit && !switch.glass) {
+            if let Some(switch) = lamp.filter(|switch| switch.lit && !switch.glass) {
                 for shade in placed.draws.iter_mut().filter_map(|draw| draw.state.shade.as_mut()) {
                     shade.glow = true;
+                    shade.glow_red = switch.named && matches!(switch.kind, lights::Kind::Tail | lights::Kind::Brake);
                 }
             }
             if window.is_some() {

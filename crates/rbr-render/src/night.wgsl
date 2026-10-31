@@ -4,6 +4,8 @@
 // (`night_albedo`): moonlight (`frame.moon`) and the lamps light that.
 // A lit lamp's own part glows by this times its texture.
 const LAMP_GLOW: f32 = 1.6;
+// The tail and brake lamps' colour: their records' (255, 0, 0 in 351 of the installed cars' 409, 2026-10-31).
+const LAMP_RED: vec3<f32> = vec3<f32>(1.0, 0.0, 0.0);
 // A backlit texel against its texture (`backlit` in `shader.wgsl`, ours).
 const DIAL_GLOW: f32 = 1.6;
 

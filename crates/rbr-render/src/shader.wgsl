@@ -131,7 +131,8 @@ struct Mode {
     // FresnelMin, FresnelMax, Kf; w 1 when `specular_texture` holds the car's dirt map (`stage::Shade::dirt`).
     fresnel: vec4<f32>,
     // x 1: an emissive mask in `glow_texture` (`backlit`: a dial's, the start board's); y 1 when its alpha counts (not
-    // DXT1); z 1 when it glows by day too (the start board's lamps).
+    // DXT1); z 1 when it glows by day too (the start board's lamps); w 1: a lit lamp's part glows red
+    // (`stage::Shade::glow_red`).
     glow: vec4<f32>,
     // x a glass pane's share of the mud film (`stage::Shade::grime`), 0 for none; y 1: interior glass
     // (`stage::Shade::tint`); z 1 for a wheel's or mud flap's dirt spatter (`stage::Shade::spatter`).
@@ -1052,9 +1053,9 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         colour = colour + cabin_sheen(v, n, view);
     }
     colour = colour + glint;
-    // A lit lamp's part (`stage::Shade::glow`) glows (ours).
+    // A lit lamp's part (`stage::Shade::glow`) glows (ours), a rear lamp's taken by its name in the lamp's red.
     if (lit_class() == 3u) {
-        colour = max(colour, first.rgb * LAMP_GLOW);
+        colour = max(colour, first.rgb * LAMP_GLOW * select(vec3<f32>(1.0), LAMP_RED, mode.glow.w != 0.0));
     }
     colour = backlit(colour, first.rgb, v.uv0, night, dot(n, view));
     // The scrape (`CarPaint`, `CarPaintInt`): the scrape texel times the diffuse light (`t3 * v0`, no highlight or

@@ -83,7 +83,7 @@ fn part_in_set<'a>(name: &str, parts: &'a [Section], interior: bool) -> Result<&
     }
     let part = car_parts::section(parts, name).ok_or(Skip::NoSection)?;
     // A lamp's part is drawn in the state its lamp is in (`lights::Switch`), so only the other switch parts are hidden.
-    if lights::Switch::of_part(part).is_none() && !shown_at_start(part) {
+    if lights::Switch::of_part(part, parts).is_none() && !lights::shown_at_start(part) {
         return Err(Skip::Switched);
     }
     if SURFACE_PARTS.iter().any(|p| name.contains(p)) && !name.contains(SURFACE) {
@@ -93,19 +93,4 @@ fn part_in_set<'a>(name: &str, parts: &'a [Section], interior: bool) -> Result<&
         return Err(Skip::NoShaderSlots);
     }
     Ok(part)
-}
-
-/// Whether a part is shown at the stage start. The loader makes a part with `Switch = true` and a non-empty
-/// `SwitchBox` and `Predicate` a `CGeomObjectSwitch` (`FUN_1001fc70`, `FUN_1001fde0`), hidden until its box is set to
-/// its predicate (`FUN_10043090`). `CHH_World`'s vf14 (0x100690a0) sets every box whose name contains `light`, `brake`
-/// or `reverse` to `off` (its table also lists `lightglass` and `brakedisc`, which those already match); other boxes
-/// stay unset. So the unlit lights and brake discs (`Predicate = off`) are drawn and the lit ones are not.
-fn shown_at_start(part: &Section) -> bool {
-    let value = |key| part.get(key).filter(|v| !v.is_empty());
-    match (car_parts::is_switched(part), value("SwitchBox"), value("Predicate")) {
-        (true, Some(switch_box), Some(predicate)) => {
-            ["light", "brake", "reverse"].iter().any(|n| switch_box.contains(n)) && predicate == "off"
-        }
-        _ => true,
-    }
 }

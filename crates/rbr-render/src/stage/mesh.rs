@@ -181,6 +181,9 @@ pub struct Shade {
     pub glass: bool,
     /// A lit lamp's part (`lights::Switch`): glows (renderer addition).
     pub glow: bool,
+    /// A lit tail or brake lamp's part that takes its lamp by its name (`lights::Switch::named`): glows in the lamp's
+    /// red, not in its texture's colour (ours).
+    pub glow_red: bool,
     /// A window's crack overlay (ours, [`crate::crack_decal`]): its normal comes from the crack texture's alpha, so
     /// the cracks catch the light.
     pub crack: bool,
@@ -215,7 +218,8 @@ impl Shade {
                 | u32::from(self.grime) << 3
                 | u32::from(self.tint) << 11
                 | u32::from(self.spatter) << 12
-                | u32::from(self.window) << 13,
+                | u32::from(self.window) << 13
+                | u32::from(self.glow_red) << 14,
         ]
     }
 }
