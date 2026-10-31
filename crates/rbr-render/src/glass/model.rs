@@ -288,7 +288,7 @@ const MERGE_EVERY: f32 = 1.0 / 60.0;
 const MOST_RADIUS: f32 = 0.02;
 /// The wet film (ours): a grid of [`FILM_CELLS`] over the glass's chart, each 0 (dry) to 1. Rain wets it at
 /// [`FILM_WETS`] a second at full intensity, it dries at [`FILM_DRIES`] a second, and a blade clears what it swept.
-/// The airflow thins it with speed: it holds at most `1 / (1 + speed / FILM_AIRFLOW)` (a third at 24 m/s), losing
+/// The airflow thins it with speed: it holds at most `1 / (1 + speed / FILM_AIRFLOW)` (0.45 at 24 m/s), losing
 /// what is over that at up to [`FILM_BLOWN`] a second.
 pub const FILM_CELLS: [usize; 2] = [48, 24];
 const FILM_WETS: f32 = 0.6;
@@ -895,12 +895,12 @@ mod tests {
         assert!(g.film[cell(towards(0.3, 0.45))] <= FILM_SMEAR + 1e-3, "a blade leaves a thin smear");
         assert!(g.film[cell(towards(1.4, 0.45))] > 0.9);
         assert!(g.film[cell(Vec2::new(0.6, 0.3))] > 0.9);
-        // At 24 m/s the airflow leaves a third of it.
+        // At 24 m/s the airflow leaves 1 / (1 + 24 / FILM_AIRFLOW) of it.
         for _ in 0..1000 {
             g.step(0.01, Conditions { speed: 24.0, ..rain }, 0.5, ALL);
         }
         let out_of_reach = g.film[cell(Vec2::new(0.6, 0.3))];
-        assert!((out_of_reach - 1.0 / 3.0).abs() < 0.02, "{out_of_reach}");
+        assert!((out_of_reach - 1.0 / (1.0 + 24.0 / FILM_AIRFLOW)).abs() < 0.02, "{out_of_reach}");
         // Dry, it all dries off.
         for _ in 0..6000 {
             g.step(0.01, Conditions { gravity: SLOPE, ..Default::default() }, 0.5, ALL);

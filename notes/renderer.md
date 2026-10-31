@@ -518,6 +518,20 @@ not ported.
   3 to 45 % of the light behind through in the mud's hue, its core dark (2026-10-27; glass pass 0.14 ms before and
   after, off frames byte-identical). Cost at 1080p in heavy rain: about 0.8 ms. Tried and dropped: a dashboard
   reflection in the windscreen (user's call).
+- Water redone (ours, 2026-10-31; `lens`, `film_cell`, `ribbon` in `glass.wgsl`; `flow`, `merge` in `model.rs`): a drop, bead or
+  ribbon is clear water, not a white cap: it lays 0.75 (0.55 for a ribbon's weight) of a lens over what is drawn behind it
+  (the pane's haze included; replacing the pixel left drops darker than the hazy glass), the frame seen mirrored through
+  its centre 3x its offset, a thin dark outline (darker below), a lit upper-left side and a small highlight. Pixel offsets
+  come from the quad's screen axes (`Out::pixels`). Beads: two layers a film cell (5 and 2 squares a side), shown for
+  `film^0.3`; under two pixels a bead has no outline. Film: the frame through a wavy sheet (noise slope, 2 px), 4 taps
+  streaked along the airflow, patchy; no flat veil. Sim: rain radius 1.2 to 7 mm (cubed), 800/m2/s still; each drop grips its
+  own (0.7 to 1.5), runs down to 0.6 of its pin, slides faster as r^2 (at most 0.6 m/s); drops that touch merge (volume kept,
+  every 1/60 s, swept by x); drops from 2.2 mm lay a ribbon (kind 7, 2.5 s) every four radii from their own volume and a
+  bead beside it (5 s), so they shrink and stop; a blade leaves 0.1 of the film. Wiper schedule and drizzle mapping unchanged.
+  Cost at 1080p heavy rain (GC8 Luceram, `--profile --frames 120`): "particles, rain" 1.12 to 1.18 ms, drawn-only frame 7.88 to
+  7.98 ms. Dry and snow cockpits and chases byte-identical. Open: heavy rain at a stop reads less speckled than before (fewer
+  tiny white specks, by design); the 131 Abarth shows no windscreen water at night (its glass is not charted, as before);
+  `--sequence` with `--live` now ends on `--at` (the car moves between frames; before it started there and stood still).
 - Beads (ours, 2026-10-26): the film's cells draw the small drops too many to be drops of their own (5x5 squares a
   cell, a lens like the drops'). The film builds to the rain's amount, less with the airflow, and the wipers clear
   the beads with it (drops alone covered 1.3-2.1% after 12 s; more drops cost ~5 ms a step at 100 km/h). Shows with
