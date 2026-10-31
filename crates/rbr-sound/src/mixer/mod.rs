@@ -581,7 +581,7 @@ impl Mixer {
                 Command::ShotAt { shot, gain, pan } => self.shot(shot, gain, Some(pan)),
                 Command::Effect { shot, gain, pitch, repeat } => self.effect(shot, gain, pitch, repeat),
                 Command::Hit { shot, gain, pitch, distance } => {
-                    // Hits are the body's knocks; the other effects fall through as plain one-shots do.
+                    // Hits are the body's knocks, the banks without a family; any other shot is not a hit.
                     let Some((bank, i, place, None)) = self.bank_of(shot) else { continue };
                     let wave = (!bank.is_empty()).then(|| bank[i % bank.len()].clone());
                     if let Some(wave) = wave.filter(|_| self.make(shot)) {
