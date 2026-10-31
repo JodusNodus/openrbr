@@ -20,11 +20,11 @@
 use std::fs::{self, File};
 use std::io::{self, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 
 use rbr_formats::{rbz, rsf};
 
-use crate::disc_install::{Job, Progress, Temp};
+use crate::job::{Counter, Job, Progress, Temp};
 use crate::pages::{GOOD, WARN};
 use crate::Form;
 
@@ -92,25 +92,6 @@ pub(crate) fn safe_path(name: &str) -> Option<Vec<&str>> {
 pub(crate) fn safe_folder(name: &str) -> Option<String> {
     let name = name.trim();
     (!name.is_empty() && !name.starts_with('.') && safe_path(name)?.len() == 1).then(|| name.to_owned())
-}
-
-/// Counts the bytes written of all, reports them, and stops when cancelled.
-struct Counter<'a> {
-    done: u64,
-    total: u64,
-    report: &'a (dyn Fn(&Progress) + Sync),
-    cancel: &'a AtomicBool,
-}
-
-impl Counter<'_> {
-    fn add(&mut self, n: u64) -> Result<(), Fail> {
-        self.done += n;
-        (self.report)(&Progress { step: "Adding cars", done: self.done, total: self.total });
-        match self.cancel.load(Ordering::Relaxed) {
-            true => Err("cancelled".into()),
-            false => Ok(()),
-        }
-    }
 }
 
 /// Writes `reader` to `dest`/`parts`, making its folders.
@@ -481,13 +462,12 @@ pub fn add_downloads(
         |a: Option<&Path>, open: fn(&Path) -> Result<Archive, Fail>| a.and_then(|a| open(a).ok()).map_or(0, |a| a.size);
     let archives = |d: &Download| size(d.model.as_deref(), Archive::model) + size(d.banks.as_deref(), Archive::banks);
     let total = downloads.iter().map(|d| physics(d) + archives(d)).sum();
-    let mut count = Counter { done: 0, total, report, cancel };
+    let mut count = Counter { step: "Adding cars", done: 0, total, report, cancel };
     count.add(0)?;
     let mut list = list(cars_dir);
     let mut added = Vec::new();
     for download in downloads {
-        let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
-        let temp = Temp(cars_dir.join(format!(".adding-{}-{stamp}", std::process::id())));
+        let temp = Temp::create(cars_dir, "adding")?;
         let result = add_one(cars_dir, &temp.0, download, &mut list, &mut count);
         drop(temp);
         let name = download.physics.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();

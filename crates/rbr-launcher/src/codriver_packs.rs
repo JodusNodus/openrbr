@@ -34,9 +34,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use rbr_formats::rsf::{codriver, pacenotes};
 
 use crate::car_packs::{safe_folder, safe_path};
-use crate::disc_install::{Job, Progress, Temp};
+use crate::job::{Job, Progress, Temp};
 use crate::pages::{GOOD, WARN};
-use crate::{install, Form};
+use crate::Form;
 
 /// The folders in the player's folder with the owned packs.
 pub const VOICES_DIR: &str = "codrivers";
@@ -638,9 +638,7 @@ fn stage(home: &Path, dir: &str, name: &str) -> Result<Staged, Fail> {
     let base = home.join(dir);
     fs::create_dir_all(&base).map_err(|e| format!("{}: {e}", base.display()))?;
     let dest = free_dir(&base, &safe_folder(name).unwrap_or_else(|| "pack".to_owned()));
-    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
-    let temp = Temp(base.join(format!(".import-{}-{stamp}", std::process::id())));
-    fs::create_dir(&temp.0).map_err(|e| format!("{}: {e}", temp.0.display()))?;
+    let temp = Temp::create(&base, "import")?;
     let staged = temp.0.join("pack");
     fs::create_dir(&staged).map_err(|e| format!("{}: {e}", staged.display()))?;
     Ok(Staged { _temp: temp, staged, dest })
@@ -1199,7 +1197,7 @@ impl Form {
                 )
                 .clicked()
             {
-                if let Some(src) = install::pick_folder("The co-driver download's folder") {
+                if let Some(src) = crate::job::pick_folder("The co-driver download's folder") {
                     self.import_codriver_from(src);
                 }
             }
@@ -1211,7 +1209,7 @@ impl Form {
                 )
                 .clicked()
             {
-                if let Some(src) = crate::disc_install::pick_file("The co-driver download's .zip/.7z archive") {
+                if let Some(src) = crate::job::pick_file("The co-driver download's .zip/.7z archive") {
                     self.import_codriver_from(src);
                 }
             }
@@ -1795,7 +1793,7 @@ mod tests {
 
     #[test]
     fn owned_packs_list_with_their_problems() {
-        use crate::disc_install::Progress;
+        use crate::job::Progress;
         use std::sync::atomic::AtomicBool;
         let dir = temp("list");
         let src = dir.join("voice");

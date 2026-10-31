@@ -17,15 +17,13 @@ use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{self, BufReader, Cursor, Read, Seek, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
-use std::thread::JoinHandle;
-use std::time::Duration;
+use std::sync::Mutex;
 
 use rbr_formats::installshield::Cabinet;
 use rbr_formats::{installshield, iso9660, rbz};
 
+use crate::job::{Job, Progress, Temp};
 use crate::pages::{GOOD, WARN};
 
 /// A few files per input that show it is what we expect (ignoring case). Other disc releases may differ.
@@ -74,23 +72,6 @@ pub struct Inputs {
     pub out: PathBuf,
 }
 
-/// What the setup is doing: a step and the bytes written of all.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Progress {
-    pub step: &'static str,
-    pub done: u64,
-    pub total: u64,
-}
-
-impl Progress {
-    pub fn line(&self) -> String {
-        match self.total {
-            0 => format!("{}…", self.step),
-            total => format!("{}… {} of {} MB", self.step, self.done >> 20, total >> 20),
-        }
-    }
-}
-
 /// The files written from each input (the patch and NGP replace some retail files).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Counts {
@@ -124,7 +105,7 @@ fn missing<'a>(have: &HashSet<String>, wanted: &[&'a str]) -> Vec<&'a str> {
 }
 
 /// Each of `paths` and their folders, lowercase.
-fn with_folders<'a>(paths: impl IntoIterator<Item = &'a str>) -> HashSet<String> {
+pub(crate) fn with_folders<'a>(paths: impl IntoIterator<Item = &'a str>) -> HashSet<String> {
     let mut set = HashSet::new();
     for path in paths {
         let path = path.to_lowercase();
@@ -138,7 +119,7 @@ fn with_folders<'a>(paths: impl IntoIterator<Item = &'a str>) -> HashSet<String>
     set
 }
 
-fn require(have: &HashSet<String>, wanted: &[&str], what: String) -> Result<(), Fail> {
+pub(crate) fn require(have: &HashSet<String>, wanted: &[&str], what: String) -> Result<(), Fail> {
     match missing(have, wanted) {
         lacks if lacks.is_empty() => Ok(()),
         lacks => Err(format!("{what} lacks {}: is it the right file?", lacks.join(", "))),
@@ -221,9 +202,9 @@ impl Write for Writer<'_> {
 }
 
 /// Passes the progress on, at most every 8 MB, from the writing threads.
-struct Reporter<'a> {
+pub(crate) struct Reporter<'a> {
     step: &'static str,
-    total: u64,
+    pub(crate) total: u64,
     done: AtomicU64,
     reported: AtomicU64,
     report: &'a (dyn Fn(&Progress) + Sync),
@@ -233,7 +214,7 @@ struct Reporter<'a> {
 }
 
 impl<'a> Reporter<'a> {
-    fn new(report: &'a (dyn Fn(&Progress) + Sync), cancel: &'a AtomicBool) -> Self {
+    pub(crate) fn new(report: &'a (dyn Fn(&Progress) + Sync), cancel: &'a AtomicBool) -> Self {
         Reporter {
             step: "",
             total: 0,
@@ -245,7 +226,7 @@ impl<'a> Reporter<'a> {
         }
     }
 
-    fn step(&mut self, step: &'static str) -> Result<(), Fail> {
+    pub(crate) fn step(&mut self, step: &'static str) -> Result<(), Fail> {
         if self.stopped() {
             return Err("cancelled".into());
         }
@@ -579,14 +560,6 @@ fn is_ngp_archive(bytes: &[u8]) -> bool {
 }
 
 /// Removes the temp folder however the work ends.
-pub struct Temp(pub PathBuf);
-
-impl Drop for Temp {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
-
 /// The free bytes where `dir` is, where the platform tells.
 fn free_bytes(dir: &Path) -> Option<u64> {
     #[cfg(unix)]
@@ -610,7 +583,7 @@ pub fn install(inputs: &Inputs, report: &(dyn Fn(&Progress) + Sync), cancel: &At
             let out = std::path::absolute(&inputs.out).map_err(|e| format!("{}: {e}", inputs.out.display()))?;
             let parent = out.parent().ok_or_else(|| format!("{} has no parent folder", out.display()))?;
             fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
-            let temp = crate::gvrc::temp_in(parent)?;
+            let temp = Temp::create(parent, "downloading")?;
             let package = crate::gvrc::download_ngp_package(&temp.0, report, cancel)?;
             (Some(temp), package)
         }
@@ -646,9 +619,7 @@ fn into_new_folder<T>(
             FREE_BYTES >> 30
         ));
     }
-    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
-    let temp = Temp(parent.join(format!(".rbr-install-{}-{stamp}", std::process::id())));
-    fs::create_dir(&temp.0).map_err(|e| format!("{}: {e}", temp.0.display()))?;
+    let temp = Temp::create(parent, "rbr-install")?;
     let mut reporter = Reporter::new(report, cancel);
     let done = work(&temp.0.join("game"), &mut reporter)?;
     if out.is_dir() {
@@ -772,7 +743,7 @@ fn write_bytes(tree: &mut Tree, rel: &str, bytes: &[u8], reporter: &Reporter) ->
 }
 
 /// Writes `bytes` to `path`, making its folder.
-fn write_to(path: &Path, bytes: &[u8], reporter: &Reporter) -> Result<(), Fail> {
+pub(crate) fn write_to(path: &Path, bytes: &[u8], reporter: &Reporter) -> Result<(), Fail> {
     let error = |e: io::Error| format!("{}: {e}", path.display());
     fs::create_dir_all(path.parent().unwrap_or(path)).map_err(error)?;
     let mut out = Writer::create(path, reporter).map_err(error)?;
@@ -883,76 +854,6 @@ fn size(path: &Path) -> (usize, u64) {
     }
 }
 
-/// The platform's file dialog, as `install::pick_folder`; `None` when it is cancelled or there is none.
-pub(crate) fn pick_file(prompt: &str) -> Option<String> {
-    let run = |program: &str, args: &[&str]| {
-        let out = rbr_render::console::no_window(&mut Command::new(program)).args(args).output().ok()?;
-        let path = String::from_utf8(out.stdout).ok()?.trim().to_owned();
-        (out.status.success() && !path.is_empty()).then_some(path)
-    };
-    if cfg!(target_os = "macos") {
-        run("osascript", &["-e", &format!("POSIX path of (choose file with prompt \"{prompt}\")")])
-    } else if cfg!(windows) {
-        let script =
-            "Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.OpenFileDialog; \
-                      if ($d.ShowDialog() -eq 'OK') { $d.FileName }";
-        run("powershell", &["-NoProfile", "-Command", script])
-    } else {
-        run("zenity", &["--file-selection", &format!("--title={prompt}")])
-            .or_else(|| run("kdialog", &["--getopenfilename"]))
-    }
-}
-
-/// Work running on its thread with a progress line and Cancel: the disc setup, and adding car packs
-/// (`car_packs`).
-pub struct Job<T> {
-    progress: Arc<Mutex<Progress>>,
-    cancel: Arc<AtomicBool>,
-    thread: Option<JoinHandle<Result<T, Fail>>>,
-}
-
-impl<T: Send + 'static> Job<T> {
-    /// Runs `work` with its progress report and its cancel flag.
-    pub fn start(
-        work: impl FnOnce(&(dyn Fn(&Progress) + Sync), &AtomicBool) -> Result<T, Fail> + Send + 'static,
-    ) -> Job<T> {
-        let progress = Arc::new(Mutex::new(Progress::default()));
-        let cancel = Arc::new(AtomicBool::new(false));
-        let (shared, stop) = (progress.clone(), cancel.clone());
-        let thread = std::thread::spawn(move || work(&|p| *shared.lock().unwrap() = p.clone(), &stop));
-        Job { progress, cancel, thread: Some(thread) }
-    }
-
-    /// The work's result, once it has ended.
-    fn result(&mut self) -> Option<Result<T, Fail>> {
-        if !self.thread.as_ref()?.is_finished() {
-            return None;
-        }
-        Some(self.thread.take()?.join().unwrap_or_else(|_| Err("it stopped unexpectedly".into())))
-    }
-
-    /// The spinner, the progress line and Cancel; the result once the work has ended.
-    pub fn ui(&mut self, ui: &mut egui::Ui) -> Option<Result<T, Fail>> {
-        ui.spinner();
-        ui.label(self.progress.lock().unwrap().line());
-        if ui.button("Cancel").clicked() {
-            self.cancel.store(true, Ordering::Relaxed);
-        }
-        ui.ctx().request_repaint_after(Duration::from_millis(200));
-        self.result()
-    }
-}
-
-impl<T> Drop for Job<T> {
-    /// Closing the window cancels the work and waits for it to remove its temp folder.
-    fn drop(&mut self) {
-        self.cancel.store(true, Ordering::Relaxed);
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
-        }
-    }
-}
-
 /// The disc setup of `inputs` as a [`Job`].
 fn setup_job(inputs: Inputs) -> Job<Counts> {
     Job::start(move |report, cancel| install(&inputs, report, cancel))
@@ -1014,7 +915,7 @@ impl DiscSetup {
                         ui.horizontal(|ui| {
                             ui.add(egui::TextEdit::singleline(field).hint_text(hint).desired_width(420.0));
                             if ui.button("Choose…").clicked() {
-                                if let Some(path) = pick_file(prompt) {
+                                if let Some(path) = crate::job::pick_file(prompt) {
                                     *field = path;
                                 }
                             }
@@ -1026,7 +927,7 @@ impl DiscSetup {
                         let hint = "a new or empty folder";
                         ui.add(egui::TextEdit::singleline(&mut self.out).hint_text(hint).desired_width(420.0));
                         if ui.button("Choose…").clicked() {
-                            if let Some(dir) = crate::install::pick_folder("The new game folder") {
+                            if let Some(dir) = crate::job::pick_folder("The new game folder") {
                                 self.out = dir;
                             }
                         }

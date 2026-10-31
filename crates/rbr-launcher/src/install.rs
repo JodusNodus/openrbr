@@ -13,7 +13,6 @@
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use rbr_formats::rbz;
 
@@ -130,27 +129,6 @@ pub fn ngp_label(revision: Option<u32>) -> String {
         Some(779) => "NGP 7.5.779".to_owned(),
         Some(n) => format!("NGP revision {n}"),
         None => "NGP".to_owned(),
-    }
-}
-
-/// The platform's folder dialog with `prompt` (`osascript` on macOS, PowerShell on Windows, `zenity` or `kdialog`
-/// elsewhere); `None` when it is cancelled or there is none.
-pub fn pick_folder(prompt: &str) -> Option<String> {
-    let run = |program: &str, args: &[&str]| {
-        let out = rbr_render::console::no_window(&mut Command::new(program)).args(args).output().ok()?;
-        let path = String::from_utf8(out.stdout).ok()?.trim().to_owned();
-        (out.status.success() && !path.is_empty()).then_some(path)
-    };
-    if cfg!(target_os = "macos") {
-        run("osascript", &["-e", &format!("POSIX path of (choose folder with prompt \"{prompt}\")")])
-    } else if cfg!(windows) {
-        let script =
-            "Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; \
-                      if ($d.ShowDialog() -eq 'OK') { $d.SelectedPath }";
-        run("powershell", &["-NoProfile", "-Command", script])
-    } else {
-        run("zenity", &["--file-selection", "--directory", &format!("--title={prompt}")])
-            .or_else(|| run("kdialog", &["--getexistingdirectory"]))
     }
 }
 
