@@ -2,7 +2,6 @@
 //! and `CCar::Clear480`.
 
 use crate::entities::exclusion::{Excluder, Members};
-use crate::math::vec::Vec4;
 use crate::mem::Mem;
 
 /// A hook that answers 0 (`CEntity` 0x519ac0: `xor eax, eax; ret`).
@@ -18,14 +17,6 @@ pub fn vf_cc() -> u32 {
 /// `CEntity::VfD0` (0x519ea0, slot 52, ret 12): the entity answers 0 whatever its three arguments are.
 pub fn vf_d0() -> u32 {
     0
-}
-
-pub(super) fn load_vec4(mem: &Mem, at: u32) -> [f32; 4] {
-    mem.f32s(at)
-}
-
-pub(super) fn vec4_of(v: [f32; 4]) -> Vec4 {
-    Vec4 { x: v[0], y: v[1], z: v[2], w: v[3] }
 }
 
 /// The exclusion set (`+0x2c`, `[count, members...]`) and the parent (`+0x44`) of a CEntity (`ExclusionTest`).

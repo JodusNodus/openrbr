@@ -1,7 +1,7 @@
 //! Triangle tests: a segment or ray against a triangle's front face, a point behind a face, and the unnormalised
 //! terms the grid builder derives from triangle vertices. Each sum keeps the order its instructions gave.
 
-use crate::fpu::round_x87;
+use crate::fpu::{round_x87, x87_mul_f32 as x87_mul};
 use crate::math::sse;
 use crate::math::vec::Vec3;
 
@@ -205,16 +205,6 @@ const MAX_DEPTH: f32 = 0.5;
 /// Each lane times `s` (`mulss`): a degenerate face's infinite scale makes the indefinite NaN, as the instruction does.
 fn scale_sse(v: Vec3, s: f32) -> Vec3 {
     Vec3 { x: sse::mul(v.x, s), y: sse::mul(v.y, s), z: sse::mul(v.z, s) }
-}
-
-/// An x87 product of two f32 values at the thread's precision, stored as f32 (`fmul`, `fstp`): an invalid product
-/// (0 * inf) is the negative indefinite NaN, as on the x87.
-fn x87_mul(a: f32, b: f32) -> f32 {
-    let product = f64::from(a) * f64::from(b);
-    if product.is_nan() && !a.is_nan() && !b.is_nan() {
-        return f32::from_bits(0xffc0_0000);
-    }
-    round_x87(product) as f32
 }
 
 /// The point against the face `v0, v1, v2`. A hit is a point behind the face (against its normal `e2 x e1`) by 1e-5

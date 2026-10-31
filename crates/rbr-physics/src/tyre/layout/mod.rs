@@ -38,17 +38,12 @@ pub const DEF: u32 = 0x10;
 pub const STATE: u32 = 0x14;
 /// `this+0x170`: the contact frame, rows 0x10 bytes apart (lateral, rolling, normal).
 pub const SLIP_MATRIX: u32 = 0x170;
-/// `this+0x340` and `+0x344`: the sink depth and the carcass compression (`Indentation`), which `Accumulate` blends.
-pub const BLEND_HI: u32 = 0x340;
-pub const BLEND_LO: u32 = 0x344;
 /// `this+0x360`: the contact-plane slip speed `sqrt(s0² + s1²)`, m/s (`m_speed`).
 pub const SPEED: u32 = 0x360;
 /// `this+0x364`: `s0² + s1²` (`m_speedSq`).
 pub const SPEED_SQ: u32 = 0x364;
 /// `this+0x368`, `+0x36c`, `+0x370`: the three slip velocity components (`m_slipX`, `m_slipY`, `m_slipZ`).
 pub const SLIP_X: u32 = 0x368;
-pub const SLIP_Y: u32 = 0x36C;
-pub const SLIP_Z: u32 = 0x370;
 /// `this+0x374`: `R·ω + s1`, the longitudinal velocity of the contact point (`m_contactLongVel`).
 pub const LONG_CONTACT_VEL: u32 = 0x374;
 /// `this+0x378`: the wheel's spin rate ω, rad/s, stored as float bits (`m_spin`).
