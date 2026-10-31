@@ -16,6 +16,11 @@ use crate::effects::EffectGains;
 use crate::scripted::ScriptedGains;
 use crate::world::WorldGains;
 
+/// One frame's mean over its channels: stereo is mixed down (every retail wave is mono).
+pub(crate) fn mono(channels: usize, frame: impl Iterator<Item = f32>) -> f32 {
+    frame.sum::<f32>() / channels as f32
+}
+
 /// A mono sample as floats in the 16-bit range, with its rate.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Wave {
@@ -36,10 +41,7 @@ impl Wave {
         }
         let raw: Vec<i16> = reader.samples::<i16>().collect::<Result<_, _>>().map_err(|e| e.to_string())?;
         let channels = usize::from(spec.channels.max(1));
-        let samples = raw
-            .chunks(channels)
-            .map(|frame| frame.iter().map(|&s| f32::from(s)).sum::<f32>() / channels as f32)
-            .collect();
+        let samples = raw.chunks(channels).map(|frame| mono(channels, frame.iter().map(|&s| f32::from(s)))).collect();
         Ok(Wave { rate: spec.sample_rate, samples })
     }
 
@@ -55,9 +57,7 @@ impl Wave {
         let channels = usize::from(reader.ident_hdr.audio_channels.max(1));
         let mut samples = Vec::new();
         while let Some(packet) = reader.read_dec_packet_itl().map_err(|e| e.to_string())? {
-            samples.extend(
-                packet.chunks(channels).map(|frame| frame.iter().map(|&s| f32::from(s)).sum::<f32>() / channels as f32),
-            );
+            samples.extend(packet.chunks(channels).map(|frame| mono(channels, frame.iter().map(|&s| f32::from(s)))));
         }
         Ok(Wave { rate: reader.ident_hdr.audio_sample_rate, samples })
     }
@@ -467,5 +467,27 @@ mod tests {
         zeroed[24..28].copy_from_slice(&0u32.to_le_bytes());
         // hound itself rejects a zero rate ("inconsistent fmt chunk"); either error rejects the sound.
         assert!(Wave::decode(&zeroed).is_err());
+    }
+
+    fn stereo_wav_bytes() -> Vec<u8> {
+        let mut out = Cursor::new(Vec::new());
+        let spec = hound::WavSpec {
+            channels: 2,
+            sample_rate: 44100,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut writer = hound::WavWriter::new(&mut out, spec).unwrap();
+        for s in [1000i16, 3000, -1000, -3000] {
+            writer.write_sample(s).unwrap();
+        }
+        writer.finalize().unwrap();
+        out.into_inner()
+    }
+
+    #[test]
+    fn stereo_is_mixed_down_to_mono() {
+        let wave = Wave::decode(&stereo_wav_bytes()).unwrap();
+        assert_eq!((wave.rate, wave.samples.as_slice()), (44100, &[2000.0f32, -2000.0][..]));
     }
 }
