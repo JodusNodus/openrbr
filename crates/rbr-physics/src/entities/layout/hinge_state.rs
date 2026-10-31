@@ -15,8 +15,8 @@ use crate::entities::hinge_slip::{SlipHandles, SlipInput};
 use crate::entities::hinge_solve::{ContactHandles, EntryTerms, SolveTerms};
 use crate::entities::hinge_stops::Limits;
 use crate::entities::store::{AdvanceInput, HingeStore, StatePayload};
-use crate::math::Mat3;
 use crate::math::vec::Vec4;
+use crate::math::Mat3;
 use crate::mem::Mem;
 use crate::physics_core;
 

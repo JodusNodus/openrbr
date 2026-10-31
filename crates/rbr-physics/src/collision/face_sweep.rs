@@ -56,13 +56,7 @@ pub fn sweep_faces(grid: &mut impl FaceGrid, start: Vec4, end: Vec3) -> Option<F
         }
         let face = grid.face(index);
         let vertices = grid.vertices(face.vertices);
-        let result = triangle::segment_triangle(
-            start.xyz(),
-            delta,
-            vertices[0],
-            vertices[1],
-            vertices[2],
-        );
+        let result = triangle::segment_triangle(start.xyz(), delta, vertices[0], vertices[1], vertices[2]);
         let Some(distance) = result.t else {
             continue;
         };

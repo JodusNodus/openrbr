@@ -453,7 +453,12 @@ impl EngineStore for Mem {
 
     /// The four words of a `BlendTerms` block at `at` (weight +0, value +4, response +8, scale +0xc).
     fn load_blend_terms(&self, at: u32) -> BlendTerms {
-        BlendTerms { weight: self.f32(at), value: self.f32(at + 4), response: self.f32(at + 8), scale: self.f32(at + 0xc) }
+        BlendTerms {
+            weight: self.f32(at),
+            value: self.f32(at + 4),
+            response: self.f32(at + 8),
+            scale: self.f32(at + 0xc),
+        }
     }
 
     fn store_blend_terms(&mut self, at: u32, block: BlendTerms) {

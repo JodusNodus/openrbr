@@ -559,7 +559,12 @@ impl SpringStore for Mem {
     }
 
     fn load_blend_terms(&self, at: u32) -> BlendTerms {
-        BlendTerms { weight: self.f32(at), value: self.f32(at + 4), response: self.f32(at + 8), scale: self.f32(at + 12) }
+        BlendTerms {
+            weight: self.f32(at),
+            value: self.f32(at + 4),
+            response: self.f32(at + 8),
+            scale: self.f32(at + 12),
+        }
     }
 
     fn store_blend_terms(&mut self, at: u32, value: BlendTerms) {
