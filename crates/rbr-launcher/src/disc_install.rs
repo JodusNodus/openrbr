@@ -853,15 +853,9 @@ mod tests {
         assert_eq!(err, "the NGP package x lacks AudioFMOD: is it the right file?");
     }
 
-    fn temp(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("rbr-disc-install-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        dir
-    }
-
     #[test]
     fn the_tree_keeps_the_first_names_case() {
-        let dir = temp("tree");
+        let dir = crate::test_dir("disc-tree");
         fs::create_dir_all(&dir).unwrap();
         let mut tree = Tree::new(dir.join("game")).unwrap();
         let a = tree.path("PixelShaders/fog/a.pso", false).unwrap();
@@ -878,7 +872,7 @@ mod tests {
     /// backslash-separated and absolute-looking entries land below the folder instead of escaping it.
     #[test]
     fn the_tree_keeps_unsafe_entries_inside() {
-        let dir = temp("unsafe-tree");
+        let dir = crate::test_dir("disc-unsafe-tree");
         fs::create_dir_all(&dir).unwrap();
         let mut tree = Tree::new(dir.join("game")).unwrap();
         for bad in ["C:/x/y", "C:\\x", "..", "../x", "..\\x", "a/../../x", "\\", "a/C:x/b"] {
@@ -893,7 +887,7 @@ mod tests {
 
     #[test]
     fn a_bad_input_leaves_nothing_behind() {
-        let dir = temp("bad");
+        let dir = crate::test_dir("disc-bad");
         fs::create_dir_all(dir.join("full")).unwrap();
         fs::write(dir.join("full/x"), b"x").unwrap();
         fs::write(dir.join("patch.exe"), b"MZ").unwrap();
@@ -924,7 +918,7 @@ mod tests {
             eprintln!("skipping: RBR_DISC, RBR_PATCH_ZIP, RBR_NGP_7Z, RBR_DATA or RBR_PATCH not set");
             return;
         };
-        let dir = temp("e2e");
+        let dir = crate::test_dir("disc-e2e");
         fs::create_dir_all(&dir).unwrap();
         let inputs = Inputs { disc, patch, ngp: Some(ngp), out: dir.join("game") };
 
@@ -1000,7 +994,7 @@ mod tests {
             eprintln!("skipping: RBR_SCREENSHOTS, RBR_DISC, RBR_PATCH_ZIP or RBR_NGP_7Z not set");
             return;
         };
-        let dir = temp("shots");
+        let dir = crate::test_dir("disc-shots");
         fs::create_dir_all(&dir).unwrap();
         let mut folder = String::new();
         let mut setup = DiscSetup::default();

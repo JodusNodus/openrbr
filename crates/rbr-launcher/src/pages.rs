@@ -665,7 +665,7 @@ mod tests {
             eprintln!("skipping: RBR_DATA, RBR_PATCH or RBR_NGP_PHYSICS not set");
             return;
         };
-        let here = std::env::temp_dir().join(format!("rbr-launcher-first-page-{}", std::process::id()));
+        let here = crate::test_dir("pages-first-page");
         std::fs::create_dir_all(&here).unwrap();
         let program = std::env::current_exe().unwrap();
         let form = |archive: &str, programs: bool| {

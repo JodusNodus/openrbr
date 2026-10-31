@@ -478,7 +478,7 @@ mod tests {
 
     #[test]
     fn browsing_keeps_bad_files_visible_and_preserves_the_selection() {
-        let home = std::env::temp_dir().join(format!("rerbr-replay-browser-{}", std::process::id()));
+        let home = crate::test_dir("replay-browser");
         let dir = home.join("replays");
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("123-stage.rrp");

@@ -138,7 +138,7 @@ mod tests {
 
     #[test]
     fn a_folder_without_ngp_or_rsf_gives_the_game_only() {
-        let dir = std::env::temp_dir().join(format!("rbr-launcher-install-{}", std::process::id()));
+        let dir = crate::test_dir("install-folder");
         std::fs::create_dir_all(dir.join("rsfdata")).unwrap();
         let folder = Folder::read(&dir.display().to_string());
         assert_eq!(folder.game.as_deref(), Some(dir.as_path()));
@@ -153,14 +153,15 @@ mod tests {
     /// A folder that does not load is told apart: missing, not the game, or the game without what ReRBR needs.
     #[test]
     fn a_folder_that_does_not_load_says_why() {
-        let dir = std::env::temp_dir().join(format!("rbr-launcher-problem-{}", std::process::id()));
+        let root = crate::test_dir("install-problem");
+        let dir = root.join("game");
         let text = |dir: &Path| problem(&dir.display().to_string());
         assert!(text(&dir).starts_with("There is no such folder"));
         std::fs::create_dir_all(dir.join("Cars")).unwrap();
         assert!(text(&dir).starts_with("This is not a Richard Burns Rally folder"));
         std::fs::create_dir_all(dir.join("Maps")).unwrap();
         assert!(text(&dir).contains("1.02 patch"));
-        std::fs::remove_dir_all(&dir).unwrap();
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     fn env<'a>(vars: &'a [(&str, &Path)]) -> impl Fn(&str) -> Option<PathBuf> + 'a {
@@ -170,7 +171,7 @@ mod tests {
     /// The usual places: the Lutris and Bottles prefixes' among them, and on Windows Program Files'.
     #[test]
     fn the_usual_places_include_the_prefixes() {
-        let home = std::env::temp_dir().join(format!("rbr-launcher-home-{}", std::process::id()));
+        let home = crate::test_dir("install-places");
         let lutris = home.join("Games/rbr/drive_c").join(RBR);
         let bottle = home.join(".local/share/bottles/bottles/RSF/drive_c").join(RBR);
         std::fs::create_dir_all(&lutris).unwrap();

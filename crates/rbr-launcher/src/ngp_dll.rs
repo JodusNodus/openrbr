@@ -89,7 +89,7 @@ mod tests {
     use super::*;
 
     fn root(name: &str) -> PathBuf {
-        let root = std::env::temp_dir().join(format!("rbr-dll-choice-{}-{name}", std::process::id()));
+        let root = crate::test_dir(&format!("dll-{name}"));
         std::fs::create_dir_all(root.join("Plugins")).unwrap();
         root
     }

@@ -1059,9 +1059,7 @@ mod tests {
     /// `a_live_two_stage_championship_runs_through_the_turns` covers a launch end to end).
     #[test]
     fn a_stage_that_never_starts_is_forgotten() {
-        let here = std::env::temp_dir().join(format!("rbr-launcher-abort-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&here);
-        std::fs::create_dir_all(&here).unwrap();
+        let here = crate::test_dir("rally-abort");
         let mut page = RallyPage::new(&Data::new(here.join("data"), None));
         (page.driving, page.practice, page.last_tyre) = (true, false, 5);
         page.abort_stage_start(4);
@@ -1145,9 +1143,7 @@ mod tests {
     fn a_two_stage_championship_carries_damage_repairs_tyres_and_the_setup_in_the_save() {
         let Some(data) = Data::from_env() else { return };
         let table = Season::load(&data).unwrap();
-        let here = std::env::temp_dir().join(format!("rbr-rally-two-stages-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&here);
-        std::fs::create_dir_all(&here).unwrap();
+        let here = crate::test_dir("rally-two-stages");
         let mut page = RallyPage::new(&data);
         page.team = 5;
         let store = page.store(&here);

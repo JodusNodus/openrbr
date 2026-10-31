@@ -602,13 +602,6 @@ mod tests {
         assert_eq!(json("a \"b\" \\ \u{1}"), "\"a \\\"b\\\" \\\\ \\u0001\"");
     }
 
-    fn temp(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("rbr-car-packs-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
-    }
-
     /// A physics pack download: `<Car> - NGP Physics.zip` holding `<pack>/` (or its files at the top).
     fn physics_zip(dir: &Path, car: &str, pack: Option<&str>, credit: &str) {
         let file = File::create(dir.join(format!("{car}{PHYSICS}"))).unwrap();
@@ -642,7 +635,7 @@ mod tests {
     /// same ids) and removed (the shared model stays until its last car goes).
     #[test]
     fn packs_are_added_listed_and_removed() {
-        let root = temp("add");
+        let root = crate::test_dir("car-add");
         let (downloads_dir, cars) = (root.join("downloads"), root.join("cars"));
         fs::create_dir_all(&downloads_dir).unwrap();
         physics_zip(&downloads_dir, "Mitsubishi Lancer Evo IX N4", Some("Evo_IX_N4_ngp6"), "KUBRT");
@@ -742,7 +735,7 @@ mod tests {
     /// A pack with its sound banks: they go to `AudioFMOD/` and in the list, and go when the car is removed.
     #[test]
     fn sound_banks_are_added_and_removed_with_their_car() {
-        let root = temp("banks");
+        let root = crate::test_dir("car-banks");
         let (downloads_dir, cars) = (root.join("downloads"), root.join("cars"));
         fs::create_dir_all(&downloads_dir).unwrap();
         physics_zip(&downloads_dir, "Citroen C2 GT S1600", Some("C2_S1600"), "x");
