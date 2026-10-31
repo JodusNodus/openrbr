@@ -293,7 +293,8 @@ impl Effects {
         }
         self.last = Some((eye, time));
         let (width, height) = (size.0.max(1) as f32, size.1.max(1) as f32);
-        let precipitation = self.precipitation.map_or(0.0, |p| p.intensity);
+        // The shower's share: drizzle reads sparser and fainter than linear, heavy rain as it is.
+        let precipitation = self.precipitation.map_or(0.0, |p| p.shower());
         let snow = self.precipitation.is_some_and(|p| p.snow);
         let sky = (atmosphere.zenith() * sky_level + atmosphere.fog_color) * 0.5;
         let (matrices, shade) = cascades.map_or(([Mat4::IDENTITY; 3], 0.0), |c| (c.matrices, 1.0));
@@ -360,7 +361,8 @@ impl Effects {
         self.draw_with(pass, &self.rain, &self.group, NEAR_COUNT + FAR_COUNT);
     }
 
-    /// Draws the first `layers` drops at full rain or snow (the near layer's come first, `rain.wgsl`).
+    /// Draws the first `layers` drops at full rain or snow (the near layer's come first, `rain.wgsl`). Light rain
+    /// draws its shower's share, sparser than linear; heavy rain and snow draw it all.
     fn draw_with(
         &self,
         pass: &mut wgpu::RenderPass<'_>,
@@ -369,7 +371,7 @@ impl Effects {
         layers: u32,
     ) {
         let Some(precipitation) = self.precipitation else { return };
-        let count = (layers as f32 * precipitation.intensity.clamp(0.0, 1.0)) as u32;
+        let count = (layers as f32 * precipitation.shower().clamp(0.0, 1.0)) as u32;
         if count == 0 {
             return;
         }

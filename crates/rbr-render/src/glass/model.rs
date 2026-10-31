@@ -112,6 +112,9 @@ pub enum Wiping {
 pub const STROKE: f32 = 0.8;
 /// Seconds parked between intermittent sweeps.
 pub const PAUSE: f32 = 2.0;
+/// Light rain at or below this intensity wipes now and then (ours): drizzle (`Rain::Light`, 0.5); moderate (0.75)
+/// and heavy rain wipe continuously, snow always does.
+pub const DRIZZLE_MOST: f32 = 0.6;
 /// The specks of mud from which the automatic wipers clear the dry glass (ours).
 pub const MUD_WIPE: usize = 300;
 
@@ -163,10 +166,13 @@ impl Switch {
 }
 
 impl Wiping {
-    /// Automatic by the weather: continuous in any rain or snow, as in 1.02.
+    /// Automatic by the weather: continuous in rain or snow, as in 1.02 — but for light rain, which wipes now and
+    /// then (ours: drizzle, below [`DRIZZLE_MOST`], takes the intermittent schedule).
     pub fn by_weather(rain: f32, snow: f32) -> Wiping {
         if rain.max(snow) <= 0.0 {
             Wiping::Off
+        } else if rain > 0.0 && snow <= 0.0 && rain <= DRIZZLE_MOST {
+            Wiping::Intermittent
         } else {
             Wiping::Continuous
         }
@@ -827,8 +833,11 @@ mod tests {
     #[test]
     fn wiping_by_weather() {
         assert_eq!(Wiping::by_weather(0.0, 0.0), Wiping::Off);
-        assert_eq!(Wiping::by_weather(0.35, 0.0), Wiping::Continuous);
+        assert_eq!(Wiping::by_weather(0.5, 0.0), Wiping::Intermittent, "drizzle wipes now and then");
+        assert_eq!(Wiping::by_weather(0.75, 0.0), Wiping::Continuous);
+        assert_eq!(Wiping::by_weather(1.0, 0.0), Wiping::Continuous);
         assert_eq!(Wiping::by_weather(0.0, 1.0), Wiping::Continuous);
+        assert_eq!(Wiping::by_weather(0.0, 0.5), Wiping::Continuous, "light snow as before");
         assert_eq!(Wiping::Off.phase(0.4), 0.0);
         let c = Wiping::Continuous;
         assert_eq!(c.phase(0.0), 0.0);
