@@ -6,11 +6,16 @@ use std::time::Duration;
 use egui::{Color32, Id, RichText};
 use rbr_sound::menu::MenuPlayer;
 
+use rbr_gameplay::race_options::{DamageLevel, Skill};
+use rbr_gameplay::season as season_model;
+use rbr_render::renderer::{AntiAliasing, Detail};
+
 use crate::browser;
 use crate::car_browser;
 use crate::catalog::{self, car_label};
+use crate::graphics_page::WetRoads;
+use crate::settings::{Clouds, Fog, Precipitation};
 use crate::settings_page::RSF_FIELD;
-use rbr_gameplay::season as season_model;
 
 use crate::{rally_page, Form};
 
@@ -51,6 +56,156 @@ pub const DRIVE_FIELDS: f32 = 520.0;
 pub const FIELD: f32 = 340.0;
 /// The width of the fields' labels, the same on every section.
 const LABEL: f32 = 130.0;
+/// A dropdown choice: every value offered, its settings word and its label; parsing searches the offered words.
+/// (Switch and Present parse case-insensitively, and Rate's word is not a static table, so those three keep
+/// their own parsing and use [`combo`] with an explicit label.)
+pub trait Choice: Copy + PartialEq + 'static {
+    /// The values offered, in the dropdown's order.
+    const ALL: &[Self];
+    /// The settings file's word (and the viewer argument's, where the viewer takes it).
+    fn name(self) -> &'static str;
+    /// The dropdown's word.
+    fn label(self) -> &'static str;
+    /// The settings word's value; `None` for anything else (unknown text keeps the default).
+    fn parse(text: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|choice| choice.name() == text)
+    }
+}
+
+impl Choice for Fog {
+    const ALL: &[Self] = &Fog::ALL;
+    fn name(self) -> &'static str {
+        match self {
+            Fog::Off => "off",
+            Fog::Light => "light",
+            Fog::Heavy => "heavy",
+        }
+    }
+    fn label(self) -> &'static str {
+        match self {
+            Fog::Off => "Off",
+            Fog::Light => "Light",
+            Fog::Heavy => "Heavy",
+        }
+    }
+}
+
+impl Choice for Clouds {
+    const ALL: &[Self] = &Clouds::ALL;
+    fn name(self) -> &'static str {
+        ["clear", "partly", "light", "heavy"][self as usize]
+    }
+    fn label(self) -> &'static str {
+        ["Clear", "Partly cloudy", "Light clouds", "Overcast"][self as usize]
+    }
+}
+
+impl Choice for Precipitation {
+    const ALL: &[Self] = &Precipitation::ALL;
+    fn name(self) -> &'static str {
+        ["none", "light", "moderate", "heavy"][self as usize]
+    }
+    fn label(self) -> &'static str {
+        ["None", "Light", "Moderate", "Heavy"][self as usize]
+    }
+}
+
+impl Choice for WetRoads {
+    const ALL: &[Self] = &WetRoads::ALL;
+    fn name(self) -> &'static str {
+        match self {
+            WetRoads::Off => "off",
+            WetRoads::Low => "low",
+            WetRoads::Medium => "medium",
+            WetRoads::High => "high",
+        }
+    }
+    fn label(self) -> &'static str {
+        match self {
+            WetRoads::Off => "Off",
+            WetRoads::Low => "Low",
+            WetRoads::Medium => "Medium",
+            WetRoads::High => "High",
+        }
+    }
+}
+
+impl Choice for DamageLevel {
+    const ALL: &[Self] = &DamageLevel::ALL;
+    fn name(self) -> &'static str {
+        DamageLevel::name(self)
+    }
+    fn label(self) -> &'static str {
+        match self {
+            DamageLevel::Off => "Off",
+            DamageLevel::Safe => "Safe",
+            DamageLevel::Reduced => "Reduced",
+            DamageLevel::Realistic => "Realistic",
+        }
+    }
+}
+
+impl Choice for Skill {
+    const ALL: &[Self] = &Skill::ALL;
+    fn name(self) -> &'static str {
+        Skill::name(self)
+    }
+    fn label(self) -> &'static str {
+        Skill::label(self)
+    }
+}
+
+impl Choice for AntiAliasing {
+    const ALL: &[Self] = &AntiAliasing::ALL;
+    fn name(self) -> &'static str {
+        AntiAliasing::name(self)
+    }
+    fn label(self) -> &'static str {
+        match self {
+            AntiAliasing::Taa => "Temporal",
+            AntiAliasing::Off => "Off",
+        }
+    }
+}
+
+impl Choice for Detail {
+    const ALL: &[Self] = &Detail::ALL;
+    fn name(self) -> &'static str {
+        Detail::name(self)
+    }
+    fn label(self) -> &'static str {
+        match self {
+            Detail::High => "High",
+            Detail::Ultra => "Ultra",
+        }
+    }
+}
+
+/// A dropdown of `options` with `label` words, setting `value` ([`Choice::label`] for a [`Choice`]); its button's
+/// response, for hover text.
+pub fn combo<T: Clone + PartialEq, S: Into<String>>(
+    ui: &mut egui::Ui,
+    id: &str,
+    width: impl Into<Option<f32>>,
+    value: &mut T,
+    options: &[T],
+    label: impl Fn(T) -> S,
+) -> egui::Response {
+    let selected: String = label(value.clone()).into();
+    let mut dropdown = egui::ComboBox::from_id_salt(id).selected_text(selected);
+    if let Some(width) = width.into() {
+        dropdown = dropdown.width(width);
+    }
+    dropdown
+        .show_ui(ui, |ui| {
+            for option in options {
+                let text: String = label(option.clone()).into();
+                ui.selectable_value(value, option.clone(), text);
+            }
+        })
+        .response
+}
+
 /// What needs attention, what is fine, and the Start button.
 pub const WARN: Color32 = Color32::from_rgb(230, 180, 60);
 pub const GOOD: Color32 = Color32::from_rgb(110, 190, 110);
@@ -582,6 +737,32 @@ mod tests {
     use super::*;
     use crate::settings::{load, Settings};
     use crate::{Start, SETTINGS_FILE};
+
+    /// Every dropdown choice parses back from its settings word, with a label of its own (`settings_round_trip`
+    /// pins the file's text; this pins each value's word and label).
+    #[test]
+    fn choices_round_trip() {
+        fn round_trips<T: Choice + std::fmt::Debug>(_: T) {
+            let mut labels: Vec<&str> = T::ALL.iter().map(|choice| {
+                assert_eq!(T::parse(choice.name()), Some(*choice), "{choice:?}");
+                assert!(!choice.label().is_empty(), "{choice:?}");
+                choice.label()
+            }).collect();
+            labels.sort_unstable();
+            labels.dedup();
+            assert_eq!(labels.len(), T::ALL.len());
+            assert_eq!(T::parse(""), None);
+            assert_eq!(T::parse("something the settings never write"), None);
+        }
+        round_trips(Fog::Off);
+        round_trips(Clouds::Clear);
+        round_trips(Precipitation::None);
+        round_trips(WetRoads::Off);
+        round_trips(DamageLevel::Safe);
+        round_trips(Skill::Rookie);
+        round_trips(AntiAliasing::Taa);
+        round_trips(Detail::High);
+    }
 
     /// The first start opens on Settings while NGP, a car or a program is missing, with the fix for it, and on Drive
     /// once everything is there (`RBR_DATA`, `RBR_PATCH`, `RBR_NGP_PHYSICS`: the test archive drives retail slots).

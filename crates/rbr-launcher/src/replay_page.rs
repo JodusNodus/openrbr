@@ -11,7 +11,7 @@ use rbr_recording::{realtime, replay, splits::Splits};
 
 use crate::settings::{Clouds, Precipitation};
 
-use crate::pages::{section, WARN};
+use crate::pages::{section, Choice, WARN};
 use crate::Form;
 
 #[derive(Clone)]

@@ -10,7 +10,7 @@ use crate::browser::{self, Pick};
 use crate::car_browser::{self, Target};
 use crate::catalog::{self, TyreChoice};
 use crate::ghosts::{self, GhostChoice};
-use crate::pages::{fields, section, ACCENT, DRIVE_FIELDS, FIELD, WARN};
+use crate::pages::{fields, section, Choice, ACCENT, DRIVE_FIELDS, FIELD, WARN};
 use crate::settings::{clock_text, or_folder, Clouds, Fog, Precipitation, SEQUENTIAL};
 use crate::stage_browser::{self, Action, Collection, StageRow};
 use crate::Form;

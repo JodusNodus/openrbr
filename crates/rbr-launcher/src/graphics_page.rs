@@ -8,7 +8,7 @@ use rbr_render::mirrors::Rate;
 use rbr_render::present::Present;
 use rbr_render::renderer::{AntiAliasing, Detail, Reflections};
 
-use crate::pages::{fields, section, DRIVE_FIELDS, FIELD};
+use crate::pages::{fields, section, Choice, DRIVE_FIELDS, FIELD};
 use crate::Form;
 
 /// The Quality section's choices: the renderer's additions (`viewer --enhance`), the wet roads (`--enhance wet` and
@@ -55,35 +55,12 @@ impl WetRoads {
     /// The choices offered, in the launcher's order.
     pub const ALL: [WetRoads; 4] = [WetRoads::High, WetRoads::Medium, WetRoads::Low, WetRoads::Off];
 
-    /// Its name in the settings.
-    pub fn name(self) -> &'static str {
-        match self {
-            WetRoads::Off => "off",
-            WetRoads::Low => "low",
-            WetRoads::Medium => "medium",
-            WetRoads::High => "high",
-        }
-    }
-
-    pub fn parse(text: &str) -> Option<WetRoads> {
-        WetRoads::ALL.into_iter().find(|w| w.name() == text)
-    }
-
     /// The viewer's screen-space reflections for it.
     pub fn reflections(self) -> Reflections {
         match self {
             WetRoads::Off | WetRoads::Low => Reflections::Off,
             WetRoads::Medium => Reflections::Medium,
             WetRoads::High => Reflections::High,
-        }
-    }
-
-    fn label(self) -> &'static str {
-        match self {
-            WetRoads::Off => "Off",
-            WetRoads::Low => "Low",
-            WetRoads::Medium => "Medium",
-            WetRoads::High => "High",
         }
     }
 }
