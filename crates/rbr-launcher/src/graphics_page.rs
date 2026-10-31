@@ -270,8 +270,7 @@ impl Form {
             let tip = "Draws the 3D view at this share of the window's size and scales it up: softer, but faster, for \
                        high refresh rates at 1440p and above";
             ui.label("Render scale").on_hover_text(tip);
-            combo(ui, "render scale", None, &mut self.render_scale, &RENDER_SCALES, scale_label)
-                .on_hover_text(tip);
+            combo(ui, "render scale", None, &mut self.render_scale, &RENDER_SCALES, scale_label).on_hover_text(tip);
             ui.end_row();
 
             let tip =
@@ -468,8 +467,7 @@ impl Form {
                        screen, on the wet roads and on rivers and lakes, Medium grainier. Off: the game's wet roads. \
                        Each step up costs more frame time in the rain";
             ui.label("Wet roads").on_hover_text(tip);
-            combo(ui, "wet roads", QUALITY_FIELD, &mut g.wet_roads, &WetRoads::ALL, WetRoads::label)
-                .on_hover_text(tip);
+            combo(ui, "wet roads", QUALITY_FIELD, &mut g.wet_roads, &WetRoads::ALL, WetRoads::label).on_hover_text(tip);
             ui.end_row();
 
             let tip = "Asphalt, gravel, snow and the off-road ground get the fine grain and relief of scanned \

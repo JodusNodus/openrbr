@@ -240,102 +240,102 @@ impl ViewerLaunch {
         let marker = self.marker;
         let bindings = self.bindings.as_deref();
         let setup = self.setup.as_deref();
-    let pack = car.rsf.as_ref().and_then(|r| r.pack.as_ref().ok()).map(|p| p.display().to_string());
-    let car_arg = match &pack {
-        Some(pack) => ["--rsf-car".into(), pack.clone()],
-        None => ["--car".into(), car.name.clone()],
-    };
-    let mut args: Vec<String> = vec![
-        stage.name.clone(),
-        car_arg[0].clone(),
-        car_arg[1].clone(),
-        "--weather".into(),
-        weather.mat_words().1.into(),
-        "--size".into(),
-        format!("{}x{}", size.0, size.1),
-        "--fov".into(),
-        fov.to_string(),
-        "--volume".into(),
-        volume.to_string(),
-        "--volumes".into(),
-        format!("{},{},{},{}", volumes.engine, volumes.codriver, volumes.effects, volumes.tyres),
-    ];
-    if !codriver {
-        args.push("--no-codriver".into());
-    }
-    if !hud.show {
-        args.push("--no-hud".into());
-    }
-    if hud.mph {
-        args.push("--mph".into());
-    }
-    args.extend(["--wipers".into(), wipers.name().into()]);
-    if hud.fps {
-        args.push("--fps".into());
-    }
-    if hud.stack > 0 {
-        args.extend(["--pace-stack".into(), hud.stack.to_string()]);
-    }
-    if !hud.dials {
-        args.push("--no-dials".into());
-    }
-    if hud.hide_wheel {
-        args.push("--hide-wheel".into());
-    }
-    if let Some(list) = hud.parts.hidden() {
-        args.extend(["--hud-hide".into(), list]);
-    }
-    if let Some(path) = bindings {
-        let path = path.display().to_string();
-        args.extend(["--bindings".into(), path.clone(), "--cameras".into(), path]);
-    }
-    args.extend(["--enhance".into(), enhance_list(graphics)]);
-    args.extend([
-        "--live".into(),
-        standalone.display().to_string(),
-        "--live".into(),
-        "--boot".into(),
-        "--weather".into(),
-        options.weather.id().to_string(),
-        "--wear".into(),
-        catalog::WEARS[weather.wear.min(2) as usize].into(),
-        "--tyre".into(),
-        tyre.to_string(),
-        "--stage".into(),
-        stage.name.clone(),
-        "--car".into(),
-        car.index.to_string(),
-        "--data".into(),
-        data.display().to_string(),
-        "--callout-distance".into(),
-        marker.callout_distance.to_string(),
-        "--marker-threshold".into(),
-        marker.marker_threshold.to_string(),
-    ]);
-    if let (Preset::Random, Some(row)) = (options.weather, weather.row) {
-        args.extend(["--season-row".into(), row.to_string()]);
-    }
-    let on_off = |on: bool| if on { "on" } else { "off" }.to_owned();
-    let aids = options.aids;
-    args.extend([
-        "--damage".into(),
-        options.damage.name().into(),
-        "--auto-gears".into(),
-        on_off(aids.auto_gears),
-        "--gear-guard".into(),
-        on_off(aids.gear_guard),
-        "--neutral-lock".into(),
-        on_off(aids.neutral_lock),
-        "--clutch-help".into(),
-        on_off(aids.clutch_help),
-    ]);
-    if let Some(path) = setup {
-        args.extend(["--setup".into(), path.display().to_string()]);
-    }
-    if let Some(pack) = pack {
-        args.extend(["--rsf-car".into(), pack]);
-    }
-    args
+        let pack = car.rsf.as_ref().and_then(|r| r.pack.as_ref().ok()).map(|p| p.display().to_string());
+        let car_arg = match &pack {
+            Some(pack) => ["--rsf-car".into(), pack.clone()],
+            None => ["--car".into(), car.name.clone()],
+        };
+        let mut args: Vec<String> = vec![
+            stage.name.clone(),
+            car_arg[0].clone(),
+            car_arg[1].clone(),
+            "--weather".into(),
+            weather.mat_words().1.into(),
+            "--size".into(),
+            format!("{}x{}", size.0, size.1),
+            "--fov".into(),
+            fov.to_string(),
+            "--volume".into(),
+            volume.to_string(),
+            "--volumes".into(),
+            format!("{},{},{},{}", volumes.engine, volumes.codriver, volumes.effects, volumes.tyres),
+        ];
+        if !codriver {
+            args.push("--no-codriver".into());
+        }
+        if !hud.show {
+            args.push("--no-hud".into());
+        }
+        if hud.mph {
+            args.push("--mph".into());
+        }
+        args.extend(["--wipers".into(), wipers.name().into()]);
+        if hud.fps {
+            args.push("--fps".into());
+        }
+        if hud.stack > 0 {
+            args.extend(["--pace-stack".into(), hud.stack.to_string()]);
+        }
+        if !hud.dials {
+            args.push("--no-dials".into());
+        }
+        if hud.hide_wheel {
+            args.push("--hide-wheel".into());
+        }
+        if let Some(list) = hud.parts.hidden() {
+            args.extend(["--hud-hide".into(), list]);
+        }
+        if let Some(path) = bindings {
+            let path = path.display().to_string();
+            args.extend(["--bindings".into(), path.clone(), "--cameras".into(), path]);
+        }
+        args.extend(["--enhance".into(), enhance_list(graphics)]);
+        args.extend([
+            "--live".into(),
+            standalone.display().to_string(),
+            "--live".into(),
+            "--boot".into(),
+            "--weather".into(),
+            options.weather.id().to_string(),
+            "--wear".into(),
+            catalog::WEARS[weather.wear.min(2) as usize].into(),
+            "--tyre".into(),
+            tyre.to_string(),
+            "--stage".into(),
+            stage.name.clone(),
+            "--car".into(),
+            car.index.to_string(),
+            "--data".into(),
+            data.display().to_string(),
+            "--callout-distance".into(),
+            marker.callout_distance.to_string(),
+            "--marker-threshold".into(),
+            marker.marker_threshold.to_string(),
+        ]);
+        if let (Preset::Random, Some(row)) = (options.weather, weather.row) {
+            args.extend(["--season-row".into(), row.to_string()]);
+        }
+        let on_off = |on: bool| if on { "on" } else { "off" }.to_owned();
+        let aids = options.aids;
+        args.extend([
+            "--damage".into(),
+            options.damage.name().into(),
+            "--auto-gears".into(),
+            on_off(aids.auto_gears),
+            "--gear-guard".into(),
+            on_off(aids.gear_guard),
+            "--neutral-lock".into(),
+            on_off(aids.neutral_lock),
+            "--clutch-help".into(),
+            on_off(aids.clutch_help),
+        ]);
+        if let Some(path) = setup {
+            args.extend(["--setup".into(), path.display().to_string()]);
+        }
+        if let Some(pack) = pack {
+            args.extend(["--rsf-car".into(), pack]);
+        }
+        args
     }
 }
 

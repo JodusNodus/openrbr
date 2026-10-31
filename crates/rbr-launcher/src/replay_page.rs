@@ -354,9 +354,7 @@ impl Form {
                         &[(1280, 720), (1920, 1080), (2560, 1440), (3840, 2160)],
                         |(_, height)| format!("{height}p"),
                     );
-                    combo(ui, "replay-fps", None, &mut self.replays.fps, &[30, 60], |fps| {
-                        format!("{fps} fps")
-                    });
+                    combo(ui, "replay-fps", None, &mut self.replays.fps, &[30, 60], |fps| format!("{fps} fps"));
                 });
                 ui.label("Save MP4 to");
                 ui.add(egui::TextEdit::singleline(&mut self.replays.output).desired_width(f32::INFINITY));

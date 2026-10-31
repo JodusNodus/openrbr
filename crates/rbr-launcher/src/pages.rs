@@ -743,11 +743,14 @@ mod tests {
     #[test]
     fn choices_round_trip() {
         fn round_trips<T: Choice + std::fmt::Debug>(_: T) {
-            let mut labels: Vec<&str> = T::ALL.iter().map(|choice| {
-                assert_eq!(T::parse(choice.name()), Some(*choice), "{choice:?}");
-                assert!(!choice.label().is_empty(), "{choice:?}");
-                choice.label()
-            }).collect();
+            let mut labels: Vec<&str> = T::ALL
+                .iter()
+                .map(|choice| {
+                    assert_eq!(T::parse(choice.name()), Some(*choice), "{choice:?}");
+                    assert!(!choice.label().is_empty(), "{choice:?}");
+                    choice.label()
+                })
+                .collect();
             labels.sort_unstable();
             labels.dedup();
             assert_eq!(labels.len(), T::ALL.len());

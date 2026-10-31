@@ -268,14 +268,9 @@ impl Form {
                         ("Rain", "What falls and is heard; snow on a snow stage")
                     };
                     ui.label(falls).on_hover_text(tip);
-                    combo(
-                        ui,
-                        "precipitation",
-                        FIELD,
-                        &mut self.precipitation,
-                        &Precipitation::ALL.map(Some),
-                        |rain| rain.unwrap_or(Precipitation::None).label(),
-                    );
+                    combo(ui, "precipitation", FIELD, &mut self.precipitation, &Precipitation::ALL.map(Some), |rain| {
+                        rain.unwrap_or(Precipitation::None).label()
+                    });
                     ui.end_row();
                     self.fog_row(ui);
                 }
@@ -364,9 +359,7 @@ impl Form {
                 ui.end_row();
             } else if self.custom() || self.weather_row.is_some() || self.options.weather == Preset::Bad {
                 ui.label("Road wear").on_hover_text(wear_tip);
-                combo(ui, "wear", FIELD, &mut self.wear, &[0, 1, 2], |wear| {
-                    catalog::WEARS[wear.min(2) as usize]
-                });
+                combo(ui, "wear", FIELD, &mut self.wear, &[0, 1, 2], |wear| catalog::WEARS[wear.min(2) as usize]);
                 ui.end_row();
             }
 

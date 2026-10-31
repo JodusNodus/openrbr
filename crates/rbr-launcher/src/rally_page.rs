@@ -53,7 +53,7 @@ use rbr_gameplay::service::{self, ParkState, Rules, ServicePark};
 use rbr_gameplay::setup::SeasonSetup;
 use rbr_gameplay::weather::Season;
 
-use crate::pages::{combo, Issue, Choice, WARN};
+use crate::pages::{combo, Choice, Issue, WARN};
 
 /// A stage to drive: the extra `rbr-standalone` arguments (the season's options and the rally's files), the tyre and
 /// the road wear.
