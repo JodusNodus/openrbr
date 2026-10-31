@@ -10,6 +10,9 @@
 use rbr_gameplay::control::QuantizedControl;
 use rbr_gameplay::filter::{step, Cell, Filtered};
 
+mod common;
+use common::hex;
+
 const STEP: u32 = 0x48af90;
 const PACK: u32 = 0x48c910;
 /// The filter header Step reads: five groups of 0x94 bytes (the selector word, then four 0x24-byte cells), and the
@@ -32,10 +35,6 @@ struct Call {
     /// Window 0 is the `this` of a thiscall; window 1 the stack pointer the call takes.
     windows: Vec<Window>,
     st0: f64,
-}
-
-fn hex(s: &str) -> Vec<u8> {
-    (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap()).collect()
 }
 
 fn parse(text: &str) -> Vec<Call> {

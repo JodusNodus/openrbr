@@ -17,7 +17,10 @@
 use std::path::PathBuf;
 
 use rbr_gameplay::race_clock::{AssistSettings, RaceClock};
-use rbr_recording::peek::{PeekFile, Probe, Record, Value};
+use rbr_recording::peek::{PeekFile, Probe, Record};
+
+mod common;
+use common::{peeked_f32, peeked_u32};
 
 /// One step's time in these runs.
 const STEP: f32 = 0.007;
@@ -39,35 +42,16 @@ const DRIVES: [(&str, u32, u32, Option<f32>); 3] = [
     ("rcv-retire-impreza00-45", 2144, 2, None),
 ];
 
-fn value(record: &Record, probes: &[Probe], name: &str) -> Value {
-    let index = probes.iter().position(|probe| probe.name == name).unwrap_or_else(|| panic!("no probe {name}"));
-    record.value(index).expect("record holds every probe")
-}
-
-fn u32_of(record: &Record, probes: &[Probe], name: &str) -> u32 {
-    match value(record, probes, name) {
-        Value::U32(v) => v,
-        other => panic!("{name}: {other:?}, expected u32"),
-    }
-}
-
-fn f32_of(record: &Record, probes: &[Probe], name: &str) -> f32 {
-    match value(record, probes, name) {
-        Value::F32(v) => v,
-        other => panic!("{name}: {other:?}, expected f32"),
-    }
-}
-
 /// The HUD's clock as one record shows it.
 fn seen(record: &Record, probes: &[Probe]) -> RaceClock {
     RaceClock {
-        countdown: f32_of(record, probes, "hud_cd"),
-        start_fired: u32_of(record, probes, "hud_anim") != 0,
-        running: u32_of(record, probes, "hud_gate") == 0,
-        time: f32_of(record, probes, "hud_clock"),
-        assist_timer: f32_of(record, probes, "hud_t"),
-        fade: f32_of(record, probes, "hud_fade"),
-        code: u32_of(record, probes, "hud_code"),
+        countdown: peeked_f32(record, probes, "hud_cd"),
+        start_fired: peeked_u32(record, probes, "hud_anim") != 0,
+        running: peeked_u32(record, probes, "hud_gate") == 0,
+        time: peeked_f32(record, probes, "hud_clock"),
+        assist_timer: peeked_f32(record, probes, "hud_t"),
+        fade: peeked_f32(record, probes, "hud_fade"),
+        code: peeked_u32(record, probes, "hud_code"),
         jumped: false,
     }
 }
@@ -101,11 +85,11 @@ fn the_race_clock_follows_the_hud_through_each_assist() {
         let file = PeekFile::parse(&bytes).expect("peek file");
         let probes = &file.probes;
         let records: Vec<Record> = file.records().collect::<Result<_, _>>().expect("peek records");
-        let step_of = |r: &Record| u32_of(r, probes, "steps");
+        let step_of = |r: &Record| peeked_u32(r, probes, "steps");
         let settings = AssistSettings {
-            mode: u32_of(&records[0], probes, "flow_mode"),
-            rally_level: u32_of(&records[0], probes, "help_rly"),
-            level: u32_of(&records[0], probes, "help_set"),
+            mode: peeked_u32(&records[0], probes, "flow_mode"),
+            rally_level: peeked_u32(&records[0], probes, "help_rly"),
+            level: peeked_u32(&records[0], probes, "help_set"),
             false_starts: 0,
         };
         let (mut ticks, mut idle, mut emits) = (0, 0, Vec::new());
@@ -115,7 +99,7 @@ fn the_race_clock_follows_the_hud_through_each_assist() {
             let before = RaceClock { jumped, ..seen(&pair[0], probes) };
             let after = seen(&pair[1], probes);
             let step = step_of(&pair[1]);
-            if u32_of(&pair[0], probes, "app_state") != DRIVING {
+            if peeked_u32(&pair[0], probes, "app_state") != DRIVING {
                 assert!(same(before, after), "{drive} step {step}: the HUD moved outside driving");
                 continue;
             }
