@@ -4,7 +4,8 @@
 //   * the current colour and its four edge neighbours, in a tone-mapped space (c / (1 + luma)) so that a single bright
 //     sample cannot dominate;
 //   * motion: the point from the depth (reversed) carried by the unjittered view-projections, current to previous, or
-//     inside the car's box by the car's own motion (its previous pose);
+//     inside the car's box by the car's own motion (its previous pose), and inside the steering wheel's room by the
+//     wheel's turn too;
 //   * history: the previous output there (Catmull-Rom, 5 bilinear taps), clipped toward the neighbourhood's mean in
 //     YCoCg (variance clipping, Salvi 2016);
 //   * blend: a tenth of the new frame, more where the history was clipped hard or the pixel moves fast; all of it
@@ -25,6 +26,14 @@ struct Taa {
     car_low: vec4<f32>,
     car_high: vec4<f32>,
     car_rect: vec4<f32>,
+    // The car's model space to the steering wheel's frame (the hub at the origin, the column along z), and the wheel's
+    // turn since the last frame undone, in the car's model space.
+    car_to_wheel: mat4x4<f32>,
+    wheel_turn: mat4x4<f32>,
+    // x the wheel's radius, y 1 = it turned; per band of distance from the column (WHEEL_BANDS over the radius, two a
+    // vec4), the depth range along it the wheel fills.
+    wheel: vec4<f32>,
+    wheel_depth: array<vec4<f32>, 4>,
     // The frame's size: w, h, 1/w, 1/h.
     size: vec4<f32>,
     // x the new frame's base share, y the clip box's half size (sigmas), z 1 = reset, w 1 = show the motion, 2 = the
@@ -56,6 +65,8 @@ fn vs_full(@builtin(vertex_index) index: u32) -> Out {
 
 // The glass mask's alpha from which the frame is taken more, and from which wholly new.
 const GLASS: vec2<f32> = vec2<f32>(0.5, 0.9);
+// The steering wheel's bands (`taa.rs`).
+const WHEEL_BANDS: f32 = 8.0;
 
 fn luma(c: vec3<f32>) -> f32 {
     return dot(c, vec3<f32>(0.299, 0.587, 0.114));
@@ -115,6 +126,19 @@ fn clip_box(h: vec3<f32>, c: vec3<f32>, e: vec3<f32>) -> vec3<f32> {
     return select(h, c + d / m, m > 1.0);
 }
 
+// Whether the car's model space point `p` is in the steering wheel's room.
+fn on_wheel(p: vec3<f32>) -> bool {
+    let w = (t.car_to_wheel * vec4<f32>(p, 1.0)).xyz;
+    let band = length(w.xy) / t.wheel.x * WHEEL_BANDS;
+    if (band >= WHEEL_BANDS) {
+        return false;
+    }
+    let i = u32(band);
+    let pair = t.wheel_depth[i / 2u];
+    let depth = select(pair.xy, pair.zw, (i & 1u) == 1u);
+    return w.z > depth.x && w.z < depth.y;
+}
+
 // Where the point seen at `uv` (clip `here`) was in the previous frame, uv.
 fn previous_uv(uv: vec2<f32>, here: vec4<f32>) -> vec2<f32> {
     var clip = t.view_to_prev * here;
@@ -123,7 +147,12 @@ fn previous_uv(uv: vec2<f32>, here: vec4<f32>) -> vec2<f32> {
         // The sky (at infinity, w 0) is in no box.
         let p = local.xyz / local.w;
         if (local.w > 0.0 && all(p > t.car_low.xyz) && all(p < t.car_high.xyz)) {
-            clip = t.car_to_prev * local;
+            // On the steering wheel, where the point was in the car before the wheel's turn since then.
+            var turned = local;
+            if (t.wheel.y > 0.5 && on_wheel(p)) {
+                turned = t.wheel_turn * local;
+            }
+            clip = t.car_to_prev * turned;
         }
     }
     let ndc = clip.xy / max(clip.w, 1.0e-6);

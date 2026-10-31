@@ -318,6 +318,11 @@ impl Crew {
         self.ring.playing()
     }
 
+    /// `i_steeringwheel`'s model-space matrix: the wheel turns about its `z` through its origin ([`Crew::wheel_turn`]).
+    pub fn wheel_node(&self) -> Option<Mat4> {
+        self.wheel
+    }
+
     /// The steering wheel's turn in car model space, for [`crate::playback::Playback::turn`]: the interior
     /// `i_steeringwheel` meshes turn by the matrix. `None` without the node.
     pub fn wheel_turn(&self) -> Option<Mat4> {

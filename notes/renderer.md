@@ -53,6 +53,14 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   forest chase 251 / 136 / 230, cockpit 174 / 95 / 120 (TAA roughly halves the aliasing, sharpening restores about
   half; dry, wet, rain and night scenes similar). `--anti-aliasing off` frames are byte-identical to before in
   13 scenes. Tried and removed: a negative texture mip bias (0 to -1; 201 to 205, no change).
+  The steering wheel's pixels move by its turn since the last frame (`taa::Wheel`, `Playback::set_wheel_node`): its
+  room is measured from its meshes in its node's frame, radius and depth along the column per 8 bands of radius (rims
+  sit 0-13 cm up the column from the node, some meshes take the column down to -0.9 m). Before, a fast turn left
+  translucent spokes and dark smears behind the rim's mark (Delta HF, M3 E30). Stills unchanged (34 shots
+  byte-identical; 4 vary run to run, each matched a baseline render), TAA 0.72 ms either way, the wheel's test forced
+  on too (Delta cockpit 1080p, M3 Pro, 2026-10-31). The turn is undone on the model-space point before the car's
+  motion: a separate wheel-to-previous matrix changed Metal's fast-math code for the car's pixels (a chase still by
+  up to 2/255).
   Dark specks on the car's silhouette in a still chase view (3 pixels over 20 luma below their neighbours; 34 with
   off) are the thin dark sliver's real coverage, not a history lock: the raw jittered frames alternate dark and
   bright at those pixels.

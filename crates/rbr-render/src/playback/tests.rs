@@ -58,6 +58,7 @@ fn playback(frames: &[Vec<u8>]) -> Playback {
         headlights: lights::Headlights::Main,
         detached: [None; detach::PARTS.len()],
         turn: None,
+        wheel: None,
         hide_wheel: false,
         game_chase: Follow::new(crate::game_camera::Settings::default()),
         probe: None,
