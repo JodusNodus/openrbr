@@ -105,9 +105,9 @@ const NOT_DIRECT: u8 = u8::MAX;
 /// The bytes of a particle event's payload.
 pub const PARTICLE_EVENT_BYTES: usize = 0x40;
 /// `CMultiSignal1<CSigEngineFire>::Emit` (0x4ef290) on the engine-fire signal (`[0x893600] + 0xb840`), whose emits
-/// [`Pure::take_engine_fires`] counts for the host (the sound's fire).
-const ENGINE_FIRE_EMIT: u32 = 0x4ef290;
-const ENGINE_FIRE_SIGNAL: u32 = 0xb840;
+/// [`Pure::take_engine_fires`] counts for the host (the sound's fire). It is [`PARTICLE_EMITS`]' last row.
+const ENGINE_FIRE_EMIT: u32 = PARTICLE_EMITS[2].0;
+const ENGINE_FIRE_SIGNAL: u32 = PARTICLE_EMITS[2].1;
 /// The entries of [`Pure::slot_of`]'s cache.
 const SLOT_CACHE: usize = 1024;
 
@@ -306,11 +306,6 @@ impl Pure {
         if let Some(runtime) = runtime {
             self.mem.set_ngp_runtime(runtime);
         }
-    }
-
-    /// Whether the allocator's unwritten reads are logged ([`Pure::untrack_allocator`]).
-    pub fn tracks_allocator(&self) -> bool {
-        self.heap.lock().unwrap_or_else(|p| p.into_inner()).pages.is_none()
     }
 
     /// The calls [`Pure::direct`] ran in place.
