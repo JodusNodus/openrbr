@@ -754,11 +754,18 @@ fn expect_inner(name: &str, call: &Call, expected: &[(u32, Vec<u32>)]) {
 #[test]
 fn entity_def_ctor_matches_original_calls() {
     let name = "E43EntityDef::E43EntityDef";
-    common::replay(VAR, 0x51A530, name, |call, mem| {
-        let eax = layout::construct_entity_def(mem, call.args[0], call.args[1]);
+    let Some(calls) = load(VAR, 0x51A530) else {
+        eprintln!("skipping {name}: {VAR} not set");
+        return;
+    };
+    for call in &calls {
+        let mut mem = map_windows(call);
+        let eax = layout::construct_entity_def(&mut mem, call.args[0], call.args[1]);
         assert_eq!(eax, call.eax, "{name} call {}: eax", call.index);
         expect_inner(name, call, &[(0x52F090, vec![call.args[0], call.args[1]])]);
-    });
+        check_windows(call, &mem, name);
+    }
+    eprintln!("{name}: {} calls match", calls.len());
 }
 
 #[test]
