@@ -165,42 +165,41 @@ pub fn load_inner(var: &str, addr: u32) -> Option<Vec<Inner>> {
 }
 
 /// Replays every recorded call of `addr` in `var`'s files through `run`: the windows are mapped from the record,
-/// `run(call, mem)` runs the port, then every window must hold the original's bytes after the call.
-pub fn replay(var: &str, addr: u32, name: &str, mut run: impl FnMut(&Call, &mut Mem)) {
+/// `run(call, mem)` runs the port, then every window must hold the original's bytes after the call. The calls, or
+/// `None` (said why) when there are none.
+fn replay_calls(var: &str, addr: u32, name: &str, mut run: impl FnMut(&Call, &mut Mem)) -> Option<Vec<Call>> {
     let Some(calls) = load(var, addr) else {
         eprintln!("skipping {name}: {var} not set");
-        return;
+        return None;
     };
     if calls.is_empty() {
         eprintln!("{name}: no calls in the vector files");
-        return;
+        return None;
     }
     for call in &calls {
         let mut mem = map_windows(call);
         run(call, &mut mem);
         check_windows(call, &mem, name);
     }
-    eprintln!("{}: {} calls match", name, calls.len());
+    Some(calls)
 }
 
-/// Like `replay`, but the summary also counts the calls by branch (`call.branch`).
-pub fn replay_branches(var: &str, addr: u32, name: &str, mut run: impl FnMut(&Call, &mut Mem)) {
-    let Some(calls) = load(var, addr) else {
-        eprintln!("skipping {name}: {var} not set");
-        return;
-    };
-    if calls.is_empty() {
-        eprintln!("{name}: no calls in the vector files");
-        return;
+/// [`replay_calls`], with the count in the summary.
+pub fn replay(var: &str, addr: u32, name: &str, run: impl FnMut(&Call, &mut Mem)) {
+    if let Some(calls) = replay_calls(var, addr, name, run) {
+        eprintln!("{}: {} calls match", name, calls.len());
     }
-    let mut branches = BTreeMap::<String, usize>::new();
-    for call in &calls {
-        let mut mem = map_windows(call);
-        run(call, &mut mem);
-        check_windows(call, &mem, name);
-        *branches.entry(call.branch.clone()).or_default() += 1;
+}
+
+/// [`replay_calls`], with the calls counted by branch (`call.branch`) in the summary.
+pub fn replay_branches(var: &str, addr: u32, name: &str, run: impl FnMut(&Call, &mut Mem)) {
+    if let Some(calls) = replay_calls(var, addr, name, run) {
+        let mut branches = BTreeMap::<String, usize>::new();
+        for call in &calls {
+            *branches.entry(call.branch.clone()).or_default() += 1;
+        }
+        eprintln!("{}: {} calls match, by branch: {branches:?}", name, calls.len());
     }
-    eprintln!("{}: {} calls match, by branch: {branches:?}", name, calls.len());
 }
 
 /// Replays every recorded call of `addr` in `var`'s files through `port(mem, args)`, which returns eax. The windows
@@ -228,7 +227,7 @@ pub fn st0_of(value: f32) -> u64 {
 
 /// The port's f32 return against the record's st0, bit for bit (the NaN sign too).
 pub fn check_st0(call: &Call, value: f32, name: &str) {
-    assert_eq!((value as f64).to_bits(), call.st0_bits, "{name} call {}: st0", call.index);
+    assert_eq!(st0_of(value), call.st0_bits, "{name} call {}: st0", call.index);
 }
 
 /// The port's f64 return against the record's st0: a NaN matches any NaN (the default NaN's sign differs by
@@ -261,11 +260,7 @@ pub fn inner_window_at(inner: &Inner, at: u32) -> (&[u8], &[u8]) {
 
 /// Maps the windows of `call` (the bytes before the call) into a fresh memory.
 pub fn map_windows(call: &Call) -> Mem {
-    let mut mem = Mem::new();
-    for window in &call.windows {
-        mem.map(window.at, &window.before);
-    }
-    mem
+    map_window_list(&call.windows)
 }
 
 /// A byte map that its clones share, so a host and the test see one memory (`Mem::with_backend`). Reads fail on

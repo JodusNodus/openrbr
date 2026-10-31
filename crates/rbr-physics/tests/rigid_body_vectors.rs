@@ -136,7 +136,7 @@ const REFRESH_WRITES: [Range<usize>; 2] = [0x80..0xa0, 0x110..0x140];
 /// Checks the body window (window 0) of `call` against the original, except the `masked` bytes. The other windows
 /// must match exactly.
 fn check_except(call: &Call, mem: &Mem, name: &str, masked: &[Range<usize>]) {
-    for Window { index: k, at, len, before: _, after: post } in &call.windows {
+    for Window { index: k, at, len, after: post, .. } in &call.windows {
         let now = mem.read(*at, *len);
         for (i, (ours, theirs)) in now.iter().zip(post).enumerate() {
             assert!(
@@ -196,7 +196,7 @@ fn quat_mul_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     common::replay(VAR, M83DD0, "M83DD0", |call, mem| {
         let (p, q) = (load_quat(mem, call.args[0]), load_quat(mem, call.args[1]));
-        store_quat(&mut *mem, call.args[2], mul(p, q));
+        store_quat(mem, call.args[2], mul(p, q));
         assert_eq!(call.eax, call.args[2], "M83DD0 call {} returns out", call.index);
     });
 }
@@ -206,7 +206,7 @@ fn normalize_in_place_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     common::replay(VAR, E18_NORMALIZE, "E18_QuatNormalize", |call, mem| {
         let q = load_quat(mem, call.args[0]);
-        store_quat(&mut *mem, call.args[0], normalize(q));
+        store_quat(mem, call.args[0], normalize(q));
         assert_eq!(call.eax, call.args[0], "E18_QuatNormalize call {} returns q", call.index);
     });
 }
@@ -216,7 +216,7 @@ fn normalize_to_output_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     common::replay(VAR, E34_NORM, "E34Quat::Norm", |call, mem| {
         let v = load_quat(mem, call.args[0]);
-        store_quat(&mut *mem, call.args[1], normalize(v));
+        store_quat(mem, call.args[1], normalize(v));
         assert_eq!(call.eax, call.args[1], "E34Quat::Norm call {} returns out", call.index);
     });
 }
@@ -1194,7 +1194,7 @@ fn step76_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     common::replay(VAR, STEP76, "Step76", |call, mem| {
         let (this, point, out) = (call.args[0], call.args[1], call.args[2]);
-        point_velocity(&mut *mem, this, point, out);
+        point_velocity(mem, this, point, out);
     });
 }
 
@@ -1661,7 +1661,7 @@ fn accumulate_force_matches_original_calls() {
 fn reset_block_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     common::replay(VAR, SCRATCH_VF04, "E47SolidScratch::Vf04", |call, mem| {
-        store_scratch_reset(&mut *mem, call.args[0]);
+        store_scratch_reset(mem, call.args[0]);
     });
 }
 
@@ -1669,7 +1669,7 @@ fn reset_block_matches_original_calls() {
 fn scratch_base_init_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     common::replay(VAR, SCRATCH_BASE_INIT, "E47_ScratchBaseInit", |call, mem| {
-        store_scratch_base_init(&mut *mem, call.args[0]);
+        store_scratch_base_init(mem, call.args[0]);
     });
 }
 
@@ -1689,7 +1689,7 @@ fn set_from_quat_matches_original_calls() {
 fn transform_rows_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     common::replay(VAR, E43_VFAC, "CSolid::E43VfAC", |call, mem| {
-        transform_body_rows(&mut *mem, call.args[0], call.args[1], call.args[2]);
+        transform_body_rows(mem, call.args[0], call.args[1], call.args[2]);
     });
 }
 
@@ -1697,7 +1697,7 @@ fn transform_rows_matches_original_calls() {
 fn transform_rows3_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     common::replay(VAR, E43_VFB0, "CSolid::E43VfB0", |call, mem| {
-        transform_body_rows3(&mut *mem, call.args[0], call.args[1], call.args[2]);
+        transform_body_rows3(mem, call.args[0], call.args[1], call.args[2]);
     });
 }
 
@@ -1705,7 +1705,7 @@ fn transform_rows3_matches_original_calls() {
 fn subtract_origin_and_transform_rows_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     common::replay(VAR, E43_VFA0, "CSolid::E43VfA0", |call, mem| {
-        solid_e43vfa0(&mut *mem, call.args[0], call.args[1], call.args[2]);
+        solid_e43vfa0(mem, call.args[0], call.args[1], call.args[2]);
     });
 }
 
@@ -1713,7 +1713,7 @@ fn subtract_origin_and_transform_rows_matches_original_calls() {
 fn fold_rows_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     common::replay(VAR, E43_VFBC, "CSolid::E43VfBC", |call, mem| {
-        fold_body_rows(&mut *mem, call.args[0], call.args[1], call.args[2]);
+        fold_body_rows(mem, call.args[0], call.args[1], call.args[2]);
     });
 }
 
@@ -1721,7 +1721,7 @@ fn fold_rows_matches_original_calls() {
 fn fold_rows_reordered_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     common::replay(VAR, E43_VFC0, "CSolid::E43VfC0", |call, mem| {
-        fold_body_rows_reordered(&mut *mem, call.args[0], call.args[1], call.args[2]);
+        fold_body_rows_reordered(mem, call.args[0], call.args[1], call.args[2]);
     });
 }
 
@@ -1729,7 +1729,7 @@ fn fold_rows_reordered_matches_original_calls() {
 fn quat_plus_rows_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     common::replay(VAR, E43_VFA4, "CSolid::E43VfA4", |call, mem| {
-        quat_plus_body_rows(&mut *mem, call.args[0], call.args[1], call.args[2]);
+        quat_plus_body_rows(mem, call.args[0], call.args[1], call.args[2]);
     });
 }
 
@@ -1737,7 +1737,7 @@ fn quat_plus_rows_matches_original_calls() {
 fn quat_diff_rows_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     common::replay(VAR, E43_VFA8, "CSolid::E43VfA8", |call, mem| {
-        quat_diff_body_rows(&mut *mem, call.args[0], call.args[1], call.args[2]);
+        quat_diff_body_rows(mem, call.args[0], call.args[1], call.args[2]);
     });
 }
 
@@ -1745,7 +1745,7 @@ fn quat_diff_rows_matches_original_calls() {
 fn quat_transform_rows_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     common::replay(VAR, E43_VFB4, "CSolid::E43VfB4", |call, mem| {
-        quat_transform_body_rows(&mut *mem, call.args[0], call.args[1], call.args[2]);
+        quat_transform_body_rows(mem, call.args[0], call.args[1], call.args[2]);
     });
 }
 
@@ -1753,7 +1753,7 @@ fn quat_transform_rows_matches_original_calls() {
 fn quat_rows_b8_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     common::replay(VAR, E43_VFB8, "CSolid::E43VfB8", |call, mem| {
-        quat_body_rows_b8(&mut *mem, call.args[0], call.args[1], call.args[2]);
+        quat_body_rows_b8(mem, call.args[0], call.args[1], call.args[2]);
     });
 }
 
@@ -1761,7 +1761,7 @@ fn quat_rows_b8_matches_original_calls() {
 fn quat_fold_rows_c4_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     common::replay(VAR, E43_VFC4, "CSolid::E43VfC4", |call, mem| {
-        fold_quat_body_rows_c4(&mut *mem, call.args[0], call.args[1], call.args[2]);
+        fold_quat_body_rows_c4(mem, call.args[0], call.args[1], call.args[2]);
     });
 }
 
@@ -1769,7 +1769,7 @@ fn quat_fold_rows_c4_matches_original_calls() {
 fn quat_fold_rows_c8_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     common::replay(VAR, E43_VFC8, "CSolid::E43VfC8", |call, mem| {
-        fold_quat_body_rows_c8(&mut *mem, call.args[0], call.args[1], call.args[2]);
+        fold_quat_body_rows_c8(mem, call.args[0], call.args[1], call.args[2]);
     });
 }
 
@@ -1846,7 +1846,7 @@ fn vf54_helper_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     common::replay(VAR, VF54_HELPER, "E47_Vf54Helper", |call, mem| {
         let mut host = EntityCount::default();
-        scratch_reset_after_entity(&mut *mem, call.args[0], &mut host)
+        scratch_reset_after_entity(mem, call.args[0], &mut host)
             .expect("E47_Vf54Helper: the entity host is not called");
         assert_eq!(host.0, 1, "E47_Vf54Helper call {}: one entity call", call.index);
     });
@@ -1864,7 +1864,7 @@ fn replay_windows(mem: &mut Mem, windows: &[Window], name: &str) {
 fn scale_add_rows_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     common::replay(VAR, VF39X, "E47Solid::Vf39x", |call, mem| {
-        let ret = scale_add_rows(&mut *mem, call.args[0], call.args[1], call.args[2]);
+        let ret = scale_add_rows(mem, call.args[0], call.args[1], call.args[2]);
         assert_eq!(ret, call.eax, "E47Solid::Vf39x call {}: returns dst", call.index);
     });
 }
@@ -1977,7 +1977,7 @@ impl Heap for NewDefReplay {
 /// final bytes of the block (an inner call's window can hold a vptr that a later write in the same constructor replaces).
 fn check_cdef_windows(call: &Call, mem: &Mem, name: &str) {
     for inner in call.inner.iter().filter(|i| i.addr == CDEF_CTOR) {
-        for Window { index: k, at, len, before: _, after: post } in &inner.windows {
+        for Window { index: k, at, len, after: post, .. } in &inner.windows {
             assert_eq!(mem.read(*at, *len), *post, "{name} call {} CSolid::CDef window {k}", call.index);
         }
     }
@@ -2076,6 +2076,6 @@ fn e47_state_ctor_matches_original_calls() {
 fn cdef_ctor_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     common::replay(VAR, CDEF_CTOR, "CSolid::CDef::CDef", |call, mem| {
-        solid_def_ctor(&mut *mem, call.args[0], call.args[1]);
+        solid_def_ctor(mem, call.args[0], call.args[1]);
     });
 }
