@@ -371,33 +371,7 @@ impl<'a> Live<'a> {
         .record();
         let clock = self.clock.record();
         let menu = self.menu().record();
-        let records = self.last.hud.len()
-            + self.last.damage.len()
-            + self.last.tyres.len()
-            + self.last.events.len()
-            + self.last.detached.len()
-            + 16
-            + self.last.sound.len()
-            + self.last.splits.len()
-            + self.last.steering.len()
-            + 8
-            + self.last.pace.len()
-            + 8
-            + self.last.dash.len()
-            + camera.len()
-            + clock.len()
-            + self.last.flow.len()
-            + self.last.ngp_sound.len()
-            + self.last.gearbox.len()
-            + self.last.hub.len()
-            + menu.len()
-            + self.last.fmod_block.len()
-            + self.last.carried.len()
-            + 8
-            + CONTROL_BYTES
-            + 8
-            + 32 * self.last.scenery.len();
-        let mut out = Vec::with_capacity(20 + CONTROL_BYTES + self.last.body.len() + records);
+        let mut out = Vec::new();
         for word in [MAGIC, pre, pre + substeps, substeps, CAR_BYTES as u32] {
             out.extend_from_slice(&word.to_le_bytes());
         }

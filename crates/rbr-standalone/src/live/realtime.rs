@@ -50,6 +50,30 @@ struct Feed {
 
 type Shared = Arc<(Mutex<Feed>, Condvar)>;
 
+/// The reader of `input`: its messages in a shared [`Feed`], read on a thread.
+fn spawn_reader(input: impl Read + Send + 'static) -> Shared {
+    let shared: Shared = Arc::default();
+    let reader = Arc::clone(&shared);
+    thread::spawn(move || read_feed(input, reader));
+    shared
+}
+
+/// The feed once the reader's first message came: the first input, or the input's end.
+fn wait_first(shared: &Shared) -> std::sync::MutexGuard<'_, Feed> {
+    let guard = shared.0.lock().unwrap();
+    shared.1.wait_while(guard, |f| !f.first && f.end.is_none()).unwrap()
+}
+
+/// Writes a record and flushes: every step record and answer goes out at once.
+fn write(out: &mut dyn Write, bytes: &[u8]) -> std::io::Result<()> {
+    out.write_all(bytes).and_then(|()| out.flush())
+}
+
+/// The frame's digest after it ran: the log and the `--frames` and `--replay` comparisons check it.
+fn digest(live: &Live) -> u64 {
+    realtime::digest(&pure::frame_bytes(&live.playback.pure.mem))
+}
+
 /// Reads the viewer's messages into `shared` until the input ends.
 fn read_feed(mut input: impl Read, shared: Shared) {
     let mut bytes = [0; MESSAGE_BYTES];
@@ -99,30 +123,37 @@ pub fn serve_realtime<'a>(
     mut pilot: Option<Pilot<'a>>,
     mut log: Option<Box<dyn Write>>,
 ) -> Result<Live<'a>, String> {
-    let shared: Shared = Arc::default();
-    let reader = Arc::clone(&shared);
-    thread::spawn(move || read_feed(input, reader));
+    let shared = spawn_reader(input);
     let (lock, wake) = &*shared;
-    let write = |out: &mut dyn Write, bytes: &[u8]| out.write_all(bytes).and_then(|()| out.flush());
-    let mut feed = wake.wait_while(lock.lock().unwrap(), |f| !f.first && f.end.is_none()).unwrap();
+    let mut feed = wait_first(&shared);
     if let Some(end) = feed.end.take() {
         return end.map(|()| live);
     }
-    let mut payload = feed.input.to_bytes();
+    let payload = feed.input.to_bytes();
     drop(feed);
-    if let Some(own) = pilot.as_mut().and_then(|p| p.payload(&live, None)) {
-        payload = own;
-    }
-    let mut last = live.answer(&payload)?;
+    // The stage's start: the first input's frame, answered before the clock runs, and after a restart.
+    let start = |live: &mut Live<'a>,
+                 output: &mut dyn Write,
+                 log: &mut Option<Box<dyn Write>>,
+                 pilot: &mut Option<Pilot<'a>>,
+                 mut payload: [u8; CONTROL_BYTES]|
+     -> Result<(Vec<u8>, Answering), String> {
+        if let Some(own) = pilot.as_mut().and_then(|p| p.payload(live, None)) {
+            payload = own;
+        }
+        let answer = live.answer(&payload)?;
+        let answering = Answering::new(live);
+        logged(log, live, payload, 1, live.next_step() - live.start)?;
+        write(output, &answer).map_err(|e| e.to_string())?;
+        Ok((answer, answering))
+    };
     if let Some(log) = log.as_mut() {
         log.write_all(&LOG_MAGIC).map_err(|e| e.to_string())?;
     }
-    logged(&mut log, &live, payload, 1, live.next_step() - live.start)?;
-    write(&mut output, &last).map_err(|e| e.to_string())?;
+    let (mut last, mut answering) = start(&mut live, &mut output, &mut log, &mut pilot, payload)?;
     let step = f64::from(live.clock.step);
     let period = Duration::from_secs_f64(step);
     let mut stats = Stats::default();
-    let mut answering = Answering::new(&live);
     loop {
         let feed = wake.wait_while(lock.lock().unwrap(), |f| !f.running && f.end.is_none()).unwrap();
         if feed.end.is_some() {
@@ -160,14 +191,8 @@ pub fn serve_realtime<'a>(
                     log.write_all(&Logged::RESTART.to_bytes()).map_err(|e| e.to_string())?;
                 }
                 (origin, ticks) = (Instant::now(), 0);
-                let mut payload = Input { frames: 0, ..input }.to_bytes();
-                if let Some(own) = pilot.as_mut().and_then(|p| p.payload(&live, None)) {
-                    payload = own;
-                }
-                last = live.answer(&payload)?;
-                answering = Answering::new(&live);
-                logged(&mut log, &live, payload, 1, live.next_step() - live.start)?;
-                write(&mut output, &last).map_err(|e| e.to_string())?;
+                let payload = Input { frames: 0, ..input }.to_bytes();
+                (last, answering) = start(&mut live, &mut output, &mut log, &mut pilot, payload)?;
                 stats.answers += 1;
                 continue;
             }
@@ -247,7 +272,7 @@ fn logged(
     substeps: u32,
 ) -> Result<(), String> {
     let Some(log) = log.as_mut() else { return Ok(()) };
-    let digest = realtime::digest(&pure::frame_bytes(&live.playback.pure.mem));
+    let digest = digest(live);
     log.write_all(&Logged { payload, periods, substeps, digest }.to_bytes()).map_err(|e| e.to_string())
 }
 
@@ -292,7 +317,7 @@ pub fn serve_frames<'a>(
         // The first frame is the snapshot's own call, whose steps count from the image's.
         let substeps = if std::mem::take(&mut first) { live.next_step() - live.start } else { substeps };
         if frame.checked() {
-            let digest = realtime::digest(&pure::frame_bytes(&live.playback.pure.mem));
+            let digest = digest(&live);
             if (substeps, digest) != (frame.substeps, frame.digest) {
                 return Err(format!(
                     "frame {frames} (step {pre}): {substeps} substeps, digest {digest:#018x}; the drive's {} \
@@ -333,13 +358,10 @@ pub fn serve_replay<'a>(
     pace: Pace,
 ) -> Result<(Live<'a>, String), String> {
     let (first, rest) = frames.split_first().ok_or("the replay has no frames")?;
-    let shared: Shared = Arc::default();
-    let reader = Arc::clone(&shared);
-    thread::spawn(move || read_feed(input, reader));
+    let shared = spawn_reader(input);
     let (lock, wake) = &*shared;
-    let write = |out: &mut dyn Write, bytes: &[u8]| out.write_all(bytes).and_then(|()| out.flush());
     let compare = |live: &Live, at: usize, frame: &Logged, substeps: u32| {
-        let digest = realtime::digest(&pure::frame_bytes(&live.playback.pure.mem));
+        let digest = digest(live);
         if !frame.checked() || (substeps, digest) == (frame.substeps, frame.digest) {
             return Ok(());
         }
@@ -356,7 +378,7 @@ pub fn serve_replay<'a>(
         write(output, &answer).map_err(|e| e.to_string())?;
         Ok(Answering::new(live))
     };
-    let feed = wake.wait_while(lock.lock().unwrap(), |f| !f.first && f.end.is_none()).unwrap();
+    let feed = wait_first(&shared);
     if feed.end.is_some() {
         drop(feed);
         return Ok((live, "not watched".to_owned()));
