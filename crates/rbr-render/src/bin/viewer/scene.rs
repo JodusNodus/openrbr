@@ -261,7 +261,8 @@ fn load_scene<'scope, 'env>(
                             progress(Step::Physics);
                         }
                         let command = command.as_deref().map(|command| with_start_time(command, day_clock.as_ref()));
-                        // The live process boots and steps to its `--at` frames while the car loads.
+                        // The live process boots and steps to its `--at` frames while the car loads, and the stage's
+                        // collision probe loads.
                         let started = scope.spawn(move || match (drive, command) {
                             (Some(path), _) => {
                                 let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -271,6 +272,7 @@ fn load_scene<'scope, 'env>(
                                 .map(|(process, drive, detached)| (Some(process), drive, detached)),
                             (None, None) => unreachable!(),
                         });
+                        let probe = scope.spawn(|| StageProbe::load(data, name).map(std::sync::Arc::new));
                         progress(Step::Car);
                         let mut car = car::load(data, car_name, car::placement_at(None)).map_err(error)?;
                         if args.enhance.cabin {
@@ -311,7 +313,7 @@ fn load_scene<'scope, 'env>(
                             started.join().unwrap_or_else(|panic| std::panic::resume_unwind(panic))?;
                         live = process;
                         let mut loaded = Playback::load(data, car_name, &stage, &model, &damage, drive)?;
-                        let probe = StageProbe::load(data, name).map(std::sync::Arc::new);
+                        let probe = probe.join().unwrap_or_else(|panic| std::panic::resume_unwind(panic));
                         if let Some(characters) = &mut characters {
                             characters.set_probe(probe.clone());
                         }
