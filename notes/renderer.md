@@ -164,7 +164,9 @@ Rally3 Evo, 1280x720: 63.9 fps render, replay 16920 of 16920 frames equal, video
   its lines only at the interior triangles whose boxes come within reach of the eye: the 208's car load 1.9 to 1.0 s,
   the 42 RSF cars' mounts identical. The glass's film samples (`film_corners`, `Tints::film_tints`) go over the
   threads too: `glass::Drawn::load` 0.56 to 0.25 s. The road and ground marks (`Stage::mark_surfaces`) share one load
-  of the collision ground and one lookup per ground triangle: 580's stage load 2.99 to 2.14 s.
+  of the collision ground and one lookup per ground triangle: 580's stage load 2.99 to 2.14 s. The road's edges
+  (`puddles::mark_roads`) map only the film triangles' edges, the others' looked up and the edge distances found over
+  the threads: 2.14 to 1.66 s.
 - Object lanes `(1,1)` (`stage::OBJECT_ALPHA_REF`, kind-byte address modes).
 - Interactive props `(1,6)` (`stage/mod.rs` `InteractivePose`): every retail record drawn at its placement while its
   cell shows; live moves a woken prop by its solid's pose. The car's glass (no depth write) goes over them.

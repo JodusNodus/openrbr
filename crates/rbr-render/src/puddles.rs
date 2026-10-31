@@ -171,17 +171,33 @@ pub(crate) fn mark_roads(meshes: &mut [Mesh], ground: &[GroundTriangle]) {
             Some((texture, f32::from_bits(bits)))
         })
         .collect();
-    // Per edge, the count of film triangles and of the others.
-    let mut edges: HashMap<(Spot, Spot), [u32; 2]> = HashMap::new();
+    // The film triangles' edges, each with whether a ground triangle without film shares it: the road's edge. Only the
+    // film's go in the map and the others' are looked up, over the load's threads (every ground edge counted, 2.3M on
+    // 580, took 0.5 s).
+    let sides = |mesh: &Mesh, t: [usize; 3]| {
+        [0, 1, 2].map(|k| {
+            let [a, b] = [t[k], t[(k + 1) % 3]].map(|i| spot(mesh.vertices[i].position));
+            (a.min(b), a.max(b))
+        })
+    };
+    let mut edges: HashMap<(Spot, Spot), bool> = HashMap::new();
+    for &(m, t, ..) in shares.iter().filter(|s| s.3 > 0.0) {
+        for side in sides(&meshes[m], t) {
+            edges.insert(side, false);
+        }
+    }
+    let others: Vec<_> = shares.iter().filter(|s| s.3 == 0.0).map(|&(m, t, ..)| (m, t)).collect();
+    let touching = in_parallel(&others, |&(m, t)| sides(&meshes[m], t).map(|side| edges.contains_key(&side)));
+    for (&(m, t), touching) in others.iter().zip(touching).filter(|(_, touching)| touching.contains(&true)) {
+        for (side, _) in sides(&meshes[m], t).into_iter().zip(touching).filter(|&(_, touches)| touches) {
+            edges.insert(side, true);
+        }
+    }
     for (m, t, texture, share) in shares {
         let share = if share > 0.0 { most.get(&texture).copied().unwrap_or(share) } else { share };
-        let mesh = &mut meshes[m];
-        for k in 0..3 {
-            let [a, b] = [t[k], t[(k + 1) % 3]].map(|i| spot(mesh.vertices[i].position));
-            edges.entry((a.min(b), a.max(b))).or_default()[usize::from(share == 0.0)] += 1;
-        }
         for i in t {
-            mesh.vertices[i].wet = mesh.vertices[i].wet.max(share);
+            let vertex = &mut meshes[m].vertices[i];
+            vertex.wet = vertex.wet.max(share);
         }
     }
     // The snow's vertices that took no film.
@@ -194,10 +210,7 @@ pub(crate) fn mark_roads(meshes: &mut [Mesh], ground: &[GroundTriangle]) {
         }
     }
     let mut grid: HashMap<(i32, i32), Vec<Segment>> = HashMap::new();
-    for (&(a, b), &[film, other]) in &edges {
-        if film == 0 || other == 0 {
-            continue;
-        }
+    for (&(a, b), _) in edges.iter().filter(|(_, &shared)| shared) {
         let [a, b] = [a, b].map(|s| s.map(|c| c as f32 / 100.0));
         let (x, z) = (cell_of(a, EDGE_RANGE), cell_of(b, EDGE_RANGE));
         for cx in x.0.min(z.0)..=x.0.max(z.0) {
@@ -206,17 +219,23 @@ pub(crate) fn mark_roads(meshes: &mut [Mesh], ground: &[GroundTriangle]) {
             }
         }
     }
-    for mesh in meshes.iter_mut() {
-        for i in ground_vertices(mesh).collect::<std::collections::BTreeSet<_>>() {
-            let p = mesh.vertices[i].position;
-            let (x, z) = cell_of(p, EDGE_RANGE);
-            let near = (-1..=1)
-                .flat_map(|dx| (-1..=1).map(move |dz| (x + dx, z + dz)))
-                .filter_map(|c| grid.get(&c))
-                .flatten()
-                .map(|&(a, b)| segment_distance(p, a, b))
-                .fold(EDGE_RANGE, f32::min);
-            mesh.vertices[i].edge = near;
+    // Each road vertex's distance to the nearest edge, over the load's threads (0.23 s one mesh after another on 580).
+    let nearest = |p: [f32; 3]| {
+        let (x, z) = cell_of(p, EDGE_RANGE);
+        (-1..=1)
+            .flat_map(|dx| (-1..=1).map(move |dz| (x + dx, z + dz)))
+            .filter_map(|c| grid.get(&c))
+            .flatten()
+            .map(|&(a, b)| segment_distance(p, a, b))
+            .fold(EDGE_RANGE, f32::min)
+    };
+    let distances = in_parallel(meshes, |mesh| {
+        let road = ground_vertices(mesh).collect::<std::collections::BTreeSet<_>>();
+        road.into_iter().map(|i| (i, nearest(mesh.vertices[i].position))).collect::<Vec<_>>()
+    });
+    for (mesh, distances) in meshes.iter_mut().zip(distances) {
+        for (i, edge) in distances {
+            mesh.vertices[i].edge = edge;
         }
     }
 }
