@@ -9,7 +9,7 @@ use crate::engine_driveline::SIGNALS;
 use crate::{Binding, Ctx, Decline, Regs, Return};
 
 const fn bind(addr: u32, name: &'static str, run: crate::BindingFn) -> Binding {
-    Binding { addr, name, subsystem: "spring_damper", run }
+    crate::bind("spring_damper", addr, name, run)
 }
 
 pub static BINDINGS: [Binding; 22] = [

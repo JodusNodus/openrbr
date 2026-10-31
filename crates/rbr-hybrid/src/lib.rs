@@ -286,6 +286,12 @@ pub struct Binding {
     pub run: BindingFn,
 }
 
+/// One binding entry. The subsystem strings are what [`pure::Pure::direct`] matches on (`IN_PLACE`), so they stay
+/// exactly as they are.
+pub const fn bind(subsystem: &'static str, addr: u32, name: &'static str, run: BindingFn) -> Binding {
+    Binding { addr, name, subsystem, run }
+}
+
 /// Every bound function.
 pub fn bindings() -> impl Iterator<Item = &'static Binding> {
     vcu::BINDINGS
@@ -435,6 +441,34 @@ pub(crate) mod tests {
         listed.sort();
         bound.sort();
         assert_eq!(listed, bound);
+    }
+
+    /// The bindings per subsystem: the pure step's in-place dispatch (`pure::IN_PLACE`) picks them by these names.
+    #[test]
+    fn bindings_per_subsystem() {
+        let mut counts = std::collections::BTreeMap::new();
+        for binding in bindings() {
+            *counts.entry(binding.subsystem).or_insert(0) += 1;
+        }
+        let expected = [
+            ("car_body", 116),
+            ("collision", 93),
+            ("engine_driveline", 99),
+            ("entities", 119),
+            ("game_log", 1),
+            ("graph", 2),
+            ("ngp", 21),
+            ("ntweak", 6),
+            ("physics_core", 45),
+            ("rigid-body", 49),
+            ("spring_damper", 22),
+            ("timekeeper", 1),
+            ("timing", 4),
+            ("tyre", 45),
+            ("vcu", 16),
+            ("wheel", 30),
+        ];
+        assert_eq!(counts.into_iter().collect::<Vec<_>>(), expected);
     }
 
     #[test]

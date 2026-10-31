@@ -61,7 +61,7 @@ pub const M3B880: u32 = 0x53b880; // E51Wheel::M3B880: the strut's travel clamp,
 const BLEND_TABLE: u32 = 0x534E70;
 
 const fn bind(addr: u32, name: &'static str, run: crate::BindingFn) -> Binding {
-    Binding { addr, name, subsystem: "wheel", run }
+    crate::bind("wheel", addr, name, run)
 }
 
 pub static BINDINGS: [Binding; 30] = [

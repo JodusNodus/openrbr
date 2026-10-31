@@ -15,7 +15,7 @@ use rbr_physics::tyre::{grip, solve};
 use crate::{Binding, Ctx, Decline, Regs, Return, SignalCallees};
 
 const fn bind(addr: u32, name: &'static str, run: crate::BindingFn) -> Binding {
-    Binding { addr, name, subsystem: "tyre", run }
+    crate::bind("tyre", addr, name, run)
 }
 
 pub static BINDINGS: [Binding; 45] = [

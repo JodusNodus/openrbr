@@ -97,6 +97,10 @@ pub const RING_APPEND: u32 = 0x529100; // E46_RingAppend (thiscall: the ring tai
 /// the nested calls' frames are below (as in `collision`).
 const SCRATCH_BELOW_ESP: u32 = 0x800;
 
+const fn bind(addr: u32, name: &'static str, run: crate::BindingFn) -> Binding {
+    crate::bind("rigid-body", addr, name, run)
+}
+
 pub static BINDINGS: [Binding; 49] = [
     bind(NEW_DEF, "CSolid::NewDef", new_def),
     bind(E46_IMPULSE640, "E46Impulse::Impulse640", clamp_velocity_along),
@@ -148,10 +152,6 @@ pub static BINDINGS: [Binding; 49] = [
     bind(VF85, "CSolid::Vf85", vf85),
     bind(STEP77, "CSolid::Step77", step77),
 ];
-
-const fn bind(addr: u32, name: &'static str, run: crate::BindingFn) -> Binding {
-    Binding { addr, name, subsystem: "rigid-body", run }
-}
 
 /// The original callees, called through the host. The host never reports itself unavailable.
 struct Original<'a>(&'a dyn Host);

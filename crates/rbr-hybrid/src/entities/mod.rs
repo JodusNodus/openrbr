@@ -129,6 +129,10 @@ pub(crate) const EXCLUSION_TEST: u32 = 0x519f80;
 
 pub(crate) const ENTITY_VF118: u32 = 0x519ac0;
 
+const fn bind(addr: u32, name: &'static str, run: crate::BindingFn) -> Binding {
+    crate::bind("entities", addr, name, run)
+}
+
 pub static BINDINGS: [Binding; 119] = [
     bind(VF58, "CEntity::E43Vf58", vf58),
     bind(VF5C, "CEntity::E43Vf5C", vf5c),
@@ -251,10 +255,6 @@ pub static BINDINGS: [Binding; 119] = [
     bind(0x600ff0, "E90Seg::E90Seg", e90_seg_ctor_run),
     bind(0x601030, "E90Seg::~E90Seg", e90_seg_dtor_run),
 ];
-
-const fn bind(addr: u32, name: &'static str, run: crate::BindingFn) -> Binding {
-    Binding { addr, name, subsystem: "entities", run }
-}
 
 #[cfg(test)]
 mod tests {
