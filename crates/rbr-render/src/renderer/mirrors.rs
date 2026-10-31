@@ -21,6 +21,9 @@ const WINDSCREEN: usize = MOST_MIRRORS;
 /// The windscreen's image is drawn every this many frames (user's call: its pass cost 1.2-1.5 ms a frame); between,
 /// the glass holds it still with the car as it does the mirrors'.
 const WINDSCREEN_RATE: Rate = Rate::Every(2);
+/// The windscreen's largest image with [`Detail::Ultra`](super::Detail::Ultra), pixels (the mirrors' [`MOST`] else):
+/// a cockpit's windscreen spans about the frame's width, which [`MOST`] halves at 1080p.
+const WINDSCREEN_ULTRA: (u32, u32) = (2048, 1024);
 /// Each layer's span in `--profile`.
 const LABELS: [&str; LAYERS] = ["mirror 1", "mirror 2", "mirror 3", "mirror 4", "windscreen reflection"];
 
@@ -58,8 +61,11 @@ pub(super) struct Mirrors {
     /// Whether the windscreen's image is drawn ([`Enhance::windscreen`](super::Enhance::windscreen)), at
     /// [`WINDSCREEN_RATE`].
     windscreen_on: bool,
-    /// [`LAYERS`] layers of [`MOST`] (one texel without mirrors), and their view.
+    /// The windscreen's largest image: [`WINDSCREEN_ULTRA`] or [`MOST`].
+    windscreen_most: (u32, u32),
+    /// [`LAYERS`] layers of the largest image (one texel without mirrors), their size and their view.
     images: wgpu::Texture,
+    size: (u32, u32),
     pub(super) view: wgpu::TextureView,
     /// `MirrorViews`.
     pub(super) uniform: wgpu::Buffer,
@@ -73,10 +79,18 @@ pub(super) struct Mirrors {
 }
 
 impl Mirrors {
-    pub(super) fn new(device: &wgpu::Device, format: wgpu::TextureFormat, rate: Rate, windscreen_on: bool) -> Mirrors {
+    pub(super) fn new(
+        device: &wgpu::Device,
+        format: wgpu::TextureFormat,
+        rate: Rate,
+        windscreen_on: bool,
+        ultra: bool,
+    ) -> Mirrors {
+        let windscreen_most = if ultra { WINDSCREEN_ULTRA } else { MOST };
         let (size, layers) = match (rate, windscreen_on) {
             (Rate::Off, false) => ((1, 1), 1),
-            _ => (MOST, LAYERS as u32),
+            (_, false) => (MOST, LAYERS as u32),
+            (_, true) => (windscreen_most, LAYERS as u32),
         };
         let images = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("mirror images"),
@@ -101,7 +115,9 @@ impl Mirrors {
         Mirrors {
             rate,
             windscreen_on,
+            windscreen_most,
             images,
+            size,
             view,
             uniform,
             placed: Vec::new(),
@@ -117,6 +133,14 @@ impl Mirrors {
     /// The glass drawn this frame with its image layer: the mirrors', then the windscreen's.
     fn layers(&self) -> impl Iterator<Item = (usize, Placed)> + '_ {
         self.placed.iter().copied().enumerate().chain(self.windscreen.map(|placed| (WINDSCREEN, placed)))
+    }
+
+    /// Layer `k`'s largest image.
+    fn most(&self, k: usize) -> (u32, u32) {
+        match k {
+            WINDSCREEN => self.windscreen_most,
+            _ => MOST,
+        }
     }
 
     /// Whether layer `k`'s image is drawn on frame `frame`: the mirrors' at their rate, the windscreen's at
@@ -188,7 +212,8 @@ impl Renderer {
             if held[k].is_some() && !m.due(k, frame) {
                 continue;
             }
-            let Some(view) = mirrors::view(view_projection, sky_view_projection, self.depth_size, &placed) else {
+            let Some(view) = mirrors::view(view_projection, sky_view_projection, self.depth_size, &placed, m.most(k))
+            else {
                 continue;
             };
             let layer = mark(profiler, &mut encoder);
@@ -257,7 +282,7 @@ impl Renderer {
             if let Some(held) = &held[k] {
                 views[k] = ViewUniform {
                     view_projection: (held.view_projection * held.body * body.inverse()).to_cols_array_2d(),
-                    scale: [held.size.0 as f32 / MOST.0 as f32, held.size.1 as f32 / MOST.1 as f32, 1.0, 0.0],
+                    scale: [held.size.0 as f32 / m.size.0 as f32, held.size.1 as f32 / m.size.1 as f32, 1.0, 0.0],
                 };
             }
         }

@@ -252,7 +252,7 @@ impl Renderer {
             mipmap_filter: wgpu::MipmapFilterMode::Linear,
             ..Default::default()
         });
-        let mirrors = mirrors::Mirrors::new(&device, format, enhance.mirrors, enhance.windscreen);
+        let mirrors = mirrors::Mirrors::new(&device, format, enhance.mirrors, enhance.windscreen, ultra);
         let ground_light = bounce::Ground::new(&device, stage, enhance.lighting);
         let world_box = (stage.meshes.iter().filter(|m| m.anchor == Anchor::World).flat_map(|m| &m.vertices))
             .map(|v| Vec3::from(v.position))

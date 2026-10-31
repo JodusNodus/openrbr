@@ -172,7 +172,7 @@ fn a_view_reflects_the_scene_into_the_glass_box() {
     let centre = Vec3::new(0.3, 0.0, 1.0);
     let corners = [centre - u - v, centre + u - v, centre + u + v, centre - u + v];
     let placed = Placed { corners, normal, side: true };
-    let view = view(main, sky, screen, &placed).expect("the glass is in view");
+    let view = view(main, sky, screen, &placed, MOST).expect("the glass is in view");
     assert!(view.size.0.is_multiple_of(STEP) && view.size.1.is_multiple_of(STEP));
     assert!(view.size.0 <= MOST.0 && view.size.1 <= MOST.1);
     // The glass's own outline lies in the image, left and right swapped.
@@ -201,9 +201,9 @@ fn a_view_reflects_the_scene_into_the_glass_box() {
     let facing_glass = [2, 1, 0].map(|i| reflect.transform_point3(facing_eye[i]));
     assert_eq!(turn(main, facing_eye).signum(), turn(view.view_projection, facing_glass).signum());
     // Turned away or behind the eye, no view.
-    assert!(super::view(main, sky, screen, &Placed { normal: -normal, ..placed }).is_none());
+    assert!(super::view(main, sky, screen, &Placed { normal: -normal, ..placed }, MOST).is_none());
     let behind = corners.map(|c| c * Vec3::new(1.0, 1.0, -1.0));
-    assert!(super::view(main, sky, screen, &Placed { corners: behind, normal: -normal, side: true }).is_none());
+    assert!(super::view(main, sky, screen, &Placed { corners: behind, normal: -normal, side: true }, MOST).is_none());
 }
 
 /// Each retail car's mirrors face the driver and back along the car, at least two and one a door's (as
