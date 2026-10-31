@@ -27,7 +27,7 @@ use std::time::Duration;
 use egui::Color32;
 
 use crate::car_packs::{self, Added, Download, BANKS, MODEL, PHYSICS};
-use crate::job::{Counter, Job, Progress, Temp};
+use crate::job::{Counter, Job, Progress, Report, Temp};
 use crate::ngp_install;
 use crate::pages::{GOOD, WARN};
 use crate::Form;
@@ -194,7 +194,7 @@ pub(crate) fn fetch(agent: &ureq::Agent, url: &str, dest: &Path, count: &mut Cou
 fn download_package_from(
     list: &str,
     dir: &Path,
-    report: &(dyn Fn(&Progress) + Sync),
+    report: Report<'_>,
     cancel: &AtomicBool,
 ) -> Result<PathBuf, Fail> {
     report(&Progress { step: "Reading the car list", ..Progress::default() });
@@ -210,7 +210,7 @@ fn download_package_from(
 /// Downloads NGP's package into the folder `dir`: its path (for `disc_install`'s setup, which reads it).
 pub fn download_ngp_package(
     dir: &Path,
-    report: &(dyn Fn(&Progress) + Sync),
+    report: Report<'_>,
     cancel: &AtomicBool,
 ) -> Result<PathBuf, Fail> {
     download_package_from(LIST_URL, dir, report, cancel)
@@ -221,7 +221,7 @@ pub fn download_ngp_package(
 fn download_ngp_from(
     list: &str,
     game: &Path,
-    report: &(dyn Fn(&Progress) + Sync),
+    report: Report<'_>,
     cancel: &AtomicBool,
 ) -> Result<usize, Fail> {
     ngp_install::check_game_folder(game)?;
@@ -231,12 +231,12 @@ fn download_ngp_from(
 }
 
 /// Downloads NGP and installs it into the game folder `game`; the number of files written.
-pub fn download_ngp(game: &Path, report: &(dyn Fn(&Progress) + Sync), cancel: &AtomicBool) -> Result<usize, Fail> {
+pub fn download_ngp(game: &Path, report: Report<'_>, cancel: &AtomicBool) -> Result<usize, Fail> {
     download_ngp_from(LIST_URL, game, report, cancel)
 }
 
 /// Downloads NGP's package into a temp folder beside `to` and writes only its `NGP.dll` and `physics.rbz` into `to`.
-fn download_ngp_to(to: &Path, report: &(dyn Fn(&Progress) + Sync), cancel: &AtomicBool) -> Result<(), Fail> {
+fn download_ngp_to(to: &Path, report: Report<'_>, cancel: &AtomicBool) -> Result<(), Fail> {
     let temp = Temp::create(to.parent().unwrap_or(Path::new(".")), "downloading")?;
     let package = download_package_from(LIST_URL, &temp.0, report, cancel)?;
     ngp_install::add_ngp_to(&package, to, report, cancel)
@@ -247,7 +247,7 @@ fn download_ngp_to(to: &Path, report: &(dyn Fn(&Progress) + Sync), cancel: &Atom
 pub fn download_cars(
     cars_dir: &Path,
     wanted: &[Entry],
-    report: &(dyn Fn(&Progress) + Sync),
+    report: Report<'_>,
     cancel: &AtomicBool,
 ) -> Result<Vec<Added>, Fail> {
     fs::create_dir_all(cars_dir).map_err(|e| format!("{}: {e}", cars_dir.display()))?;

@@ -23,7 +23,7 @@ use std::sync::Mutex;
 use rbr_formats::installshield::Cabinet;
 use rbr_formats::{installshield, iso9660, rbz};
 
-use crate::job::{Job, Progress, Temp};
+use crate::job::{Job, Progress, Report, Temp};
 use crate::ngp_install;
 use crate::pages::{GOOD, WARN};
 
@@ -208,14 +208,14 @@ pub(crate) struct Reporter<'a> {
     pub(crate) total: u64,
     done: AtomicU64,
     reported: AtomicU64,
-    report: &'a (dyn Fn(&Progress) + Sync),
+    report: Report<'a>,
     cancel: &'a AtomicBool,
     /// A writing thread failed: the others stop too.
     failed: AtomicBool,
 }
 
 impl<'a> Reporter<'a> {
-    pub(crate) fn new(report: &'a (dyn Fn(&Progress) + Sync), cancel: &'a AtomicBool) -> Self {
+    pub(crate) fn new(report: Report<'a>, cancel: &'a AtomicBool) -> Self {
         Reporter {
             step: "",
             total: 0,
@@ -427,7 +427,7 @@ fn free_bytes(dir: &Path) -> Option<u64> {
 }
 
 /// Sets up `inputs.out`; `report` gets the progress, and `cancel` stops it. On an error OUT is left as it was.
-pub fn install(inputs: &Inputs, report: &(dyn Fn(&Progress) + Sync), cancel: &AtomicBool) -> Result<Counts, Fail> {
+pub fn install(inputs: &Inputs, report: Report<'_>, cancel: &AtomicBool) -> Result<Counts, Fail> {
     // NGP's package, downloaded first when none is given, so that a failure comes before the disc is read.
     let (_download, ngp) = match &inputs.ngp {
         Some(path) => (None, path.clone()),
@@ -449,7 +449,7 @@ pub fn install(inputs: &Inputs, report: &(dyn Fn(&Progress) + Sync), cancel: &At
 fn into_new_folder<T>(
     inputs: &[&PathBuf],
     out: &Path,
-    report: &(dyn Fn(&Progress) + Sync),
+    report: Report<'_>,
     cancel: &AtomicBool,
     work: impl FnOnce(&Path, &mut Reporter) -> Result<T, Fail>,
 ) -> Result<T, Fail> {
@@ -488,7 +488,7 @@ pub fn extract_test_data(
     disc: &Path,
     patch: &Path,
     out: &Path,
-    report: &(dyn Fn(&Progress) + Sync),
+    report: Report<'_>,
     cancel: &AtomicBool,
 ) -> Result<Counts, Fail> {
     let (disc, patch) = (disc.to_owned(), patch.to_owned());

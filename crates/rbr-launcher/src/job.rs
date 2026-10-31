@@ -13,6 +13,9 @@ use std::time::Duration;
 /// A failed or cancelled job's message.
 type Fail = String;
 
+/// A job's progress report: the step and the bytes written of all.
+pub type Report<'a> = &'a (dyn Fn(&Progress) + Sync);
+
 /// What the work is doing: a step and the bytes written of all.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Progress {
@@ -40,7 +43,7 @@ pub struct Job<T> {
 impl<T: Send + 'static> Job<T> {
     /// Runs `work` with its progress report and its cancel flag.
     pub fn start(
-        work: impl FnOnce(&(dyn Fn(&Progress) + Sync), &AtomicBool) -> Result<T, Fail> + Send + 'static,
+        work: impl FnOnce(Report<'_>, &AtomicBool) -> Result<T, Fail> + Send + 'static,
     ) -> Job<T> {
         let progress = Arc::new(Mutex::new(Progress::default()));
         let cancel = Arc::new(AtomicBool::new(false));
@@ -103,7 +106,7 @@ pub struct Counter<'a> {
     pub step: &'static str,
     pub done: u64,
     pub total: u64,
-    pub report: &'a (dyn Fn(&Progress) + Sync),
+    pub report: Report<'a>,
     pub cancel: &'a AtomicBool,
 }
 
