@@ -11,7 +11,8 @@ use std::collections::BTreeMap;
 use egui::{Align2, Color32, FontId, Pos2, Rect, RichText, Sense, Stroke};
 
 use crate::browser::{
-    block, favourite_button, header_line, items, side_row, top_line, Keys, Line, Nav, DIM, GREY, ROW, STAR,
+    block, favourite_button, header_line, items, key_action, list_rows, paint_selection, paint_star, random_row,
+    row_slot, side_list, step_nav, top_line, Line, Nav, SideEntry, DIM, GREY, ROW,
 };
 use crate::catalog::Car;
 use crate::pages::{combo, ACCENT};
@@ -413,24 +414,15 @@ impl CarBrowser {
     /// Draws the browser in `ui`; what the player asked for.
     pub fn ui(&mut self, ui: &mut egui::Ui, mut env: Env) -> Option<Action> {
         self.refresh(env.favourites, env.recent);
-        let mut action = None;
-        // The arrow keys, Enter and Escape belong to the list, not to the search box or the Start button.
-        let keys = Keys::take(ui);
-        let by = keys.movement();
-        if by != 0 {
-            self.nav.step(&self.lines, by);
-        }
-        if let Some(row) = self.rows.get(self.nav.cursor) {
-            if keys.enter && row.startable() {
-                action = Some(Action::Choose(row.index));
-            }
-            if keys.favourite {
-                action = Some(Action::Favourite(row.name.clone()));
-            }
-        }
-        if keys.escape {
-            action = Some(Action::Back);
-        }
+        let keys = step_nav(ui, &mut self.nav, &self.lines);
+        let mut action = key_action(
+            &self.nav,
+            &self.rows,
+            &keys,
+            |row| row.startable().then_some(Action::Choose(row.index)),
+            |row| Action::Favourite(row.name.clone()),
+            Action::Back,
+        );
 
         let mut random = false;
         let hint = "Search all cars: name, class, RSF number";
@@ -463,44 +455,37 @@ impl CarBrowser {
 
     /// A random car of the list as filtered becomes the highlighted one.
     fn random(&mut self) {
-        let rows: Vec<usize> = items(&self.lines).filter(|&k| self.rows[k].startable()).collect();
-        if rows.is_empty() {
-            return;
+        if let Some(k) = random_row(&self.lines, |k| self.rows[k].startable()) {
+            self.nav.show(k);
         }
-        let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.subsec_nanos());
-        self.nav.show(rows[nanos as usize % rows.len()]);
     }
 
     /// The collections of the sidebar.
     fn sidebar(&mut self, ui: &mut egui::Ui, env: &Env) {
         let all = collections(&self.rows, env.favourites, env.recent);
         let current = self.collection.clone().unwrap_or(Collection::All);
+        let entries: Vec<SideEntry> = all
+            .iter()
+            .map(|(collection, name, count)| SideEntry {
+                icon: match collection {
+                    Collection::Favourites => "★",
+                    Collection::CannotStart => "⚠",
+                    _ => "",
+                },
+                name,
+                count: *count,
+                selected: current == *collection,
+                grey: *collection == Collection::CannotStart,
+            })
+            .collect();
         // The classes of a full install do not fit the window's height: the list scrolls, the button stays.
         let room = (ui.available_height() - 44.0).max(ROW * 3.0);
         egui::ScrollArea::vertical().id_salt("collections").max_height(room).auto_shrink([false, true]).show(
             ui,
             |ui| {
-                for (n, (collection, name, count)) in all.iter().enumerate() {
-                    // The headers: where the classes start, and the cars that cannot start.
-                    if n == 3 {
-                        ui.add_space(10.0);
-                        ui.label(RichText::new("CLASSES").size(11.5).color(GREY).strong());
-                        ui.add_space(2.0);
-                    } else if *collection == Collection::CannotStart {
-                        ui.add_space(10.0);
-                    } else if n == 0 {
-                        ui.add_space(6.0);
-                    }
-                    let icon = match collection {
-                        Collection::Favourites => "★",
-                        Collection::CannotStart => "⚠",
-                        _ => "",
-                    };
-                    let grey = *collection == Collection::CannotStart;
-                    if side_row(ui, icon, name, *count, current == *collection, grey).clicked() {
-                        self.collection = Some(collection.clone());
-                        self.filter.query.clear();
-                    }
+                if let Some(n) = side_list(ui, &entries, (3, "CLASSES")) {
+                    self.collection = Some(all[n].0.clone());
+                    self.filter.query.clear();
                 }
             },
         );
@@ -565,46 +550,32 @@ impl CarBrowser {
             ui.add_space(10.0);
             ui.label(RichText::new(hint).color(GREY));
         }
-        // The keys line sits below the list; it keeps its room.
-        let height = (ui.available_height() - 34.0).max(ROW * 3.0);
-        let area = self.nav.area("cars", height, self.nav.position(&self.lines));
-        let output = ui.scope(|ui| {
-            ui.spacing_mut().item_spacing.y = 0.0;
-            area.show_rows(ui, ROW, self.lines.len(), |ui, range| {
-                for at in range {
-                    let k = match &self.lines[at] {
-                        Line::Header(name) => {
-                            header_line(ui, name);
-                            continue;
-                        }
-                        Line::Row(k) => *k,
-                    };
-                    let row = &self.rows[k];
-                    let (rect, response) =
-                        ui.allocate_exact_size(egui::vec2(ui.available_width(), ROW), Sense::click());
-                    let star_rect =
-                        Rect::from_center_size(Pos2::new(rect.left() + 18.0, rect.center().y), egui::vec2(28.0, ROW));
-                    let star = ui.interact(star_rect, ui.scope_id().with(("star", k)), Sense::click());
-                    let favourite = favourites.contains(&row.name);
-                    draw_row(ui, rect, row, by_class, k == self.nav.cursor, response.hovered(), favourite);
-                    let response = match row.problem.as_deref() {
-                        Some(problem) => response.on_hover_text(format!("can't start: {problem}")),
-                        None => response,
-                    };
-                    if star.clicked() {
-                        action = Some(Action::Favourite(row.name.clone()));
-                    } else if response.double_clicked() && row.startable() {
-                        action = Some(Action::Choose(row.index));
-                    } else if response.clicked() {
-                        self.nav.point(k);
+        list_rows(ui, &mut self.nav, "cars", &self.lines, |ui, nav, range| {
+            for at in range {
+                let k = match &self.lines[at] {
+                    Line::Header(name) => {
+                        header_line(ui, name);
+                        continue;
                     }
+                    Line::Row(k) => *k,
+                };
+                let row = &self.rows[k];
+                let (rect, response, star) = row_slot(ui, k);
+                let favourite = favourites.contains(&row.name);
+                draw_row(ui, rect, row, by_class, k == nav.cursor, response.hovered(), favourite);
+                let response = match row.problem.as_deref() {
+                    Some(problem) => response.on_hover_text(format!("can't start: {problem}")),
+                    None => response,
+                };
+                if star.clicked() {
+                    action = Some(Action::Favourite(row.name.clone()));
+                } else if response.double_clicked() && row.startable() {
+                    action = Some(Action::Choose(row.index));
+                } else if response.clicked() {
+                    nav.point(k);
                 }
-            })
+            }
         });
-        self.nav.scrolled(&output.inner);
-        ui.add_space(10.0);
-        let keys = "⏶⏷ move    Enter choose    Ctrl+D favourite    Esc back";
-        ui.label(RichText::new(keys).size(12.0).color(DIM));
         action
     }
 
@@ -665,23 +636,9 @@ fn draw_row(ui: &egui::Ui, rect: Rect, row: &CarRow, by_class: bool, cursor: boo
     let p = ui.painter();
     let c = columns(rect.left());
     let y = rect.center().y;
-    if cursor {
-        p.rect_filled(rect, 4.0, ui.visuals().selection.bg_fill.gamma_multiply(0.55));
-        p.rect_filled(
-            Rect::from_min_size(rect.min, egui::vec2(3.0, rect.height())),
-            1.0,
-            ui.visuals().selection.bg_fill,
-        );
-    } else if hovered {
-        p.rect_filled(rect, 4.0, ui.visuals().widgets.hovered.weak_bg_fill);
-    }
+    paint_selection(ui, rect, cursor, hovered);
     let text = if row.startable() { ui.visuals().strong_text_color() } else { DIM };
-    let (star, colour) = match (favourite, hovered || cursor) {
-        (true, _) => ("★", STAR),
-        (false, true) => ("☆", Color32::from_gray(170)),
-        (false, false) => ("☆", Color32::from_gray(70)),
-    };
-    p.text(Pos2::new(c[0] + 6.0, y), Align2::CENTER_CENTER, star, FontId::proportional(16.0), colour);
+    paint_star(p, Pos2::new(c[0] + 6.0, y), favourite, hovered || cursor);
     let name = p.layout_no_wrap(row.title.clone(), FontId::proportional(15.0), text);
     let room = Rect::from_min_max(Pos2::new(c[1], rect.top()), Pos2::new(c[1] + NAME_WIDTH, rect.bottom()));
     p.with_clip_rect(room).galley(Pos2::new(c[1], y - name.size().y / 2.0), name, text);

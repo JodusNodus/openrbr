@@ -2,7 +2,7 @@
 //! the keys, the highlighted row with its scrolling, and the recent picks. The browsers differ in their collections,
 //! filters, columns and detail panel.
 
-use egui::{Align2, Color32, FontId, Key, Modifiers, Sense};
+use egui::{Align2, Color32, FontId, Key, Modifiers, Pos2, Rect, Sense};
 
 pub const GREY: Color32 = Color32::from_gray(130);
 pub const DIM: Color32 = Color32::from_gray(95);
@@ -201,6 +201,137 @@ pub fn top_line(
         });
     });
     back
+}
+
+/// Takes the browser's keys and moves the highlight with the arrow and page keys; the keys.
+///
+/// The keys belong to the list, not to the search box or the Start button.
+pub fn step_nav(ui: &egui::Ui, nav: &mut Nav, lines: &[Line]) -> Keys {
+    let keys = Keys::take(ui);
+    let by = keys.movement();
+    if by != 0 {
+        nav.step(lines, by);
+    }
+    keys
+}
+
+/// What the keys chose: Enter chooses (when `on_enter` takes the highlighted row), Ctrl/Cmd+D favourites it,
+/// Escape goes back.
+pub fn key_action<R, A>(
+    nav: &Nav,
+    rows: &[R],
+    keys: &Keys,
+    mut on_enter: impl FnMut(&R) -> Option<A>,
+    mut on_favourite: impl FnMut(&R) -> A,
+    back: A,
+) -> Option<A> {
+    let mut action = None;
+    if let Some(row) = rows.get(nav.cursor) {
+        if keys.enter {
+            action = on_enter(row);
+        }
+        if keys.favourite {
+            action = Some(on_favourite(row));
+        }
+    }
+    if keys.escape {
+        action = Some(back);
+    }
+    action
+}
+
+/// A random startable row of `lines`, picked by the clock.
+pub fn random_row(lines: &[Line], startable: impl Fn(usize) -> bool) -> Option<usize> {
+    let rows: Vec<usize> = items(lines).filter(|&k| startable(k)).collect();
+    if rows.is_empty() {
+        return None;
+    }
+    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.subsec_nanos());
+    Some(rows[nanos as usize % rows.len()])
+}
+
+/// The list's scrolled rows with the keys' line under them: draws `add_contents` for each visible range (which may
+/// move the highlight through `nav`), then keeps the scrolling; the keys' line keeps its room below.
+pub fn list_rows(
+    ui: &mut egui::Ui,
+    nav: &mut Nav,
+    id: &'static str,
+    lines: &[Line],
+    mut add_contents: impl FnMut(&mut egui::Ui, &mut Nav, std::ops::Range<usize>),
+) {
+    let height = (ui.available_height() - 34.0).max(ROW * 3.0);
+    let area = nav.area(id, height, nav.position(lines));
+    let nav = &mut *nav;
+    let output = ui.scope(|ui| {
+        ui.spacing_mut().item_spacing.y = 0.0;
+        area.show_rows(ui, ROW, lines.len(), |ui, range| add_contents(ui, nav, range))
+    });
+    nav.scrolled(&output.inner);
+    ui.add_space(10.0);
+    ui.label(egui::RichText::new("⏶⏷ move    Enter choose    Ctrl+D favourite    Esc back").size(12.0).color(DIM));
+}
+
+/// A list row's slot: its rect with its click, and the star's click.
+pub fn row_slot(ui: &mut egui::Ui, k: usize) -> (Rect, egui::Response, egui::Response) {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), ROW), Sense::click());
+    let star_rect = Rect::from_center_size(Pos2::new(rect.left() + 18.0, rect.center().y), egui::vec2(28.0, ROW));
+    let star = ui.interact(star_rect, ui.scope_id().with(("star", k)), Sense::click());
+    (rect, response, star)
+}
+
+/// A list row's highlight: filled with the bar on the left when it holds the cursor, hovered else.
+pub fn paint_selection(ui: &egui::Ui, rect: Rect, cursor: bool, hovered: bool) {
+    let painter = ui.painter();
+    if cursor {
+        painter.rect_filled(rect, 4.0, ui.visuals().selection.bg_fill.gamma_multiply(0.55));
+        painter.rect_filled(
+            Rect::from_min_size(rect.min, egui::vec2(3.0, rect.height())),
+            1.0,
+            ui.visuals().selection.bg_fill,
+        );
+    } else if hovered {
+        painter.rect_filled(rect, 4.0, ui.visuals().widgets.hovered.weak_bg_fill);
+    }
+}
+
+/// A list row's star: filled when a favourite, outlined on the cursor's row or under the mouse (`active`).
+pub fn paint_star(painter: &egui::Painter, pos: Pos2, favourite: bool, active: bool) {
+    let (star, colour) = match (favourite, active) {
+        (true, _) => ("★", STAR),
+        (false, true) => ("☆", Color32::from_gray(170)),
+        (false, false) => ("☆", Color32::from_gray(70)),
+    };
+    painter.text(pos, Align2::CENTER_CENTER, star, FontId::proportional(16.0), colour);
+}
+
+/// A sidebar line: an icon, a name and a count; `grey` both dims it and leaves a space above (the blocked
+/// collection).
+pub struct SideEntry<'a> {
+    pub icon: &'static str,
+    pub name: &'a str,
+    pub count: usize,
+    pub selected: bool,
+    pub grey: bool,
+}
+
+/// The sidebar's lines with the section `header` above line `at`; the picked line.
+pub fn side_list(ui: &mut egui::Ui, entries: &[SideEntry], header: (usize, &str)) -> Option<usize> {
+    let mut picked = None;
+    for (n, entry) in entries.iter().enumerate() {
+        if n == header.0 {
+            ui.add_space(10.0);
+            ui.label(egui::RichText::new(header.1).size(11.5).color(GREY).strong());
+            ui.add_space(2.0);
+        } else if entry.grey {
+            ui.add_space(10.0);
+        } else if n == 0 {
+            ui.add_space(6.0);
+        }
+        if side_row(ui, entry.icon, entry.name, entry.count, entry.selected, entry.grey).clicked() {
+            picked = Some(n);
+        }
+    }
+    picked
 }
 
 /// A sidebar line: an icon, a name and a count; the selected one filled.
