@@ -136,20 +136,8 @@ pub fn serve_realtime<'a>(
                  output: &mut dyn Write,
                  log: &mut Option<Box<dyn Write>>,
                  pilot: &mut Option<Pilot<'a>>,
-                 payload: [u8; CONTROL_BYTES],
-                 restarted: bool|
+                 mut payload: [u8; CONTROL_BYTES]|
      -> Result<(Vec<u8>, Answering), String> {
-        if restarted {
-            live.restart();
-        }
-        if let Some(log) = log.as_mut() {
-            if restarted {
-                log.write_all(&Logged::RESTART.to_bytes()).map_err(|e| e.to_string())?;
-            } else {
-                log.write_all(&LOG_MAGIC).map_err(|e| e.to_string())?;
-            }
-        }
-        let mut payload = payload;
         if let Some(own) = pilot.as_mut().and_then(|p| p.payload(live, None)) {
             payload = own;
         }
@@ -159,7 +147,10 @@ pub fn serve_realtime<'a>(
         write(output, &answer).map_err(|e| e.to_string())?;
         Ok((answer, answering))
     };
-    let (mut last, mut answering) = start(&mut live, &mut output, &mut log, &mut pilot, payload, false)?;
+    if let Some(log) = log.as_mut() {
+        log.write_all(&LOG_MAGIC).map_err(|e| e.to_string())?;
+    }
+    let (mut last, mut answering) = start(&mut live, &mut output, &mut log, &mut pilot, payload)?;
     let step = f64::from(live.clock.step);
     let period = Duration::from_secs_f64(step);
     let mut stats = Stats::default();
@@ -195,9 +186,13 @@ pub fn serve_realtime<'a>(
             };
             if std::mem::replace(&mut lock.lock().unwrap().restart, false) {
                 // The stage starts over in process, answered with its first frame like the first RESUME's.
+                live.restart();
+                if let Some(log) = log.as_mut() {
+                    log.write_all(&Logged::RESTART.to_bytes()).map_err(|e| e.to_string())?;
+                }
                 (origin, ticks) = (Instant::now(), 0);
                 let payload = Input { frames: 0, ..input }.to_bytes();
-                (last, answering) = start(&mut live, &mut output, &mut log, &mut pilot, payload, true)?;
+                (last, answering) = start(&mut live, &mut output, &mut log, &mut pilot, payload)?;
                 stats.answers += 1;
                 continue;
             }
