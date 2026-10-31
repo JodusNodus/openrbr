@@ -261,7 +261,6 @@ pub fn list_rows(
 ) {
     let height = (ui.available_height() - 34.0).max(ROW * 3.0);
     let area = nav.area(id, height, nav.position(lines));
-    let nav = &mut *nav;
     let output = ui.scope(|ui| {
         ui.spacing_mut().item_spacing.y = 0.0;
         area.show_rows(ui, ROW, lines.len(), |ui, range| add_contents(ui, nav, range))
