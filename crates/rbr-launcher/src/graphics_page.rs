@@ -18,7 +18,8 @@ pub struct Graphics {
     pub lighting: bool,
     /// Our rain, snow and particles (`particles`).
     pub particles: bool,
-    /// The scanned asphalt, gravel, snow and ground (`asphalt`, `gravel`, `snow`, `ground`), one switch.
+    /// The scanned asphalt, gravel, snow and ground (`asphalt`, `gravel`, `snow`, `ground`), one switch. Off in every
+    /// preset until it looks right on every stage.
     pub surfaces: bool,
     pub cabin: bool,
     pub contact: bool,
@@ -138,7 +139,7 @@ impl Quality {
         let high = Graphics {
             lighting: true,
             particles: true,
-            surfaces: true,
+            surfaces: false,
             cabin: true,
             contact: true,
             grass: true,
@@ -152,7 +153,6 @@ impl Quality {
             Quality::Low => Graphics {
                 lighting: false,
                 particles: false,
-                surfaces: false,
                 cabin: false,
                 contact: false,
                 grass: false,
@@ -518,7 +518,7 @@ impl Form {
 
             let tip = "Asphalt, gravel, snow and the off-road ground get the fine grain and relief of scanned \
                        surfaces, lit by the sun, over the stage's own colours; the ground loses the baked tint that \
-                       turns it blue and over-green. Costs little";
+                       turns it blue and over-green. Costs little. Off in every preset: not right on every stage yet";
             ui.label("Surfaces").on_hover_text(tip);
             ui.checkbox(&mut g.surfaces, "scanned").on_hover_text(tip);
             ui.end_row();
