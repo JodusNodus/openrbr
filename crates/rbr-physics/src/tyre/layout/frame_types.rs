@@ -8,7 +8,7 @@ use super::frame::Table;
 use crate::tyre::material::Material;
 
 /// A table search result (`Locate`, see `locate.rs`): the two indices and the fraction, stored as three words.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Segment {
     pub lo: u32,
     pub hi: u32,
@@ -19,7 +19,7 @@ pub struct Segment {
 /// surface normal and the axle, and `contact_frame::build` completes the frame: `rolling` is `normal × axle`
 /// normalised, `lateral` is `rolling × normal`. The slip velocity components are the dot products of the contact
 /// velocity with these axes, in the order lateral, longitudinal (rolling), normal.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ContactFrame {
     pub lateral: Vec4,
     pub rolling: Vec4,
@@ -28,7 +28,7 @@ pub struct ContactFrame {
 
 /// The seven words at `+0x32c` that a contact solve reads and writes (`Contact` in `solve.rs` is built from them).
 /// The soil is the surface material's layer of depth `soil_thickness`; the tyre is the carcass with its tread.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Indentation {
     /// How far the tyre's outer radius reaches below the surface, m (outer radius minus the hub height).
     pub penetration: f32,
@@ -244,8 +244,16 @@ pub struct Scratch {
     pub smoothed_furrow_ratio: f32,
 }
 
+/// All zeroes: `load_frame` overwrites every field before the value is read, so the seed is never observed.
+// SAFETY: every field is a `u32`, an `f32`, or an array or struct of those; every bit pattern is a valid value.
+impl Default for Scratch {
+    fn default() -> Self {
+        unsafe { std::mem::zeroed() }
+    }
+}
+
 /// The state words the tyre step reads and writes (`m_state`, at `this+0x14`).
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct StateWords {
     /// `+0x0c`: 1 once `step` has run with contact (`sti[3]`); a zero leaves `friction` at once.
     pub active: u32,
