@@ -11,8 +11,8 @@ use std::sync::atomic::AtomicBool;
 
 use sha2::{Digest, Sha256};
 
-use crate::disc_install::{Job, Progress};
-use crate::gvrc::{self, Bytes};
+use crate::gvrc;
+use crate::job::{Counter, Job, Progress, Temp};
 use crate::pages::{GOOD, WARN};
 use crate::Form;
 use rbr_formats::rbz;
@@ -79,12 +79,12 @@ fn check(path: &Path, sha256: &str) -> Result<(), Fail> {
 pub fn download(dir: &Path, report: &(dyn Fn(&Progress) + Sync), cancel: &AtomicBool) -> Result<(), Fail> {
     let release = RELEASE.ok_or("Real-ESRGAN has no upscaler build for this platform")?;
     fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-    let temp = gvrc::temp_in(dir)?;
+    let temp = Temp::create(dir, "downloading")?;
     let agent = gvrc::agent();
     let zip_url = format!("{RELEASE_URL}{}", release.url);
     let model_urls = MODEL_FILES.map(|(ext, _)| format!("{MODEL_URL}{MODEL}.{ext}"));
     let total = std::iter::once(&zip_url).chain(&model_urls).map(|url| gvrc::size_of(&agent, url)).sum();
-    let mut count = Bytes { step: "Downloading the upscaler", done: 0, total, report, cancel };
+    let mut count = Counter { step: "Downloading the upscaler", done: 0, total, report, cancel };
     count.add(0)?;
 
     let zip_path = temp.0.join(release.url);

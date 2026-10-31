@@ -9,10 +9,10 @@
 //! `<Model> - Model.7z`, sound banks a `<Car> - banks.7z`; the original eight cars, which NGP's package covers, are left
 //! out).
 //!
-//! - NGP goes into the game folder (`disc_install::add_ngp`): the package is downloaded to a temp folder in it, checked
+//! - NGP goes into the game folder (`ngp_install::add_ngp`): the package is downloaded to a temp folder in it, checked
 //!   to be NGP 7.4.778, and written like NGP's own install. This is the one place the launcher writes the game folder.
 //!   A game folder with its own NGP (RallySimFans', or a version ReRBR does not read) is left as it is: only 7.4.778's
-//!   `NGP.dll` and `physics.rbz` are kept, in the player's folder (`NGP_DIR`, `disc_install::add_ngp_to`), and the
+//!   `NGP.dll` and `physics.rbz` are kept, in the player's folder (`NGP_DIR`, `ngp_install::add_ngp_to`), and the
 //!   DLL and physics.rbz fields set to them.
 //! - A car's downloads go to a temp folder in `cars/` and are added as downloaded packs are (`car_packs::add_downloads`),
 //!   each car with the model its list entry names.
@@ -21,13 +21,14 @@ use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
 use egui::Color32;
 
 use crate::car_packs::{self, Added, Download, BANKS, MODEL, PHYSICS};
-use crate::disc_install::{self, Job, Progress, Temp};
+use crate::job::{Counter, Job, Progress, Temp};
+use crate::ngp_install;
 use crate::pages::{GOOD, WARN};
 use crate::Form;
 
@@ -163,26 +164,6 @@ fn list_job() -> Job<Catalog> {
     })
 }
 
-/// The bytes downloaded of all, reported, and stopped when cancelled.
-pub(crate) struct Bytes<'a> {
-    pub step: &'static str,
-    pub done: u64,
-    pub total: u64,
-    pub report: &'a (dyn Fn(&Progress) + Sync),
-    pub cancel: &'a AtomicBool,
-}
-
-impl Bytes<'_> {
-    pub fn add(&mut self, n: u64) -> Result<(), Fail> {
-        self.done += n;
-        (self.report)(&Progress { step: self.step, done: self.done, total: self.total });
-        match self.cancel.load(Ordering::Relaxed) {
-            true => Err("cancelled".into()),
-            false => Ok(()),
-        }
-    }
-}
-
 /// The size of the download at `url`, 0 when the server does not say.
 pub(crate) fn size_of(agent: &ureq::Agent, url: &str) -> u64 {
     let response = agent.head(url).call().ok();
@@ -191,7 +172,7 @@ pub(crate) fn size_of(agent: &ureq::Agent, url: &str) -> u64 {
 }
 
 /// Downloads `url` to the file `dest`.
-pub(crate) fn fetch(agent: &ureq::Agent, url: &str, dest: &Path, count: &mut Bytes) -> Result<(), Fail> {
+pub(crate) fn fetch(agent: &ureq::Agent, url: &str, dest: &Path, count: &mut Counter) -> Result<(), Fail> {
     let error = |e: String| format!("{}: {e}", file_name(url).unwrap_or_else(|| url.to_owned()));
     let mut response = agent.get(url).call().map_err(|e| error(e.to_string()))?;
     fs::create_dir_all(dest.parent().unwrap_or(dest)).map_err(|e| error(e.to_string()))?;
@@ -209,14 +190,6 @@ pub(crate) fn fetch(agent: &ureq::Agent, url: &str, dest: &Path, count: &mut Byt
     out.flush().map_err(|e| error(e.to_string()))
 }
 
-/// A temp folder in `parent`, made.
-pub(crate) fn temp_in(parent: &Path) -> Result<Temp, Fail> {
-    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
-    let temp = Temp(parent.join(format!(".downloading-{}-{stamp}", std::process::id())));
-    fs::create_dir_all(&temp.0).map_err(|e| format!("{}: {e}", temp.0.display()))?;
-    Ok(temp)
-}
-
 /// Downloads NGP's package (named by the list at `list`) into the folder `dir`: its path.
 fn download_package_from(
     list: &str,
@@ -228,7 +201,7 @@ fn download_package_from(
     let url = read_list(list)?.ngp.ok_or("gvrc.de's list names no NGP package")?;
     let package = dir.join(file_name(&url).ok_or("a bad NGP link")?);
     let agent = agent();
-    let mut count = Bytes { step: "Downloading NGP", done: 0, total: size_of(&agent, &url), report, cancel };
+    let mut count = Counter { step: "Downloading NGP", done: 0, total: size_of(&agent, &url), report, cancel };
     count.add(0)?;
     fetch(&agent, &url, &package, &mut count)?;
     Ok(package)
@@ -244,17 +217,17 @@ pub fn download_ngp_package(
 }
 
 /// Downloads NGP's package (named by the list at `list`) and installs it into the game folder `game`
-/// (`disc_install::add_ngp`); the number of files written.
+/// (`ngp_install::add_ngp`); the number of files written.
 fn download_ngp_from(
     list: &str,
     game: &Path,
     report: &(dyn Fn(&Progress) + Sync),
     cancel: &AtomicBool,
 ) -> Result<usize, Fail> {
-    disc_install::check_game_folder(game)?;
-    let temp = temp_in(game)?;
+    ngp_install::check_game_folder(game)?;
+    let temp = Temp::create(game, "downloading")?;
     let package = download_package_from(list, &temp.0, report, cancel)?;
-    disc_install::add_ngp(&package, game, report, cancel)
+    ngp_install::add_ngp(&package, game, report, cancel)
 }
 
 /// Downloads NGP and installs it into the game folder `game`; the number of files written.
@@ -264,9 +237,9 @@ pub fn download_ngp(game: &Path, report: &(dyn Fn(&Progress) + Sync), cancel: &A
 
 /// Downloads NGP's package into a temp folder beside `to` and writes only its `NGP.dll` and `physics.rbz` into `to`.
 fn download_ngp_to(to: &Path, report: &(dyn Fn(&Progress) + Sync), cancel: &AtomicBool) -> Result<(), Fail> {
-    let temp = temp_in(to.parent().unwrap_or(Path::new(".")))?;
+    let temp = Temp::create(to.parent().unwrap_or(Path::new(".")), "downloading")?;
     let package = download_package_from(LIST_URL, &temp.0, report, cancel)?;
-    disc_install::add_ngp_to(&package, to, report, cancel)
+    ngp_install::add_ngp_to(&package, to, report, cancel)
 }
 
 /// Downloads `wanted` into a temp folder in `cars_dir` and adds them there (`car_packs::add_downloads`). One car whose
@@ -278,7 +251,7 @@ pub fn download_cars(
     cancel: &AtomicBool,
 ) -> Result<Vec<Added>, Fail> {
     fs::create_dir_all(cars_dir).map_err(|e| format!("{}: {e}", cars_dir.display()))?;
-    let temp = temp_in(cars_dir)?;
+    let temp = Temp::create(cars_dir, "downloading")?;
     let agent = agent();
     let mut urls: Vec<&str> = Vec::new();
     for entry in wanted {
@@ -289,7 +262,7 @@ pub fn download_cars(
         }
     }
     let total = urls.iter().map(|u| size_of(&agent, u)).sum();
-    let mut count = Bytes { step: "Downloading cars", done: 0, total, report, cancel };
+    let mut count = Counter { step: "Downloading cars", done: 0, total, report, cancel };
     count.add(0)?;
     let mut files: HashMap<&str, Result<PathBuf, Fail>> = HashMap::new();
     for (k, url) in urls.iter().enumerate() {
@@ -425,7 +398,7 @@ impl Form {
     /// `physics.rbz` (none, or another version's), without NGP's plugin, or with a plugin ReRBR does not read.
     pub fn can_download_ngp(&self) -> bool {
         let game = self.folder.game.as_deref();
-        let there = game.is_some_and(|g| disc_install::check_game_folder(g).is_ok());
+        let there = game.is_some_and(|g| ngp_install::check_game_folder(g).is_ok());
         let wanted = self.ngp_revision != Some(778) || self.ngp_dll.problem(&self.data, &self.rsf()).is_some();
         there && wanted && self.child.is_none() && self.downloads.ngp_job.is_none()
     }
@@ -602,6 +575,7 @@ mod tests {
     use super::*;
     use std::io::{BufRead, BufReader};
     use std::net::TcpListener;
+    use std::sync::atomic::Ordering;
 
     const LIST: &str = "\u{feff}; File: carList.ini\n; Version: 6.175 2025-12-07\n\n[Plugins]\n\
         plugin_physics_url=https://gvrc.de/ngp/plugin/RBR_NGP-7.4.778.507.7z\n\n\
@@ -711,7 +685,7 @@ mod tests {
         assert_eq!(size_of(&agent, &format!("{base}/none")), 0);
         let seen = std::sync::Mutex::new(Vec::new());
         let report = |p: &Progress| seen.lock().unwrap().push(p.done);
-        let mut count = Bytes { step: "x", done: 0, total: 300_000, report: &report, cancel: &cancel };
+        let mut count = Counter { step: "x", done: 0, total: 300_000, report: &report, cancel: &cancel };
         fetch(&agent, &url, &dir.join("sub/a.bin"), &mut count).unwrap();
         assert_eq!(fs::read(dir.join("sub/a.bin")).unwrap(), body);
         assert_eq!(*seen.lock().unwrap().last().unwrap(), 300_000);

@@ -125,6 +125,7 @@
 // No console window on Windows: stderr goes to the log file (`rbr_render::console`).
 #![windows_subsystem = "windows"]
 
+mod archive;
 mod browser;
 mod capture;
 mod car_browser;
@@ -141,7 +142,9 @@ mod graphics_page;
 mod gvrc;
 mod home;
 mod install;
+mod job;
 mod ngp_dll;
+mod ngp_install;
 mod pages;
 mod preview;
 mod rally_page;
@@ -480,7 +483,7 @@ struct Form {
     owned_voices: Vec<codriver_packs::VoicePack>,
     owned_notes: Vec<codriver_packs::NotePack>,
     /// "Import co-driver…" and its last result (`codriver_packs`).
-    codriver_job: Option<disc_install::Job<Vec<String>>>,
+    codriver_job: Option<job::Job<Vec<String>>>,
     codriver_status: Option<Result<String, String>>,
     codriver_voice: Option<String>,
     codriver_style: String,

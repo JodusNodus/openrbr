@@ -17,14 +17,15 @@
 //! again replaces it; models no car uses any more are removed. Nothing outside `cars/` is written; `gvrc` downloads
 //! the packs and adds them through [`add_downloads`].
 
-use std::fs::{self, File};
-use std::io::{self, BufReader, Read, Write};
+use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 
-use rbr_formats::{rbz, rsf};
+use rbr_formats::rsf;
 
-use crate::disc_install::{Job, Progress, Temp};
+use crate::archive::safe_folder;
+use crate::job::{Counter, Job, Progress, Temp};
 use crate::pages::{GOOD, WARN};
 use crate::Form;
 
@@ -81,53 +82,12 @@ pub fn pick_model(names: &[&str], models: &[&str]) -> Option<usize> {
     (0..models.len()).filter(|&k| starts(models[k])).max_by_key(|&k| words(models[k]).len())
 }
 
-/// An archive entry's path (`\` or `/` separated) as safe components below the folder it is written to, or `None`.
-pub(crate) fn safe_path(name: &str) -> Option<Vec<&str>> {
-    let parts: Vec<&str> = name.split(['/', '\\']).filter(|p| !p.is_empty() && *p != ".").collect();
-    let bad = |p: &&str| *p == ".." || p.contains(':');
-    (!parts.is_empty() && !parts.iter().any(bad)).then_some(parts)
-}
-
-/// One folder name of ours, from untrusted text: no separators, not hidden.
-pub(crate) fn safe_folder(name: &str) -> Option<String> {
-    let name = name.trim();
-    (!name.is_empty() && !name.starts_with('.') && safe_path(name)?.len() == 1).then(|| name.to_owned())
-}
-
-/// Counts the bytes written of all, reports them, and stops when cancelled.
-struct Counter<'a> {
-    done: u64,
-    total: u64,
-    report: &'a (dyn Fn(&Progress) + Sync),
-    cancel: &'a AtomicBool,
-}
-
-impl Counter<'_> {
-    fn add(&mut self, n: u64) -> Result<(), Fail> {
-        self.done += n;
-        (self.report)(&Progress { step: "Adding cars", done: self.done, total: self.total });
-        match self.cancel.load(Ordering::Relaxed) {
-            true => Err("cancelled".into()),
-            false => Ok(()),
-        }
-    }
-}
-
-/// Writes `reader` to `dest`/`parts`, making its folders.
-fn write_file(dest: &Path, parts: &[&str], reader: &mut dyn Read) -> io::Result<u64> {
-    let path = parts.iter().fold(dest.to_owned(), |p, part| p.join(part));
-    fs::create_dir_all(path.parent().unwrap_or(dest))?;
-    let mut out = io::BufWriter::new(File::create(&path)?);
-    let n = io::copy(reader, &mut out)?;
-    out.flush()?;
-    Ok(n)
-}
-
-/// A physics pack download: the zip, its pack folder's name and the entries below it (index, path below it).
+/// A physics pack download: the zip, its pack folder's name and the entries below it (archive path, path below
+/// it).
 struct PhysicsZip {
-    zip: rbz::ZipArchive<BufReader<File>>,
+    path: PathBuf,
     folder: String,
-    entries: Vec<(usize, Vec<String>)>,
+    entries: Vec<(Vec<String>, Vec<String>)>,
     size: u64,
 }
 
@@ -136,44 +96,34 @@ impl PhysicsZip {
     /// pack folder is then the download's name, `_` for spaces).
     fn open(path: &Path) -> Result<PhysicsZip, Fail> {
         let error = |e: String| format!("{}: {e}", path.display());
-        let zip = rbz::open(path).map_err(|e| error(e.to_string()))?;
         let mut files = Vec::new();
-        for k in 0..zip.len() {
-            let name = zip.name_for_index(k).and_then(Result::ok).ok_or_else(|| error("a bad entry".into()))?;
-            let parts = safe_path(&name).ok_or_else(|| error(format!("a bad entry path {name}")))?;
-            if !name.ends_with(['/', '\\']) {
-                files.push((k, parts.iter().map(|p| p.to_string()).collect::<Vec<_>>()));
+        let mut size = 0;
+        for entry in crate::archive::zip_entries(path).map_err(error)? {
+            let parts = entry.parts.ok_or_else(|| error(format!("a bad entry path {}", entry.name)))?;
+            if !entry.dir {
+                size += entry.size;
+                files.push(parts);
             }
         }
-        let first = files.first().map(|(_, p)| p[0].clone()).unwrap_or_default();
-        let nested = files.iter().all(|(_, p)| p.len() > 1 && p[0] == first);
+        let first = files.first().map(|p| p[0].clone()).unwrap_or_default();
+        let nested = files.iter().all(|p| p.len() > 1 && p[0] == first);
         let download = path.file_name().and_then(|n| strip_end(n.to_str()?, PHYSICS)).unwrap_or_default();
         let folder = match nested {
             true => first,
             false => download.replace(' ', "_"),
         };
         let folder = safe_folder(&folder).ok_or_else(|| error(format!("a bad pack folder name {folder}")))?;
-        let entries: Vec<_> = files.into_iter().map(|(k, p)| (k, if nested { p[1..].to_vec() } else { p })).collect();
+        let entries: Vec<_> =
+            files.into_iter().map(|p| (p.clone(), if nested { p[1..].to_vec() } else { p })).collect();
         if !entries.iter().any(|(_, p)| p.len() == 1 && p[0].eq_ignore_ascii_case("common.lsp")) {
             return Err(error("no common.lsp: is it an NGP physics pack?".into()));
         }
-        let mut zip = zip;
-        let mut size = 0;
-        for (k, _) in &entries {
-            size += zip.by_index_raw(*k).map_err(|e| error(e.to_string()))?.size();
-        }
-        Ok(PhysicsZip { zip, folder, entries, size })
+        Ok(PhysicsZip { path: path.to_owned(), folder, entries, size })
     }
 
     /// Unpacks the pack into `dest`.
-    fn extract(&mut self, dest: &Path, count: &mut Counter) -> Result<(), Fail> {
-        for (k, parts) in &self.entries {
-            let parts: Vec<&str> = parts.iter().map(String::as_str).collect();
-            let mut file = self.zip.by_index(*k).map_err(|e| e.to_string())?;
-            let n = write_file(dest, &parts, &mut file).map_err(|e| format!("{}: {e}", parts.join("/")))?;
-            count.add(n)?;
-        }
-        Ok(())
+    fn extract(&self, dest: &Path, count: &mut Counter) -> Result<(), Fail> {
+        crate::archive::extract_zip(&self.path, dest, &self.entries, &mut |n| count.add(n))
     }
 }
 
@@ -201,27 +151,27 @@ impl Archive {
     /// then by name.
     fn open(path: &Path, end: &str, depth: usize, missing: &str) -> Result<Archive, Fail> {
         let error = |e: String| format!("{}: {e}", path.display());
-        let file = File::open(path).map_err(|e| error(e.to_string()))?;
-        let archive = sevenz_rust2::ArchiveReader::new(BufReader::new(file), sevenz_rust2::Password::empty())
-            .map_err(|e| error(format!("not a .7z: {e}")))?;
-        let files = &archive.archive().files;
+        let listed = crate::archive::seven_entries(path).map_err(error)?;
         let main = |name: &str| {
             let name = name.to_lowercase();
             name.ends_with(end) && !name.ends_with(".strings.bank")
         };
-        let mut mains: Vec<Vec<&str>> = files
+        let mut mains: Vec<&Vec<String>> = listed
             .iter()
-            .filter(|f| !f.is_directory && main(&f.name))
-            .filter_map(|f| safe_path(&f.name))
+            .filter(|f| !f.dir && main(&f.name))
+            .filter_map(|f| f.parts.as_ref())
             .filter(|p| p.len() >= depth)
             .collect();
         mains.sort_by_key(|p| (p.len(), p.join("/")));
         let first = mains.first().ok_or_else(|| error(missing.into()))?;
-        let prefix: Vec<String> = first[..first.len() - 1].iter().map(|p| p.to_string()).collect();
-        let name = first[first.len() - 1];
+        let prefix = first[..first.len() - 1].to_vec();
+        let name = &first[first.len() - 1];
         let filename = name[..name.len() - end.len()].to_owned();
-        let below = |name: &str| safe_path(name).is_some_and(|p| p.len() > prefix.len() && within(&p, &prefix));
-        let size = files.iter().filter(|f| !f.is_directory && below(&f.name)).map(|f| f.size).sum();
+        let size = listed
+            .iter()
+            .filter(|f| !f.dir && f.parts.as_ref().is_some_and(|p| within(p, &prefix)))
+            .map(|f| f.size)
+            .sum();
         Ok(Archive { path: path.to_owned(), prefix, filename, size })
     }
 
@@ -233,40 +183,21 @@ impl Archive {
 
     /// Unpacks the folder into `dest`.
     fn extract(&self, dest: &Path, count: &mut Counter) -> Result<(), Fail> {
-        let error = |e: String| format!("{}: {e}", self.path.display());
-        let file = File::open(&self.path).map_err(|e| error(e.to_string()))?;
-        let mut archive = sevenz_rust2::ArchiveReader::new(BufReader::new(file), sevenz_rust2::Password::empty())
-            .map_err(|e| error(e.to_string()))?;
-        fs::create_dir_all(dest).map_err(|e| error(e.to_string()))?;
-        let mut failed = None;
-        archive
-            .for_each_entries(|entry, reader| {
-                let Some(parts) =
-                    safe_path(&entry.name).filter(|p| p.len() > self.prefix.len() && within(p, &self.prefix))
-                else {
-                    return Ok(true);
-                };
-                let parts = &parts[self.prefix.len()..];
-                let written = match entry.is_directory {
-                    true => fs::create_dir_all(parts.iter().fold(dest.to_owned(), |p, part| p.join(part))).map(|_| 0),
-                    false => write_file(dest, parts, reader),
-                };
-                match written.map_err(|e| format!("{}: {e}", parts.join("/"))).and_then(|n| count.add(n)) {
-                    Ok(()) => Ok(true),
-                    Err(e) => {
-                        failed = Some(e);
-                        Ok(false)
-                    }
-                }
-            })
-            .map_err(|e| error(e.to_string()))?;
-        failed.map_or(Ok(()), Err)
+        let listed = crate::archive::seven_entries(&self.path).map_err(|e| format!("{}: {e}", self.path.display()))?;
+        let wanted: Vec<(Vec<String>, Vec<String>)> = listed
+            .into_iter()
+            .filter(|e| !e.dir)
+            .filter_map(|e| e.parts)
+            .filter(|parts| within(parts, &self.prefix))
+            .map(|parts| (parts.clone(), parts[self.prefix.len()..].to_vec()))
+            .collect();
+        crate::archive::extract_seven(&self.path, dest, &wanted, &mut |n| count.add(n))
     }
 }
 
 /// Whether `path` lies below the folder `prefix` (its names ignoring case).
-fn within(path: &[&str], prefix: &[String]) -> bool {
-    path.iter().zip(prefix).all(|(a, b)| a.eq_ignore_ascii_case(b))
+fn within(path: &[String], prefix: &[String]) -> bool {
+    path.len() > prefix.len() && path.iter().zip(prefix).all(|(a, b)| a.eq_ignore_ascii_case(b))
 }
 
 /// The added cars' list in `cars` (none without one).
@@ -378,7 +309,7 @@ fn add_one(
     list: &mut (Vec<rsf::Car>, Vec<rsf::Model>),
     count: &mut Counter,
 ) -> Result<(String, Option<String>), Fail> {
-    let mut physics = PhysicsZip::open(&download.physics)?;
+    let physics = PhysicsZip::open(&download.physics)?;
     let model = download.model.as_deref().map(Archive::model).transpose()?;
     let banks = download.banks.as_deref().map(Archive::banks).transpose()?;
     let staged = temp.join("pack");
@@ -481,13 +412,12 @@ pub fn add_downloads(
         |a: Option<&Path>, open: fn(&Path) -> Result<Archive, Fail>| a.and_then(|a| open(a).ok()).map_or(0, |a| a.size);
     let archives = |d: &Download| size(d.model.as_deref(), Archive::model) + size(d.banks.as_deref(), Archive::banks);
     let total = downloads.iter().map(|d| physics(d) + archives(d)).sum();
-    let mut count = Counter { done: 0, total, report, cancel };
+    let mut count = Counter { step: "Adding cars", done: 0, total, report, cancel };
     count.add(0)?;
     let mut list = list(cars_dir);
     let mut added = Vec::new();
     for download in downloads {
-        let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
-        let temp = Temp(cars_dir.join(format!(".adding-{}-{stamp}", std::process::id())));
+        let temp = Temp::create(cars_dir, "adding")?;
         let result = add_one(cars_dir, &temp.0, download, &mut list, &mut count);
         drop(temp);
         let name = download.physics.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
@@ -637,6 +567,10 @@ impl Form {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs::File;
+    use std::io::Write;
+
+    use crate::archive::{safe_folder, safe_path};
 
     #[test]
     fn models_are_picked_by_their_names_start() {

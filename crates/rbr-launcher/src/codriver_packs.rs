@@ -26,17 +26,16 @@
 //! name gets a `-2`, `-3` suffix. An audio-only download without the style/range definitions it needs fails with an
 //! actionable error (or a pack listed with its missing dependency), and never appears ready.
 
-use std::fs::{self, File};
-use std::io::{BufReader, Read};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use rbr_formats::rsf::{codriver, pacenotes};
 
-use crate::car_packs::{safe_folder, safe_path};
-use crate::disc_install::{Job, Progress, Temp};
+use crate::archive::{safe_folder, safe_path};
+use crate::job::{Job, Progress, Temp};
 use crate::pages::{GOOD, WARN};
-use crate::{install, Form};
+use crate::Form;
 
 /// The folders in the player's folder with the owned packs.
 pub const VOICES_DIR: &str = "codrivers";
@@ -638,9 +637,7 @@ fn stage(home: &Path, dir: &str, name: &str) -> Result<Staged, Fail> {
     let base = home.join(dir);
     fs::create_dir_all(&base).map_err(|e| format!("{}: {e}", base.display()))?;
     let dest = free_dir(&base, &safe_folder(name).unwrap_or_else(|| "pack".to_owned()));
-    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
-    let temp = Temp(base.join(format!(".import-{}-{stamp}", std::process::id())));
-    fs::create_dir(&temp.0).map_err(|e| format!("{}: {e}", temp.0.display()))?;
+    let temp = Temp::create(&base, "import")?;
     let staged = temp.0.join("pack");
     fs::create_dir(&staged).map_err(|e| format!("{}: {e}", staged.display()))?;
     Ok(Staged { _temp: temp, staged, dest })
@@ -719,39 +716,6 @@ fn import_notes_from(
     Ok(vec![notes_line(&op.dest, n)])
 }
 
-/// The file entries of the ZIP archive `src`: their raw path parts (no wrapper stripped, so a single-stage
-/// archive's stage folder keeps its name). Unsafe paths and directory entries are left out.
-fn zip_entries(src: &Path) -> Result<Vec<Vec<String>>, Fail> {
-    let error = |e: String| format!("{}: {e}", src.display());
-    let zip = rbr_formats::rbz::open(src).map_err(|e| error(e.to_string()))?;
-    let mut entries = Vec::new();
-    for k in 0..zip.len() {
-        let name = zip.name_for_index(k).and_then(Result::ok).ok_or_else(|| error("a bad entry".into()))?;
-        let dir = name.ends_with(['/', '\\']);
-        let Some(parts) = safe_path(&name) else { continue };
-        if !dir {
-            entries.push(parts.iter().map(|p| p.to_string()).collect());
-        }
-    }
-    Ok(entries)
-}
-
-/// The file entries of the 7z archive `src`: raw path parts, as [`zip_entries`].
-fn seven_entries(src: &Path) -> Result<Vec<Vec<String>>, Fail> {
-    let error = |e: String| format!("{}: {e}", src.display());
-    let file = File::open(src).map_err(|e| error(e.to_string()))?;
-    let archive = sevenz_rust2::ArchiveReader::new(BufReader::new(file), sevenz_rust2::Password::empty())
-        .map_err(|e| error(format!("not a .7z: {e}")))?;
-    let mut entries = Vec::new();
-    for f in &archive.archive().files {
-        let Some(parts) = safe_path(&f.name) else { continue };
-        if !f.is_directory {
-            entries.push(parts.iter().map(|p| p.to_string()).collect());
-        }
-    }
-    Ok(entries)
-}
-
 /// Whether the archive entries hold a plugin at `root` (raw path parts): its settings, voices or definitions
 /// below it.
 fn archive_plugin_at(entries: &[Vec<String>], root: &[String]) -> bool {
@@ -815,81 +779,6 @@ fn archive_note_candidates(entries: &[Vec<String>], root: Option<&[String]>) -> 
         .collect()
 }
 
-/// Extracts the ZIP's `wanted` (raw entry path to pack-relative path) into `dest`. Unsafe paths are skipped.
-fn extract_zip(
-    src: &Path,
-    dest: &Path,
-    wanted: &[(Vec<String>, Vec<String>)],
-    cancel: &AtomicBool,
-) -> Result<(), Fail> {
-    let error = |e: String| format!("{}: {e}", src.display());
-    let mut zip = rbr_formats::rbz::open(src).map_err(|e| error(e.to_string()))?;
-    for (from, to) in wanted {
-        cancelled(cancel)?;
-        let found = (0..zip.len()).find(|&k| {
-            zip.name_for_index(k)
-                .and_then(Result::ok)
-                .is_some_and(|n| safe_path(&n).is_some_and(|p| p == from.as_slice()))
-        });
-        let Some(k) = found else { continue };
-        let mut file = zip.by_index(k).map_err(|e| error(e.to_string()))?;
-        write_to(dest, to, &mut file)?;
-    }
-    Ok(())
-}
-
-/// Writes `reader` to `dest`/`parts`, making its folders. Voice and note files only ever arrive through the
-/// allowlists above.
-fn write_to(dest: &Path, parts: &[String], reader: &mut dyn Read) -> Result<(), Fail> {
-    let safe: Vec<&str> = parts.iter().map(String::as_str).collect();
-    let path = safe.iter().fold(dest.to_owned(), |p, part| p.join(part));
-    fs::create_dir_all(path.parent().unwrap_or(dest)).map_err(|e| format!("{}: {e}", path.display()))?;
-    let mut out = fs::File::create(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-    std::io::copy(reader, &mut out).map(drop).map_err(|e| format!("{}: {e}", path.display()))
-}
-
-/// Extracts the 7z's `wanted` (raw entry path to pack-relative path) into `dest`.
-fn extract_seven(
-    src: &Path,
-    dest: &Path,
-    wanted: &[(Vec<String>, Vec<String>)],
-    cancel: &AtomicBool,
-) -> Result<(), Fail> {
-    let error = |e: String| format!("{}: {e}", src.display());
-    let file = File::open(src).map_err(|e| error(e.to_string()))?;
-    let mut archive = sevenz_rust2::ArchiveReader::new(BufReader::new(file), sevenz_rust2::Password::empty())
-        .map_err(|e| error(e.to_string()))?;
-    let mut failed: Option<Fail> = None;
-    archive
-        .for_each_entries(|entry, reader| {
-            if failed.is_some() {
-                return Ok(false);
-            }
-            if cancel.load(Ordering::Relaxed) {
-                failed = Some("cancelled".into());
-                return Ok(false);
-            }
-            if entry.is_directory {
-                return Ok(true);
-            }
-            let Some(parts) = safe_path(&entry.name) else { return Ok(true) };
-            let parts: Vec<String> = parts.iter().map(|p| p.to_string()).collect();
-            if let Some((_, to)) = wanted.iter().find(|(from, _)| *from == parts) {
-                match write_to(dest, to, reader) {
-                    Ok(()) => Ok(true),
-                    Err(e) => {
-                        failed = Some(e);
-                        Ok(false)
-                    }
-                }
-            } else {
-                Ok(true)
-            }
-        })
-        .map_err(|e| error(e.to_string()))?;
-    failed.map_or(Ok(()), Err)
-}
-
 /// Imports the archive `src` (ZIP or 7z) as one atomic operation: the voice and the notes stage and validate
 /// first, and only then both publish (a notes publish failure rolls the just-published voice back). Note
 /// candidates that prune to no parseable note file fall back to a voice-only import, so an unrelated INI next
@@ -897,10 +786,14 @@ fn extract_seven(
 /// notes-only archive with no parseable notes fails loudly. Extraction errors propagate, never swallowed.
 fn import_archive(home: &Path, src: &Path, cancel: &AtomicBool) -> Result<Vec<String>, Fail> {
     let lower = src.to_string_lossy().to_ascii_lowercase();
-    let entries = match lower.ends_with(ZIP) {
-        true => zip_entries(src),
-        false => seven_entries(src),
-    }?;
+    let listed = match lower.ends_with(ZIP) {
+        true => crate::archive::zip_entries(src),
+        false => crate::archive::seven_entries(src),
+    }
+    .map_err(|e| format!("{}: {e}", src.display()))?;
+    // Raw path parts (no wrapper stripped, so a single-stage archive's stage folder keeps its name). Unsafe paths
+    // and directory entries are left out.
+    let entries: Vec<Vec<String>> = listed.into_iter().filter(|e| !e.dir).filter_map(|e| e.parts).collect();
     if entries.iter().all(|p| {
         let n = p.last().map(|n| n.to_ascii_lowercase()).unwrap_or_default();
         n.ends_with(".dll") || n.ends_with(".exe")
@@ -909,14 +802,7 @@ fn import_archive(home: &Path, src: &Path, cancel: &AtomicBool) -> Result<Vec<St
         return Err(format!("{}: no co-driver files in it, only executables", src.display()));
     }
     let name = pack_name(src);
-    let extract = |dest: &Path, wanted: &[(Vec<String>, Vec<String>)]| match src
-        .to_string_lossy()
-        .to_ascii_lowercase()
-        .ends_with(ZIP)
-    {
-        true => extract_zip(src, dest, wanted, cancel),
-        false => extract_seven(src, dest, wanted, cancel),
-    };
+    let extract = |dest: &Path, wanted: &[(Vec<String>, Vec<String>)]| extract_from(src, dest, wanted, cancel);
     let root = archive_plugin_root(&entries);
     let voice: Vec<(Vec<String>, Vec<String>)> = root
         .clone()
@@ -970,12 +856,23 @@ fn import_archive(home: &Path, src: &Path, cancel: &AtomicBool) -> Result<Vec<St
 /// does not parse as a note file.
 fn extract_notes(src: &Path, dest: &Path, notes: &[Vec<String>], cancel: &AtomicBool) -> Result<(), Fail> {
     let wanted: Vec<(Vec<String>, Vec<String>)> = notes.iter().map(|p| (p.clone(), p.clone())).collect();
-    match src.to_string_lossy().to_ascii_lowercase().ends_with(ZIP) {
-        true => extract_zip(src, dest, &wanted, cancel),
-        false => extract_seven(src, dest, &wanted, cancel),
-    }?;
+    extract_from(src, dest, &wanted, cancel)?;
     prune_not_notes(dest);
     cancelled(cancel)
+}
+
+/// Extracts the ZIP's or 7z's `wanted` (raw entry path to pack-relative path) into `dest`, stopping on cancel.
+fn extract_from(
+    src: &Path,
+    dest: &Path,
+    wanted: &[(Vec<String>, Vec<String>)],
+    cancel: &AtomicBool,
+) -> Result<(), Fail> {
+    let progress = &mut |_| cancelled(cancel);
+    match src.to_string_lossy().to_ascii_lowercase().ends_with(ZIP) {
+        true => crate::archive::extract_zip(src, dest, wanted, progress),
+        false => crate::archive::extract_seven(src, dest, wanted, progress),
+    }
 }
 
 /// Deletes the staged INIs that do not parse as note files.
@@ -1199,7 +1096,7 @@ impl Form {
                 )
                 .clicked()
             {
-                if let Some(src) = install::pick_folder("The co-driver download's folder") {
+                if let Some(src) = crate::job::pick_folder("The co-driver download's folder") {
                     self.import_codriver_from(src);
                 }
             }
@@ -1211,7 +1108,7 @@ impl Form {
                 )
                 .clicked()
             {
-                if let Some(src) = crate::disc_install::pick_file("The co-driver download's .zip/.7z archive") {
+                if let Some(src) = crate::job::pick_file("The co-driver download's .zip/.7z archive") {
                     self.import_codriver_from(src);
                 }
             }
@@ -1252,6 +1149,7 @@ impl Form {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs::File;
 
     fn write(path: &Path, text: &str) {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -1795,7 +1693,7 @@ mod tests {
 
     #[test]
     fn owned_packs_list_with_their_problems() {
-        use crate::disc_install::Progress;
+        use crate::job::Progress;
         use std::sync::atomic::AtomicBool;
         let dir = temp("list");
         let src = dir.join("voice");
