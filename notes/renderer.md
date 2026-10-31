@@ -339,6 +339,12 @@ probably fit the wrong hour.
   RSF models give it a `Default Material` FaceBlock (40 of 583 installed `.ini`s; a 2.3 m white cube about the
   cabin), which showed as a pale panel behind the rear window in chase views (GC8 555, Clio Rally3, Fiat 131
   Grp4; Fiesta Rally2, M3 E30, Escort Mk II byte for byte).
+- Block-compressed car textures with no mip levels get a chain at load (ours, 2026-10-31, `upscale::with_block_mips`:
+  top level kept, the rest box-filtered and re-encoded in the file's format). The RSF Fiat 131 Abarth Grp4's 4096x4096
+  livery, its 2048x2048 dynamic and its glass texture are DXT3 with one level and aliased in the chase view; its paint,
+  dark green (0, 56, 8), reads grey under the overcast sky by the shared clear coat, its rear window's top strip is
+  opaque green (0, 132, 51, alpha 255) and the beige dash panel is in its texture: the car's own art. Escort, GC8
+  golden chase and the Escort cockpit byte-identical, Clio 0.001 % RMSE.
 - Glass seen from outside with the day's light (ours, 2026-10-28; `GLASS_*` in `shader.wgsl`): the reflection takes
   its own weight, the pane absorbs at least half the view, so the crew dims and the sky and trees mirror (0.8 and
   0.6 read as milky fog). Only the window parts; the lamps' glass and the in-car view keep the old look. Dry day

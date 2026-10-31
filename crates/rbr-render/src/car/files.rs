@@ -35,6 +35,8 @@ impl<'a> Textures<'a> {
                 // RSF cars' plain `A8R8G8B8` textures, with the mip chain they lack.
                 let bytes = dds::to_rgba8(&bytes).unwrap_or(bytes);
                 let bytes = dds::with_mips(&bytes).unwrap_or(bytes);
+                // And the block-compressed ones (the 131 Grp4's 4096x4096 livery).
+                let bytes = crate::upscale::with_block_mips(&bytes).unwrap_or(bytes);
                 if dds::parse(&bytes).is_ok() {
                     Some(bytes)
                 } else {

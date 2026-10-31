@@ -291,6 +291,31 @@ pub fn encode(format: Format, mut width: u32, mut height: u32, mut rgba: Vec<u8>
     file
 }
 
+/// A one-level block-compressed file with its mip chain down to 1x1 appended, each level the box-filtered one above
+/// re-encoded in the file's format (the top level stays as it is): `None` when it is plain RGBA, already has levels or
+/// is under 8 texels. Some RSF cars' 4096x4096 liveries have no levels and alias in the distance.
+pub fn with_block_mips(bytes: &[u8]) -> Option<Vec<u8>> {
+    let file = dds::parse(bytes).ok()?;
+    if file.format == Format::Rgba8 || file.mip_count != 1 || file.width.max(file.height) < 8 {
+        return None;
+    }
+    let (mut width, mut height) = (file.width, file.height);
+    let mut rgba = decompress(file.format, file.data, width, height);
+    let mut out = bytes[..128 + file.data.len()].to_vec();
+    let mut count = 1u32;
+    while width > 1 || height > 1 {
+        (width, height, rgba) = half(width, height, &rgba);
+        let format = bc(file.format);
+        let mut block = vec![0; format.compressed_size(width as usize, height as usize)];
+        let params = texpresso::Params { algorithm: texpresso::Algorithm::RangeFit, ..Default::default() };
+        format.compress(&rgba, width as usize, height as usize, params, &mut block);
+        out.extend_from_slice(&block);
+        count += 1;
+    }
+    out[28..32].copy_from_slice(&count.to_le_bytes());
+    Some(out)
+}
+
 /// The next mip level: each texel the mean of a 2x2 box (edges repeat on a side of 1).
 pub fn half(width: u32, height: u32, rgba: &[u8]) -> (u32, u32, Vec<u8>) {
     let (w, h) = ((width / 2).max(1), (height / 2).max(1));
@@ -353,6 +378,20 @@ mod tests {
         assert_eq!(scale(&file(2048)), Some(2));
         assert_eq!(scale(&file(4096)), None);
         assert_eq!(scale(&file(16)), None);
+    }
+
+    #[test]
+    fn a_one_level_block_file_gains_its_chain() {
+        let full = file(16);
+        let top = dds::parse(&full).unwrap().levels()[0].data.to_vec();
+        let mut one = full[..128].to_vec();
+        one[28..32].copy_from_slice(&1u32.to_le_bytes());
+        one.extend_from_slice(&top);
+        let bytes = with_block_mips(&one).unwrap();
+        let dds = dds::parse(&bytes).unwrap();
+        assert_eq!((dds.width, dds.mip_count, dds.levels()[0].data), (16, 5, top.as_slice()));
+        // Already mipped: left as it is.
+        assert_eq!(with_block_mips(&bytes), None);
     }
 
     #[test]
