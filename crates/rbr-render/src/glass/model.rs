@@ -20,7 +20,7 @@ pub enum Kind {
     Bug,
     /// A speck of the tyre spray's mud or snow (ours): its colour index says which ([`speck_color`]).
     Mud,
-    /// A droplet a running drop left behind (ours): still, drying over [`TRAIL_LIFE`].
+    /// What a running drop left behind (ours), drying: a ribbon along its path (`span` set) or a bead.
     Trail,
 }
 
@@ -32,6 +32,9 @@ pub struct Drop {
     pub radius: f32,
     pub kind: Kind,
     pub velocity: Vec2,
+    /// Water: how far along its run its open ribbon reaches back, to where it began (zero while it holds). Trails: the
+    /// ribbon's far end from `at`, metres; zero for a bead.
+    pub span: Vec2,
     pub age: f32,
     /// Snow: the part not melted yet (1 to 0). Trails: the part of their life left (1 to 0). Bugs and mud: the colour
     /// index (mud: [`speck_color`]'s).
@@ -195,18 +198,18 @@ impl Wiping {
 }
 
 /// New raindrops' radius, metres, mostly small with a few large ones (the cube of a uniform number across the range).
-const RAIN_RADIUS: [f32; 2] = [0.0010, 0.0040];
+const RAIN_RADIUS: [f32; 2] = [0.0012, 0.0070];
 /// New flakes' radius.
 const SNOW_RADIUS: [f32; 2] = [0.0025, 0.0065];
 /// Drops hitting a square metre of glass per second at full intensity: standing, and more per m/s of speed (the glass
 /// sweeps through the rain).
-const RAIN_STILL: f32 = 350.0;
+const RAIN_STILL: f32 = 800.0;
 const RAIN_PER_SPEED: f32 = 30.0;
 const SNOW_STILL: f32 = 25.0;
 const SNOW_PER_SPEED: f32 = 4.0;
 /// A drop sticks until the pull on it is more than this (m/s²) times `PIN_RADIUS / radius`: small drops hold, big
 /// ones run.
-const PIN: f32 = 4.0;
+const PIN: f32 = 8.0;
 const PIN_RADIUS: f32 = 0.002;
 /// The airflow's push up and out of the glass per (m/s)² over the radius in millimetres, m/s².
 const AIR: f32 = 0.025;
@@ -214,6 +217,8 @@ const AIR: f32 = 0.025;
 const AIR_SIDEWAYS: f32 = 0.35;
 /// The sliding speed per m/s² of pull beyond the pin.
 const MOBILITY: f32 = 0.025;
+/// The fastest a drop slides, m/s: bigger drops slide quicker, by the square of their radius over 2 mm.
+const MOST_SPEED: f32 = 0.6;
 /// Seconds a flake takes to melt into a drop, and the drop's radius over the flake's.
 const MELT: f32 = 14.0;
 const MELT_SHRINK: f32 = 0.55;
@@ -253,22 +258,47 @@ pub fn is_snow(index: f32) -> bool {
 }
 /// The share of the specks a dry blade leaves smeared on the glass (ours); a wet one clears them all.
 const MUD_SMEAR: f32 = 0.35;
-/// Trails (ours): a running drop leaves a droplet of this share of its radius about every [`TRAIL_SPACING`] of its
-/// radius it runs, which dries in [`TRAIL_LIFE`] seconds.
-const TRAIL_RADIUS: f32 = 0.35;
-const TRAIL_SPACING: f32 = 1.2;
-pub const TRAIL_LIFE: f32 = 4.0;
+/// Trails (ours): a running drop lays a ribbon of water behind it every four of its radii (and at least
+/// [`RIBBON_MIN`] metres), [`RIBBON_WIDTH`] of its radius wide (half width) and no thinner than [`RIBBON_THINNEST`],
+/// taking the volume of a ribbon [`RIBBON_HEIGHT`] of its width high from the drop. A ribbon dries into beads: it is
+/// gone in [`RIBBON_LIFE`] seconds, a bead (one in [`BEAD_CHANCE`] laid beside it, [`BEAD_RADIUS`] of the drop's radius)
+/// in [`TRAIL_LIFE`].
+const RIBBON_RADII: f32 = 4.0;
+const RIBBON_MIN: f32 = 0.006;
+/// Only drops this big (metres) lay ribbons; smaller ones leave beads.
+const RIBBON_FROM: f32 = 0.0022;
+const RIBBON_WIDTH: f32 = 0.3;
+const RIBBON_THINNEST: f32 = 0.0003;
+const RIBBON_HEIGHT: f32 = 0.4;
+pub const RIBBON_LIFE: f32 = 2.5;
+const BEAD_CHANCE: f32 = 0.5;
+const BEAD_RADIUS: [f32; 2] = [0.2, 0.45];
+pub const TRAIL_LIFE: f32 = 5.0;
 /// Most trail droplets kept, apart from [`MOST`].
-const TRAIL_MOST: usize = 2000;
+const TRAIL_MOST: usize = 3500;
+/// Drops grip the glass by this much more or less than the mean (the pin's factor), a running drop's pin falls to
+/// [`RUNNING_PIN`] of it, and drops under [`TOO_SMALL`] metres are gone.
+const GRIP: [f32; 2] = [0.7, 1.5];
+const RUNNING_PIN: f32 = 0.6;
+const TOO_SMALL: f32 = 0.0004;
+/// Drops touch when their centres are closer than this share of their radii's sum, checked every [`MERGE_EVERY`]
+/// seconds; [`MOST_RADIUS`] the largest radius a drop reaches to look for one.
+const TOUCH: f32 = 0.92;
+const MERGE_EVERY: f32 = 1.0 / 60.0;
+const MOST_RADIUS: f32 = 0.02;
 /// The wet film (ours): a grid of [`FILM_CELLS`] over the glass's chart, each 0 (dry) to 1. Rain wets it at
 /// [`FILM_WETS`] a second at full intensity, it dries at [`FILM_DRIES`] a second, and a blade clears what it swept.
-/// The airflow thins it with speed: it holds at most `1 / (1 + speed / FILM_AIRFLOW)` (a third at 24 m/s), losing
+/// The airflow thins it with speed: it holds at most `1 / (1 + speed / FILM_AIRFLOW)` (0.45 at 24 m/s), losing
 /// what is over that at up to [`FILM_BLOWN`] a second.
 pub const FILM_CELLS: [usize; 2] = [48, 24];
-const FILM_WETS: f32 = 0.25;
+const FILM_WETS: f32 = 0.6;
 const FILM_DRIES: f32 = 0.02;
-const FILM_AIRFLOW: f32 = 12.0;
+const FILM_AIRFLOW: f32 = 20.0;
 const FILM_BLOWN: f32 = 0.5;
+/// How far from the blade's swept angles water is cleared, metres (the blade's half width and the wipe's lag).
+const BLADE_PAD: f32 = 0.02;
+/// What a blade leaves of the film it sweeps: a thin smear.
+const FILM_SMEAR: f32 = 0.1;
 /// Snow on the blades (ours): each blade carries what it sweeps, in flakes, at most [`BLADE_MOST`], and loses
 /// [`BLADE_MELTS`] of it a second (the blade is outside the heated glass).
 pub const BLADE_MOST: f32 = 60.0;
@@ -316,6 +346,8 @@ pub struct Glass {
     carry: f32,
     /// The spray's mud, snow and water not yet thrown as a whole speck or drop.
     mud_carry: [f32; 3],
+    /// Seconds since the drops last merged.
+    merge_clock: f32,
     /// The wet film, [`FILM_CELLS`] row by row from the chart's low corner.
     pub film: Vec<f32>,
     /// The snow each blade carries, in flakes.
@@ -337,6 +369,7 @@ impl Glass {
             rng: Rng::new(seed),
             carry: 0.0,
             mud_carry: [0.0; 3],
+            merge_clock: 0.0,
             film: vec![0.0; FILM_CELLS[0] * FILM_CELLS[1]],
             blade_snow: vec![0.0; wipers.len()],
             wipers,
@@ -390,7 +423,7 @@ impl Glass {
         self.spawn(dt, c, &inside);
         self.spatter(c, &inside);
         self.flow(dt, c);
-        self.merge();
+        self.merge(dt);
         // The film thickens to the rain's amount, less with the airflow.
         let most = c.rain.min(1.0) / (1.0 + c.speed.max(0.0) / FILM_AIRFLOW);
         for f in &mut self.film {
@@ -413,10 +446,10 @@ impl Glass {
                     true
                 }
                 Kind::Bug => d.age < BUG_LIFE + BUG_FADE,
-                Kind::Water => inside(d.at),
+                Kind::Water => inside(d.at) && d.radius >= TOO_SMALL,
                 Kind::Mud => true,
                 Kind::Trail => {
-                    d.left -= dt / TRAIL_LIFE;
+                    d.left -= dt / if d.span == Vec2::ZERO { TRAIL_LIFE } else { RIBBON_LIFE };
                     d.left > 0.0
                 }
             }
@@ -470,7 +503,16 @@ impl Glass {
             };
             let seed = self.rng.unit();
             if inside(at) {
-                self.drops.push(Drop { at, radius, kind, velocity: Vec2::ZERO, age: 0.0, left, seed });
+                self.drops.push(Drop {
+                    at,
+                    radius,
+                    kind,
+                    velocity: Vec2::ZERO,
+                    span: Vec2::ZERO,
+                    age: 0.0,
+                    left,
+                    seed,
+                });
             }
         }
     }
@@ -499,7 +541,16 @@ impl Glass {
         let seed = self.rng.unit();
         let landed = inside(at);
         if landed {
-            self.drops.push(Drop { at, radius, kind: Kind::Mud, velocity: Vec2::ZERO, age: 0.0, left, seed });
+            self.drops.push(Drop {
+                at,
+                radius,
+                kind: Kind::Mud,
+                velocity: Vec2::ZERO,
+                span: Vec2::ZERO,
+                age: 0.0,
+                left,
+                seed,
+            });
         }
         landed
     }
@@ -510,7 +561,16 @@ impl Glass {
         let radius = RAIN_RADIUS[0] + (RAIN_RADIUS[1] - RAIN_RADIUS[0]) * self.rng.unit().powi(3);
         let seed = self.rng.unit();
         if inside(at) {
-            self.drops.push(Drop { at, radius, kind: Kind::Water, velocity: Vec2::ZERO, age: 0.0, left: 0.0, seed });
+            self.drops.push(Drop {
+                at,
+                radius,
+                kind: Kind::Water,
+                velocity: Vec2::ZERO,
+                span: Vec2::ZERO,
+                age: 0.0,
+                left: 0.0,
+                seed,
+            });
         }
     }
 
@@ -546,62 +606,108 @@ impl Glass {
         self.drops.iter().filter(|d| d.kind == Kind::Mud).count()
     }
 
-    /// The pull on each water drop: gravity down the glass and the airflow up and out of it; a drop moves with the part
-    /// beyond its pin, and leaves a trail of droplets behind it.
+    /// The pull on each water drop: gravity down the glass and the airflow up and out of it. A drop holds until the pull
+    /// passes its pin (each drop grips its own: contact angles differ), then runs, and keeps running down to a lower
+    /// pull; it lays a ribbon of water behind it every [`RIBBON_MIN`] or four radii and a bead now and then, from its own
+    /// volume, so it shrinks as it runs and stops when it is too small to run.
     fn flow(&mut self, dt: f32, c: Conditions) {
         let speed2 = c.speed * c.speed;
-        let mut trails = Vec::new();
+        let mut laid = Vec::new();
         for d in self.drops.iter_mut().filter(|d| d.kind == Kind::Water) {
             let air = AIR * speed2 / (d.radius * 1000.0);
             let outward = if d.at.x >= self.centre_x { 1.0 } else { -1.0 };
             let pull = c.gravity + self.back.map_or(Vec2::new(outward * air * AIR_SIDEWAYS, air), |back| back * air);
-            let pin = PIN * PIN_RADIUS / d.radius * if self.back.is_some() { SIDE_PIN } else { 1.0 };
-            let beyond = pull.length() - pin;
-            d.velocity = if beyond > 0.0 { pull.normalize_or_zero() * beyond * MOBILITY } else { Vec2::ZERO };
-            let from = d.at;
-            d.at += d.velocity * dt;
-            let run = d.velocity.length() * dt / (d.radius * TRAIL_SPACING);
-            if run > 0.0 && self.rng.unit() < run {
-                let radius = d.radius * TRAIL_RADIUS;
+            let grip = GRIP[0] + (GRIP[1] - GRIP[0]) * (d.seed * 13.7).fract();
+            let pin = PIN * PIN_RADIUS / d.radius * grip * if self.back.is_some() { SIDE_PIN } else { 1.0 };
+            let beyond = pull.length() - pin * if d.velocity == Vec2::ZERO { 1.0 } else { RUNNING_PIN };
+            let mobility = MOBILITY * (d.radius * 500.0).powi(2);
+            d.velocity =
+                if beyond > 0.0 { pull.normalize_or_zero() * (beyond * mobility).min(MOST_SPEED) } else { Vec2::ZERO };
+            if d.velocity == Vec2::ZERO {
+                d.span = Vec2::ZERO;
+                continue;
+            }
+            let step = d.velocity * dt;
+            d.at += step;
+            d.span -= step;
+            if d.radius >= RIBBON_FROM && d.span.length() >= (d.radius * RIBBON_RADII).max(RIBBON_MIN) {
                 let seed = self.rng.unit();
-                trails.push(Drop {
-                    at: from,
-                    radius,
+                let ribbon = Drop {
+                    at: d.at + d.span,
+                    radius: (d.radius * RIBBON_WIDTH).max(RIBBON_THINNEST),
                     kind: Kind::Trail,
                     velocity: Vec2::ZERO,
+                    span: -d.span,
                     age: 0.0,
                     left: 1.0,
                     seed,
-                });
+                };
+                // Its water goes into the ribbon (the volume of a ribbon of this width and a fifth of it as high).
+                let volume = d.span.length() * ribbon.radius * ribbon.radius * RIBBON_HEIGHT;
+                d.radius = (d.radius.powi(3) - volume * 0.75 / std::f32::consts::PI).max(0.0).cbrt();
+                laid.push(ribbon);
+                // And now and then a bead where it was.
+                if self.rng.unit() < BEAD_CHANCE {
+                    let radius = d.radius * (BEAD_RADIUS[0] + (BEAD_RADIUS[1] - BEAD_RADIUS[0]) * self.rng.unit());
+                    let side = Vec2::new(-d.velocity.y, d.velocity.x).normalize_or_zero() * (self.rng.unit() - 0.5);
+                    let seed = self.rng.unit();
+                    laid.push(Drop {
+                        at: d.at + d.span * self.rng.unit() + side * d.radius * 2.0,
+                        radius: radius.max(RIBBON_THINNEST),
+                        kind: Kind::Trail,
+                        velocity: Vec2::ZERO,
+                        span: Vec2::ZERO,
+                        age: 0.0,
+                        left: 1.0,
+                        seed,
+                    });
+                }
+                d.span = Vec2::ZERO;
             }
         }
-        self.drops.extend(trails);
+        self.drops.extend(laid);
     }
 
-    /// A moving drop takes in the drops it runs into (volume kept).
-    fn merge(&mut self) {
-        let mut i = 0;
-        while i < self.drops.len() {
-            if self.drops[i].kind != Kind::Water || self.drops[i].velocity == Vec2::ZERO {
-                i += 1;
+    /// Drops that touch run together, volume kept, at the place of their centres of volume; the bigger one's motion
+    /// carries on. A swept line of the drops by x finds the neighbours. Only [`MERGE_EVERY`] seconds apart.
+    fn merge(&mut self, dt: f32) {
+        self.merge_clock += dt;
+        if self.merge_clock < MERGE_EVERY {
+            return;
+        }
+        self.merge_clock = 0.0;
+        let mut order: Vec<usize> = (0..self.drops.len()).filter(|&i| self.drops[i].kind == Kind::Water).collect();
+        order.sort_unstable_by(|&a, &b| self.drops[a].at.x.total_cmp(&self.drops[b].at.x));
+        let mut gone = vec![false; self.drops.len()];
+        for (k, &i) in order.iter().enumerate() {
+            if gone[i] {
                 continue;
             }
-            let mut j = 0;
-            while j < self.drops.len() {
+            for &j in &order[k + 1..] {
                 let (a, b) = (self.drops[i], self.drops[j]);
-                if j != i && b.kind == Kind::Water && a.at.distance(b.at) < a.radius + b.radius {
-                    self.drops[i].radius = (a.radius.powi(3) + b.radius.powi(3)).cbrt();
-                    self.drops.swap_remove(j);
-                    if i == self.drops.len() {
-                        // `i` was the last and moved into `j`.
-                        i = j;
-                    }
+                if b.at.x - a.at.x > a.radius + MOST_RADIUS {
+                    break;
+                }
+                if gone[j] || a.at.distance(b.at) >= (a.radius + b.radius) * TOUCH {
                     continue;
                 }
-                j += 1;
+                let (va, vb) = (a.radius.powi(3), b.radius.powi(3));
+                let bigger = if va >= vb { a } else { b };
+                self.drops[i] = Drop {
+                    at: (a.at * va + b.at * vb) / (va + vb),
+                    radius: (va + vb).cbrt(),
+                    velocity: bigger.velocity,
+                    span: Vec2::ZERO,
+                    ..bigger
+                };
+                gone[j] = true;
             }
-            i += 1;
         }
+        let mut k = 0;
+        self.drops.retain(|_| {
+            k += 1;
+            !gone[k - 1]
+        });
     }
 
     /// Moves the wipers to `phase` and clears the water and snow in the area each blade swept since the last step.
@@ -620,7 +726,10 @@ impl Glass {
                 Kind::Mud => !wet && d.seed < MUD_SMEAR,
                 Kind::Water | Kind::Snow | Kind::Trail => false,
             };
-            let by = wipers.iter().position(|w| w.swept(d.at, from * w.sweep, phase * w.sweep, d.radius));
+            // The blade has a width: water under it or just behind it goes too (a drop landing there this step lies
+            // outside the angles it swept).
+            let pad = d.radius + if matches!(d.kind, Kind::Water | Kind::Trail) { BLADE_PAD } else { 0.0 };
+            let by = wipers.iter().position(|w| w.swept(d.at, from * w.sweep, phase * w.sweep, pad));
             if let (Some(k), Kind::Snow, false) = (by, d.kind, stays) {
                 blade_snow[k] = (blade_snow[k] + d.left.max(0.3)).min(BLADE_MOST);
             }
@@ -629,7 +738,7 @@ impl Glass {
         for index in 0..self.film.len() {
             let at = self.film_cell(index).0;
             if self.wipers.iter().any(|w| w.swept(at, from * w.sweep, phase * w.sweep, 0.0)) {
-                self.film[index] = 0.0;
+                self.film[index] = self.film[index].min(FILM_SMEAR);
             }
         }
     }
@@ -660,8 +769,8 @@ mod tests {
             g.drops.iter().filter(|d| d.kind != Kind::Trail).count()
         };
         let (still, fast) = (count(0.0), count(25.0));
-        assert!(still > 300 && still < 500, "{still}");
-        assert!(fast > 2 * still, "{fast} vs {still}");
+        assert!(still > 600 && still < 900, "{still}");
+        assert!(fast * 2 > still * 3, "{fast} vs {still}");
         assert_eq!(count(0.0), still, "deterministic");
     }
 
@@ -685,7 +794,16 @@ mod tests {
         let at = Vec2::new(0.2, 0.0);
         let run = |radius: f32, speed: f32| {
             let mut g = glass(Vec::new());
-            g.drops.push(Drop { at, radius, kind: Kind::Water, velocity: Vec2::ZERO, age: 0.0, left: 0.0, seed: 0.0 });
+            g.drops.push(Drop {
+                at,
+                radius,
+                kind: Kind::Water,
+                velocity: Vec2::ZERO,
+                span: Vec2::ZERO,
+                age: 0.0,
+                left: 0.0,
+                seed: 0.0,
+            });
             for _ in 0..50 {
                 g.step(0.01, Conditions { speed, gravity: SLOPE, ..Default::default() }, 0.0, ALL);
             }
@@ -704,7 +822,16 @@ mod tests {
         let down = Vec2::new(0.0, -9.81);
         let run = |radius: f32, speed: f32| {
             let mut g = Glass::side([Vec2::new(-0.5, -0.25), Vec2::new(0.5, 0.25)], 0.5, back, 9);
-            g.drops.push(Drop { at, radius, kind: Kind::Water, velocity: Vec2::ZERO, age: 0.0, left: 0.0, seed: 0.0 });
+            g.drops.push(Drop {
+                at,
+                radius,
+                kind: Kind::Water,
+                velocity: Vec2::ZERO,
+                span: Vec2::ZERO,
+                age: 0.0,
+                left: 0.0,
+                seed: 0.0,
+            });
             for _ in 0..50 {
                 g.step(0.01, Conditions { speed, gravity: down, ..Default::default() }, 0.0, ALL);
             }
@@ -712,7 +839,7 @@ mod tests {
         };
         assert_eq!(run(0.002, 0.0), Vec2::ZERO, "held on the vertical pane");
         assert!(run(0.006, 0.0).y < -0.01, "a big one runs down");
-        assert!(run(0.002, 30.0).x < -0.01, "the airflow takes it back");
+        assert!(run(0.003, 30.0).x < -0.01, "the airflow takes it back");
         let mut g = Glass::side([Vec2::new(-0.5, -0.25), Vec2::new(0.5, 0.25)], 0.5, back, 9);
         for _ in 0..3000 {
             g.step(0.01, Conditions { speed: 30.0, gravity: down, ..Default::default() }, 0.0, ALL);
@@ -728,6 +855,7 @@ mod tests {
             radius,
             kind: Kind::Water,
             velocity: Vec2::ZERO,
+            span: Vec2::ZERO,
             age: 0.0,
             left: 0.0,
             seed: 0.0,
@@ -738,10 +866,14 @@ mod tests {
         }
         let (trails, drops): (Vec<Drop>, Vec<Drop>) = g.drops.iter().partition(|d| d.kind == Kind::Trail);
         assert_eq!(drops.len(), 1);
+        // The volume of the three, less what its ribbons took.
         let volume: f32 = 0.004f32.powi(3) + 2.0 * 0.001f32.powi(3);
-        assert!((drops[0].radius - volume.cbrt()).abs() < 1e-6);
-        // It left droplets up its path, which dry.
-        assert!(!trails.is_empty() && trails.iter().all(|t| t.at.x == 0.0 && t.at.y > drops[0].at.y), "{trails:?}");
+        assert!(drops[0].radius < volume.cbrt() && drops[0].radius > 0.7 * volume.cbrt(), "{}", drops[0].radius);
+        // It left ribbons up its path and beads beside it, which dry.
+        let ribbons: Vec<&Drop> = trails.iter().filter(|t| t.span != Vec2::ZERO).collect();
+        assert!(!ribbons.is_empty() && ribbons.iter().all(|t| t.at.x == 0.0 && t.at.y > drops[0].at.y), "{trails:?}");
+        assert!(ribbons.iter().all(|t| t.span.x == 0.0 && t.span.y < 0.0), "they reach down to where it went");
+        assert!(trails.iter().any(|t| t.span == Vec2::ZERO), "beads");
         for _ in 0..(TRAIL_LIFE * 100.0) as usize + 1 {
             g.step(0.01, Conditions::default(), 0.0, ALL);
         }
@@ -765,15 +897,15 @@ mod tests {
         g.step(0.01, rain, 0.5, ALL);
         let w = wiper();
         let towards = |angle: f32, r: f32| w.pivot + Vec2::new(angle.cos(), angle.sin()) * r;
-        assert!(g.film[cell(towards(0.3, 0.45))] < 0.01);
+        assert!(g.film[cell(towards(0.3, 0.45))] <= FILM_SMEAR + 1e-3, "a blade leaves a thin smear");
         assert!(g.film[cell(towards(1.4, 0.45))] > 0.9);
         assert!(g.film[cell(Vec2::new(0.6, 0.3))] > 0.9);
-        // At 24 m/s the airflow leaves a third of it.
+        // At 24 m/s the airflow leaves 1 / (1 + 24 / FILM_AIRFLOW) of it.
         for _ in 0..1000 {
             g.step(0.01, Conditions { speed: 24.0, ..rain }, 0.5, ALL);
         }
         let out_of_reach = g.film[cell(Vec2::new(0.6, 0.3))];
-        assert!((out_of_reach - 1.0 / 3.0).abs() < 0.02, "{out_of_reach}");
+        assert!((out_of_reach - 1.0 / (1.0 + 24.0 / FILM_AIRFLOW)).abs() < 0.02, "{out_of_reach}");
         // Dry, it all dries off.
         for _ in 0..6000 {
             g.step(0.01, Conditions { gravity: SLOPE, ..Default::default() }, 0.5, ALL);
@@ -810,6 +942,7 @@ mod tests {
                 radius: 0.001,
                 kind: Kind::Water,
                 velocity: Vec2::ZERO,
+                span: Vec2::ZERO,
                 age: 0.0,
                 left: 0.0,
                 seed: 0.0,
