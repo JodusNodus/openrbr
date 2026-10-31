@@ -5,6 +5,8 @@
 
 use std::io::{self, Read};
 
+use crate::invalid;
+
 /// The car's control (`rbr_gameplay::control::CarControl`'s eight words, word 6 0 when unset) the frame's last step
 /// took: the `CSigCarControl` payload the in-car driver turns the wheel by (LocoMotion `OnCarControl`), which the
 /// frame's echoed input payload is not; zeros before the first step.
@@ -41,7 +43,7 @@ pub fn read_records(reader: &mut impl Read) -> io::Result<Vec<([u8; 4], Vec<u8>)
         reader.read_exact(&mut len)?;
         let len = u32::from_le_bytes(len) as usize;
         if len > MAX_PAYLOAD {
-            return Err(crate::invalid(format!("a {len}-byte live record")));
+            return Err(invalid(format!("a {len}-byte live record")));
         }
         let mut payload = vec![0; len];
         reader.read_exact(&mut payload)?;

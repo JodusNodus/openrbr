@@ -12,6 +12,8 @@
 //! i32 next_tag   the next key's tag (E12_KeyList::NextKey, 0x475de0), -1 at the end of the list
 //! ```
 
+use crate::word_at;
+
 /// The tag.
 pub const PCN1: [u8; 4] = *b"PCN1";
 /// Bytes per callout.
@@ -44,7 +46,7 @@ pub fn from_bytes(bytes: &[u8]) -> Option<Vec<Callout>> {
     if bytes.len() != 4 + CALLOUT_BYTES * count {
         return None;
     }
-    let word = |at: usize| crate::word_at(bytes, at);
+    let word = |at: usize| word_at(bytes, at);
     Some(
         (0..count)
             .map(|k| {

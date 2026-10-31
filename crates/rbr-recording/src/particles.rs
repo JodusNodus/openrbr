@@ -13,6 +13,8 @@
 
 use std::io;
 
+use crate::{invalid, word_at};
+
 /// The tag.
 pub const PTC1: [u8; 4] = *b"PTC1";
 /// The bytes of one payload carried.
@@ -67,10 +69,10 @@ impl TyreParticles {
     /// Reads a payload; `None` when `bytes` is shorter than [`PAYLOAD_BYTES`].
     pub fn from_payload(bytes: &[u8]) -> Option<Self> {
         let bytes = bytes.get(..PAYLOAD_BYTES)?;
-        let float = |at: usize| f32::from_bits(crate::word_at(bytes, at));
+        let float = |at: usize| f32::from_bits(word_at(bytes, at));
         let vec3 = |at: usize| [float(at), float(at + 4), float(at + 8)];
         Some(TyreParticles {
-            wheel: crate::word_at(bytes, 0),
+            wheel: word_at(bytes, 0),
             edges: [vec3(0x10), vec3(0x20)],
             velocity: vec3(0x50),
             rubber: float(0x80),
@@ -79,9 +81,9 @@ impl TyreParticles {
             depth: float(0x90),
             dirt: float(0x94),
             splash: float(0x98),
-            surfaces: [crate::word_at(bytes, 0xa0), crate::word_at(bytes, 0xa4)],
+            surfaces: [word_at(bytes, 0xa0), word_at(bytes, 0xa4)],
             blend: float(0xa8),
-            contact: crate::word_at(bytes, 0xac) != 0,
+            contact: word_at(bytes, 0xac) != 0,
         })
     }
 }
@@ -95,7 +97,7 @@ pub fn record(payloads: &[[u8; PAYLOAD_BYTES]]) -> Vec<u8> {
 /// The payloads of a record's body (the bytes after the tag and length).
 pub fn read_body(body: &[u8]) -> io::Result<Vec<TyreParticles>> {
     if !body.len().is_multiple_of(PAYLOAD_BYTES) || body.len() > MAX_PAYLOADS * PAYLOAD_BYTES {
-        return Err(crate::invalid(format!("a PTC1 body of {} bytes", body.len())));
+        return Err(invalid(format!("a PTC1 body of {} bytes", body.len())));
     }
     Ok(body.chunks_exact(PAYLOAD_BYTES).filter_map(TyreParticles::from_payload).collect())
 }
@@ -157,8 +159,8 @@ pub enum Event {
 impl Event {
     /// The event of a kind and payload; `None` for an unknown kind.
     pub fn from_payload(kind: u32, payload: &[u8; EVENT_PAYLOAD_BYTES]) -> Option<Event> {
-        let float = |at: usize| f32::from_bits(crate::word_at(payload, at));
-        let word = |at: usize| crate::word_at(payload, at);
+        let float = |at: usize| f32::from_bits(word_at(payload, at));
+        let word = |at: usize| word_at(payload, at);
         let vec3 = |at: usize| [float(at), float(at + 4), float(at + 8)];
         match kind {
             CAR_DAMAGE => Some(Event::CarDamage { kind: word(4), force: float(0x10), at: vec3(0x20) }),
@@ -191,11 +193,11 @@ pub fn events_record(events: &[(u32, [u8; EVENT_PAYLOAD_BYTES])]) -> Vec<u8> {
 /// The events of a PEV1 body; unknown kinds are skipped.
 pub fn read_events(body: &[u8]) -> io::Result<Vec<Event>> {
     if !body.len().is_multiple_of(EVENT_BYTES) || body.len() > MAX_EVENTS * EVENT_BYTES {
-        return Err(crate::invalid(format!("a PEV1 body of {} bytes", body.len())));
+        return Err(invalid(format!("a PEV1 body of {} bytes", body.len())));
     }
     Ok(body
         .chunks_exact(EVENT_BYTES)
-        .filter_map(|e| Event::from_payload(crate::word_at(e, 0), e[4..].try_into().unwrap()))
+        .filter_map(|e| Event::from_payload(word_at(e, 0), e[4..].try_into().unwrap()))
         .collect())
 }
 

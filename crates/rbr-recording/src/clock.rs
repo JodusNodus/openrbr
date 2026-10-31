@@ -11,6 +11,8 @@
 
 use std::io;
 
+use crate::{sized, word};
+
 /// The tag.
 pub const CLK1: [u8; 4] = *b"CLK1";
 /// The body's size.
@@ -46,8 +48,8 @@ impl StepClock {
 
     /// The record's body (the bytes after the tag and length).
     pub fn read_body(body: &[u8]) -> io::Result<StepClock> {
-        let body: &[u8; BODY_BYTES] = crate::sized(body, format!("a CLK1 body of {} bytes", body.len()))?;
-        Ok(StepClock { step: f32::from_bits(crate::word(body, 0)), settle: crate::word(body, 1) })
+        let body: &[u8; BODY_BYTES] = sized(body, format!("a CLK1 body of {} bytes", body.len()))?;
+        Ok(StepClock { step: f32::from_bits(word(body, 0)), settle: word(body, 1) })
     }
 }
 

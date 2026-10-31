@@ -18,6 +18,8 @@
 
 use std::io;
 
+use crate::{sized, word};
+
 /// The tag.
 pub const GBX1: [u8; 4] = *b"GBX1";
 /// The ratios the record holds.
@@ -50,12 +52,11 @@ impl Gearbox {
 
     /// Reads the record's payload (the bytes after its tag and length, `crate::live::read_records`).
     pub fn from_payload(payload: &[u8]) -> io::Result<Gearbox> {
-        let payload: &[u8; PAYLOAD_BYTES] =
-            crate::sized(payload, format!("a gearbox record of {} bytes", payload.len()))?;
+        let payload: &[u8; PAYLOAD_BYTES] = sized(payload, format!("a gearbox record of {} bytes", payload.len()))?;
         Ok(Gearbox {
-            drive_speed: f32::from_bits(crate::word(payload, 0)),
-            count: crate::word(payload, 1),
-            ratios: std::array::from_fn(|g| f32::from_bits(crate::word(payload, 2 + g))),
+            drive_speed: f32::from_bits(word(payload, 0)),
+            count: word(payload, 1),
+            ratios: std::array::from_fn(|g| f32::from_bits(word(payload, 2 + g))),
         })
     }
 }

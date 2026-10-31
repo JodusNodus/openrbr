@@ -9,7 +9,7 @@
 
 use std::fmt::{self, Display, Formatter};
 
-use crate::read_u32;
+use crate::{read_u32, word_at};
 
 pub const MAGIC: u32 = 0x314b_4550;
 pub const VERSION: u32 = 1;
@@ -201,7 +201,7 @@ impl<'a> Iterator for Records<'a> {
             return Some(Err(error));
         }
         let offset = self.offset;
-        let step = crate::word_at(self.bytes, offset);
+        let step = word_at(self.bytes, offset);
         let values = &self.bytes[offset + 4..end];
         self.offset = end;
         Some(Ok(Record { offset, step, probes: self.probes, values }))

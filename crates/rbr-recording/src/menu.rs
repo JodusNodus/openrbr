@@ -11,6 +11,8 @@
 
 use std::io;
 
+use crate::{sized, word};
+
 /// The tag.
 pub const MNU1: [u8; 4] = *b"MNU1";
 /// The body's size.
@@ -49,10 +51,10 @@ impl Menu {
 
     /// The record's body (the bytes after the tag and length).
     pub fn read_body(body: &[u8]) -> io::Result<Menu> {
-        let body: &[u8; BODY_BYTES] = crate::sized(body, format!("an MNU1 body of {} bytes", body.len()))?;
-        let flags = crate::word(body, 1);
+        let body: &[u8; BODY_BYTES] = sized(body, format!("an MNU1 body of {} bytes", body.len()))?;
+        let flags = word(body, 1);
         Ok(Menu {
-            mode: crate::word(body, 0),
+            mode: word(body, 0),
             driving: flags & DRIVING != 0,
             help: flags & HELP != 0,
             over: flags & OVER != 0,

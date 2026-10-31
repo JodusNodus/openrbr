@@ -17,6 +17,8 @@
 
 use std::io::{self, Read};
 
+use crate::{invalid, word};
+
 /// The tags.
 pub const HUD1: u32 = 0x3144_5548;
 pub const HUD2: u32 = 0x3244_5548;
@@ -68,28 +70,28 @@ impl Hud {
     pub fn read(reader: &mut impl Read) -> io::Result<Hud> {
         let mut head = [0u8; HUD1_BYTES];
         reader.read_exact(&mut head)?;
-        let race = match crate::word(&head, 0) {
+        let race = match word(&head, 0) {
             HUD1 => None,
             HUD2 => {
                 let mut rest = [0u8; HUD2_BYTES - HUD1_BYTES];
                 reader.read_exact(&mut rest)?;
-                let flags = crate::word(&rest, 3);
+                let flags = word(&rest, 3);
                 Some(RaceHud {
-                    time: f32::from_bits(crate::word(&rest, 0)),
-                    countdown: f32::from_bits(crate::word(&rest, 1)),
-                    penalties: f32::from_bits(crate::word(&rest, 2)),
+                    time: f32::from_bits(word(&rest, 0)),
+                    countdown: f32::from_bits(word(&rest, 1)),
+                    penalties: f32::from_bits(word(&rest, 2)),
                     running: flags & RUNNING != 0,
                     jump_start: flags & JUMP_START != 0,
                 })
             }
             tag => {
-                return Err(crate::invalid(format!("{tag:#010x} is not a HUD record")));
+                return Err(invalid(format!("{tag:#010x} is not a HUD record")));
             }
         };
         Ok(Hud {
-            gear: crate::word(&head, 1),
-            engine_speed: f32::from_bits(crate::word(&head, 2)),
-            speed: f32::from_bits(crate::word(&head, 3)),
+            gear: word(&head, 1),
+            engine_speed: f32::from_bits(word(&head, 2)),
+            speed: f32::from_bits(word(&head, 3)),
             race,
         })
     }

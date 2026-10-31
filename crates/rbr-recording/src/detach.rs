@@ -16,6 +16,8 @@
 
 use std::io;
 
+use crate::{invalid, word};
+
 /// The tag.
 pub const DET1: [u8; 4] = *b"DET1";
 /// The detachable parts, by their exterior node names (`CAR_PARTS` in `rbr-standalone`): the doors and bonnet (hinged
@@ -52,15 +54,15 @@ pub fn to_bytes(poses: &[PartPose]) -> Vec<u8> {
 /// The entries of a record's payload (the bytes after its tag and length).
 pub fn parse(payload: &[u8]) -> io::Result<Vec<PartPose>> {
     if !payload.len().is_multiple_of(ENTRY_BYTES) {
-        return Err(crate::invalid(format!("{} bytes of detached parts", payload.len())));
+        return Err(invalid(format!("{} bytes of detached parts", payload.len())));
     }
     payload
         .chunks_exact(ENTRY_BYTES)
         .map(|entry| {
-            let float = |i: usize| f32::from_bits(crate::word(entry, i));
-            let part = crate::word(entry, 0);
+            let float = |i: usize| f32::from_bits(word(entry, i));
+            let part = word(entry, 0);
             if part as usize >= PARTS.len() {
-                return Err(crate::invalid(format!("detached part {part}")));
+                return Err(invalid(format!("detached part {part}")));
             }
             Ok(PartPose {
                 part,

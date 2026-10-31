@@ -18,6 +18,8 @@
 //! It is one of the tagged records (`crate::live`), so a reader that does not know it skips it by its length. A step
 //! the game does not run (after the race's end) writes it with no flags.
 
+use crate::word;
+
 /// The tag.
 pub const FLW1: [u8; 4] = *b"FLW1";
 const PAYLOAD_BYTES: usize = 16;
@@ -82,10 +84,9 @@ impl Flow {
         if payload.len() != PAYLOAD_BYTES && payload.len() != OLD_PAYLOAD_BYTES {
             return None;
         }
-        let alpha = |i: usize| {
-            payload.get(4 * i..4 * i + 4).map(|_| f32::from_bits(crate::word(payload, i))).filter(|a| !a.is_nan())
-        };
-        let flags = crate::word(payload, 0);
+        let alpha =
+            |i: usize| payload.get(4 * i..4 * i + 4).map(|_| f32::from_bits(word(payload, i))).filter(|a| !a.is_nan());
+        let flags = word(payload, 0);
         let message = if flags & BOX_BYSTAND != 0 {
             Some(MessageBox::RetireBystand)
         } else if flags & BOX_OFFSTAGE != 0 {
@@ -98,7 +99,7 @@ impl Flow {
             rally_incident: flags & INCIDENT != 0,
             finish_line: flags & FINISH_LINE != 0,
             ended: flags & ENDED != 0,
-            page: crate::word(payload, 1),
+            page: word(payload, 1),
             helicopter_active: flags & HELICOPTER_ACTIVE != 0,
             message,
             service_next: flags & SERVICE_NEXT != 0,

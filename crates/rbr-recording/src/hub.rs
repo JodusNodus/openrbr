@@ -12,8 +12,9 @@
 //!
 //! It is one of the tagged records (`crate::live`), so a reader that does not know it skips it by its length.
 
-use crate::WHEELS;
 use std::io;
+
+use crate::{sized, word, WHEELS};
 
 /// The tag.
 pub const HUB1: [u8; 4] = *b"HUB1";
@@ -27,8 +28,8 @@ pub fn record(offsets: [f32; WHEELS]) -> Vec<u8> {
 
 /// Reads the record's payload (the bytes after its tag and length, `crate::live::read_records`).
 pub fn from_payload(payload: &[u8]) -> io::Result<[f32; WHEELS]> {
-    let payload: &[u8; PAYLOAD_BYTES] = crate::sized(payload, format!("a hub record of {} bytes", payload.len()))?;
-    Ok(std::array::from_fn(|k| f32::from_bits(crate::word(payload, k))))
+    let payload: &[u8; PAYLOAD_BYTES] = sized(payload, format!("a hub record of {} bytes", payload.len()))?;
+    Ok(std::array::from_fn(|k| f32::from_bits(word(payload, k))))
 }
 
 #[cfg(test)]

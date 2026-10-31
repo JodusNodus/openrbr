@@ -20,7 +20,7 @@
 //! and a tool steps in lockstep by writing a frame and reading its answer ([`Logged::unchecked`]). A restart is logged
 //! as [`Logged::RESTART`], and the frames after it run from the stage start again (`crate::replay`).
 
-use crate::CONTROL_BYTES;
+use crate::{word, CONTROL_BYTES};
 
 /// The viewer's message tags.
 pub const INPUT: [u8; 4] = *b"RTI1";
@@ -99,9 +99,9 @@ impl Step {
     /// Reads the bytes after the tag.
     pub fn from_body(body: &[u8; STEP_BYTES]) -> Step {
         Step {
-            step: crate::word(body, 0),
-            seq: crate::word(body, 1),
-            force: f32::from_bits(crate::word(body, 2)),
+            step: word(body, 0),
+            seq: word(body, 1),
+            force: f32::from_bits(word(body, 2)),
             control: body[12..].try_into().unwrap(),
         }
     }
