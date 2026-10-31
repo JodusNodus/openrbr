@@ -262,8 +262,7 @@ impl<'a> Reader<'a> {
 
     /// The bytes the cursor has not read yet.
     pub(crate) fn rest(&mut self) -> &'a [u8] {
-        let n = self.remaining();
-        self.take(n).expect("what remains in scope is there")
+        self.take(self.remaining()).expect("what remains in scope is there")
     }
 }
 
