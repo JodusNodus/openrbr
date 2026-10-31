@@ -1,31 +1,29 @@
-//! The car's collision meshes, from the collision bodies of its `.sgc`, as HedgeHog3D.dll's car loader emits them (1.02,
-//! the `CSigCollisionMesh` emits at 0x1001ecc0, [`car_meshes`]; `E37SigFactory720` builds grids 1-8 from them,
-//! `load::emit_car_meshes`). Each holds the vertices, the faces (three vertex indices, 0, and the body's three sample
-//! indices) and, for the body, its samples and two maps. The vertices, per body: `A` = the body's transform block composed (`HH_H7ReadTransform` 0x1000c7a0, `NLB_ComposeTransformEH`
-//! 0x1008d420), `B` = its world matrix (`HH_H7ReadMatrix` 0x1000c6c0), each vertex goes through `A * B` and is stored
-//! as `(x, z, y)`.
+//! The car's collision meshes, from the collision bodies of its `.sgc`, as the car loader emits them (1.02,
+//! [`car_meshes`]); the factory builds grids 1-8 from them (`load::emit_car_meshes`). Each holds the vertices,
+//! the faces (three vertex indices, 0, and the body's three sample indices) and, for the body, its samples and two
+//! maps. The vertices, per body: `A` = the body's transform block composed, `B` = its world matrix, each vertex goes
+//! through `A * B` and is stored as `(x, z, y)`.
 //!
-//! The NLB math goes through call slots (0x101c30c0) that the game fills with the SSE variants: the matrix product
-//! 0x101552fa, the inverse 0x10155560 and the point transform 0x10156035 (which divides by `w` through `rcpps` and a
-//! Newton step, so `w = 1` scales by `1 - 2^-24`). The quaternion matrix (0x100a65f5) and the transform reader are x87
-//! code at the game's 24-bit precision control: each operation rounds to f32.
+//! The helper math runs the SSE variants: the matrix product, the inverse and the point transform (which divides by
+//! `w` through `rcpps` and a Newton step, so `w = 1` scales by `1 - 2^-24`). The quaternion matrix and the transform
+//! reader run the x87 code at the game's 24-bit precision control: each operation rounds to f32.
 //!
-//! The hinged bodies' grids (2-5) move by their hinge vectors later, in `CCar::UpdateA720` (`CHingedRigidBody::SimEFE0`
-//! -> `E37GridOps::AddEdge` 0x4f65b0, `collision::layout::grid_add_edge`).
+//! The hinged bodies' grids (2-5) move by their hinge vectors later, when the car copies its setups (the edge add,
+//! `collision::layout::grid_add_edge`).
 
 use crate::math::rcp::rcp;
 use crate::math::sse::{add, mul, sub};
 use crate::math::trig::{fcos, fsin, X87Ext80};
 use rbr_formats::sgc::Collision;
 
-/// A 4x4 matrix as the NLB code stores it: row-major, row vectors (`p' = p * M`), the translation in row 3.
+/// A 4x4 matrix as the loader's math stores it: row-major, row vectors (`p' = p * M`), the translation in row 3.
 pub type Mat4 = [[f32; 4]; 4];
 
 type Lanes = [f32; 4];
 
 /// The collision bodies the loader emits, in its order: the body's grid id is fixed (1), with the name
-/// `"MrCarCollision"`; the others come from HedgeHog3D's table at 0x101d7eb0 (name, id), whose names are the bodies'.
-/// Each with its name's offset in HedgeHog3D's image (base 0x10000000).
+/// `"MrCarCollision"`; the others come from the loader's table (name, id), whose names are the bodies'.
+/// Each with its name's offset in the loader's image.
 pub const PARTS: [(&str, u32, u32); 8] = [
     ("c_e_body", 1, 0x1a_ca74),
     ("c_e_door_l", 2, 0x1a_fe40),
@@ -45,24 +43,24 @@ pub struct SampleMap {
     pub data: Option<Vec<u8>>,
 }
 
-/// One `CSigCollisionMesh` the car loader emits (0x1001ecc0) and the blocks it points to.
+/// One collision mesh the car loader emits and the blocks it points to.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CarMesh {
     pub id: u32,
-    /// The name's offset in HedgeHog3D's image.
+    /// The name's offset in the loader's image.
     pub name: u32,
     pub vertices: Vec<[f32; 3]>,
-    /// Three vertex indices, 0, then three sample indices. Only the body's are written: a part's bytes 4-6 are the
-    /// heap's in the original, 0 here.
+    /// Three vertex indices, 0, then three sample indices. Only the body's are written: a part's bytes 4-6 are
+    /// uninitialised memory there, 0 here.
     pub faces: Vec<[u8; 7]>,
     /// The body's samples, each `255 * x` truncated to a byte; None for a part.
     pub samples: Option<Vec<[u8; 2]>>,
-    /// The body's maps: `a` is the file's second (+0x20, +0x24), `b` its first (+0x22, +0x28).
+    /// The body's maps: `a` is the file's second, `b` its first.
     pub map_a: SampleMap,
     pub map_b: SampleMap,
 }
 
-/// `_ftol`'s low byte: truncation, `0x80000000` out of range.
+/// Truncation to a byte: out of range gives 0.
 fn ftol_byte(v: f32) -> u8 {
     if v.abs() < 2_147_483_648.0 {
         v as i32 as u8
@@ -110,7 +108,7 @@ pub fn car_meshes(bodies: &[Collision]) -> Option<Vec<CarMesh>> {
     Some(meshes)
 }
 
-/// `HH_H7ReadTransform`'s output: the translation, two rotations as quaternions `(axis * sin(angle / 2), cos(angle /
+/// A transform block read: the translation, two rotations as quaternions `(axis * sin(angle / 2), cos(angle /
 /// 2))`, and the scale.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct HhTransform {
@@ -120,8 +118,8 @@ pub struct HhTransform {
     pub rotation2: [f32; 4],
 }
 
-/// `HH_H7ReadTransform` (0x1000c7a0) on the block's 14 words: translation (0-2), angle and axis (3, 4-6), scale (7-9),
-/// second angle and axis (10, 11-13). The half angle is a `mulss`; `fsin` stays extended for the axis products.
+/// On the block's 14 words: translation (0-2), angle and axis (3, 4-6), scale (7-9), second angle and axis (10, 11-13).
+/// The half angle is a `mulss`; `fsin` stays extended for the axis products.
 pub fn read_transform(w: [f32; 14]) -> HhTransform {
     let quat = |angle: f32, axis: [f32; 3]| {
         let half = X87Ext80::from_f32(mul(angle, 0.5));
@@ -137,7 +135,7 @@ pub fn read_transform(w: [f32; 14]) -> HhTransform {
     }
 }
 
-/// The quaternion's rotation matrix (0x100a65f5), in the x87 code's operation order.
+/// The quaternion's rotation matrix, in the x87 code's operation order.
 pub fn quat_matrix(q: [f32; 4]) -> Mat4 {
     let [x, y, z, w] = q;
     let (x2, y2, z2) = (x * 2.0, y * 2.0, z * 2.0);
@@ -160,8 +158,8 @@ fn translation_matrix([x, y, z]: [f32; 3]) -> Mat4 {
     [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [x, y, z, 1.0]]
 }
 
-/// `HH_H7ReadMatrix` (0x1000c6c0) on a world matrix in file order (rows `[R | t]`): `M[r][i] = world[i][r]`, so row 3
-/// is the translation; `M[3][3] = 1`.
+/// On a world matrix in file order (rows `[R | t]`): `M[r][i] = world[i][r]`, so row 3 is the translation;
+/// `M[3][3] = 1`.
 pub fn world_matrix(world: [[f32; 4]; 3]) -> Mat4 {
     let mut m = scale_matrix([1.0; 3]);
     for (i, row) in world.iter().enumerate() {
@@ -198,7 +196,7 @@ fn shufps(dst: Lanes, src: Lanes, imm: u8) -> Lanes {
     [dst[at(0)], dst[at(1)], src[at(2)], src[at(3)]]
 }
 
-/// The SSE matrix product (0x101552fa), `a * b`: each row of `a` broadcast against `b`'s rows, summed `(0 + 1) + (2 + 3)`
+/// The SSE matrix product, `a * b`: each row of `a` broadcast against `b`'s rows, summed `(0 + 1) + (2 + 3)`
 /// in rows 0 and 3 and `((0 + 1) + 2) + 3` in rows 1 and 2.
 pub fn mat_mul(a: &Mat4, b: &Mat4) -> Mat4 {
     let p = |i: usize, k: usize| mulps(splat(a[i][k]), b[k]);
@@ -210,9 +208,9 @@ pub fn mat_mul(a: &Mat4, b: &Mat4) -> Mat4 {
     ]
 }
 
-/// The SSE 4x4 inverse (0x10155560, Intel's Cramer's-rule code), instruction by instruction (registers `xN`, stack
-/// temporaries `tNN` at `-0xNN(%ebp)`): the cofactors, the determinant, and `1/det` from `rcpss` with one Newton step.
-/// `None` when the determinant is zero (the original then leaves its output unwritten).
+/// The SSE 4x4 inverse (Intel's Cramer's-rule code), one operation at a time: the cofactors, the determinant, and
+/// `1/det` from `rcpss` with one Newton step. `None` when the determinant is zero (then the output is left
+/// unwritten).
 pub fn inverse(m: &Mat4) -> Option<Mat4> {
     let f = m.as_flattened();
     let pair = |lo: usize, hi: usize| [f[lo], f[lo + 1], f[hi], f[hi + 1]];
@@ -359,7 +357,7 @@ pub fn inverse(m: &Mat4) -> Option<Mat4> {
     Some([mulps(te0, inv), mulps(x4, inv), mulps(t20, inv), mulps(inv, x2)])
 }
 
-/// `NLB_ComposeTransformEH` (0x1008d420): `inverse(R2) * S * R2 * R1 * T`, the rotations from the quaternions, `S` the
+/// The composed transform: `inverse(R2) * S * R2 * R1 * T`, the rotations from the quaternions, `S` the
 /// scale and `T` the translation. `None` when `R2` has no inverse.
 pub fn compose(t: &HhTransform) -> Option<Mat4> {
     let r2 = quat_matrix(t.rotation2);
@@ -371,7 +369,7 @@ pub fn compose(t: &HhTransform) -> Option<Mat4> {
     Some(mat_mul(&m, &translation_matrix(t.translation)))
 }
 
-/// The SSE point transform (0x10156035): `(v0 * M0 + v1 * M1) + (v2 * M2 + M3)`, then divided by its `w` through
+/// The SSE point transform: `(v0 * M0 + v1 * M1) + (v2 * M2 + M3)`, then divided by its `w` through
 /// `rcpps` and one Newton step. Returns x, y, z.
 pub fn transform_point(v: [f32; 3], m: &Mat4) -> [f32; 3] {
     let hi = addps(mulps(m[2], splat(v[2])), m[3]);
@@ -402,7 +400,7 @@ pub fn grid_vertices(body: &Collision) -> Option<Vec<[f32; 3]>> {
 mod tests {
     use super::{inverse, mat_mul, quat_matrix, read_transform, transform_point, Mat4};
 
-    // Random cases run on HedgeHog3D.dll's own code in unicorn (the SSE slots, the reference CPU's rcp table, x87 at
+    // Random cases run on the loader's own code (the reference CPU's rcp table, x87 at
     // 24-bit precision control), as bits.
     const INVERSE: &[([u32; 16], [u32; 16])] = &[
         (

@@ -1,7 +1,7 @@
 //! The hinged body's refresh: it copies the definition's angle block and limit states into the body, sets the hinge angle
 //! from where the definition's default angle lies between its two limits, builds the definition's two frames
 //! ([`super::hinge_axes`]), composes the pose with the car, poses the body ([`super::hinge_pose`]), finds its offset
-//! ([`super::hinge_offset`]) and adds `vecHingePoint_BF` to the grid as an edge.
+//! ([`super::hinge_offset`]) and adds the body-frame hinge point to the grid as an edge.
 //!
 //! The calls are the caller's ([`RefreshCalls`]). Each one can change the body (the pose, the wake-up), so the model
 //! reads the body back after every call (`load`) and writes its own values before every call (`store`). The fourth lane of
@@ -22,7 +22,7 @@ pub struct RefreshState {
     /// The definition's limit springs' positions (`Spring0Pos`, `Spring1Pos`): the body's
     /// [`super::hinge_limits::HingeState::spring_position`] start from them.
     pub definition_spring_position: [u32; 2],
-    /// `vecHingePoint_BF` (4 words): the grid edge's vector.
+    /// The body-frame hinge point (4 words): the grid edge's vector.
     pub hinge_point_bf: [u32; 4],
     /// Where the link flag is, and the flag. The model clears the flag when it wakes the body.
     pub link_address: u32,

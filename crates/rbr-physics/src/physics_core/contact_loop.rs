@@ -1,4 +1,4 @@
-//! The contact loop: `CPhysics::Work5640`/`Work5760` and `CollideWork` (0x526d20), over the physics core's store.
+//! The contact loop: the two contact advances and the collide work, over the physics core's store.
 
 use super::contact::event_before_step_end;
 use super::detectors::{fraction_overshoots, step_fraction, window_bounds, window_left};
@@ -10,9 +10,9 @@ use super::layout::detector_hosts::CollideHost;
 use super::layout::{SLOT_48, SLOT_54, SOLVER_POST_SLOT};
 use super::store::CoreStore;
 
-/// `CPhysics::Work5640(f)` (0x525640) on the physics at `this`: over the scratch's event list, each solid of an event
-/// that answers slot 0x80 and carries the flag gets `VfDx` with the event's penetration scalar (`Get94`). The float
-/// argument is unused by the original.
+/// The first contact advance on the physics at `this`: over the scratch's event list, each solid of an event
+/// that takes part and carries the flag steps back by the event's penetration scalar. The float
+/// argument is unused.
 pub fn advance_contact_bodies<S: CoreStore>(store: &mut S, host: &mut impl SolidHost, this: u32) {
     let mut event = store.scratch_events(this);
     while event != 0 {
@@ -27,8 +27,8 @@ pub fn advance_contact_bodies<S: CoreStore>(store: &mut S, host: &mut impl Solid
     }
 }
 
-/// `CPhysics::Work5760(window)` (0x525760) on the physics at `this`: over the scratch's event list, an event whose
-/// scalar is below 1.0 gives each solid that answers slot 0x80 and carries the flag `VfEx(window)`.
+/// The second contact advance on the physics at `this`: over the scratch's event list, an event whose
+/// scalar is below 1.0 advances each solid that takes part and carries the flag by `window`.
 pub fn advance_contact_bodies_remainder<S: CoreStore>(
     store: &mut S,
     host: &mut impl SolidHost,
@@ -49,15 +49,14 @@ pub fn advance_contact_bodies_remainder<S: CoreStore>(
     }
 }
 
-/// The CDef flag that counts the solver's hits (+0x160e0).
+/// The CDef flag that counts the solver's hits.
 const COUNT_HITS_FLAG: u32 = 0x20000;
 
-/// `CPhysics::CollideWork(window)` (0x526d20) on the physics at `this`; `entry` is its entry esp. The pass counter
-/// (+0x18) and the hit counts (+4, +8, the maximum at +0xc) restart; while the window is above `0.05 window` (once at
-/// most: the original's budget is 1) a profiled detect pass (`Work6a70`) and the solver's sweep give a fraction; at or
-/// below 1.1 the contacts step by its clamped value (`Work5640`, the solver's pass, the bodies' slot 0x48, `Work5760`)
-/// and the window shrinks, above it the window ends. Then the bodies' slots 0x54 and 0x48, and the pass maximum
-/// (+0x14). Returns the pass count (eax).
+/// The collide work on the physics at `this`. The pass counter and the hit counts restart; while the window is above
+/// its floor (once at most: the budget is 1) a profiled detect pass and the solver's sweep give a fraction; at or
+/// below 1.1 the contacts step by its clamped value (the first advance, the solver's pass, the bodies' step, the second
+/// advance) and the window shrinks, above it the window ends. Then the bodies' post passes, and the pass maximum.
+/// Returns the pass count.
 pub fn collide_window<S: CoreStore>(
     store: &mut S,
     host: &mut impl CollideHost,

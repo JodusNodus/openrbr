@@ -1,9 +1,8 @@
-//! Entity layer of the exe (`src/rbr/RBR_E43_*`, `RBR_E44_*`): the CEntity frames and matrices, CGround
-//! and the CHingedRigidBody sims. The ports (`frame`, `mat`, `ground`, `hinged`) take and return typed
-//! values; `layout` is the only code that reads or writes the game's memory (offsets and stores), as
-//! `vcu::layout` is for the VCU. Each function is checked against the original's own calls
+//! Entity layer: the entity frames and matrices, the ground and the hinged-body sims. The ports (`frame`, `mat`, `ground`, `hinged`) take and return typed
+//! values; `layout` is the only code that reads or writes the game memory (offsets and stores), as
+//! `vcu::layout` is for the VCU. Each function is checked against the recorded calls
 //! (`harness/vcu_vectors.py --set entities`, `tests/entities_vectors.rs`). The plan and the batch
-//! status are in `entities/README.md` (git 9c28c0b8).
+//! status are in `entities/README.md`.
 
 pub mod collide;
 pub mod def;

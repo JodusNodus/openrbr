@@ -1,11 +1,11 @@
-//! `CPassenger::Step` (0x523160) and `E45PSmalls::M2BC0` (0x522bc0), over the physics core's store.
+//! The passenger step and the small passenger pull, over the physics core's store.
 
 use super::layout::passenger_ctor;
 use super::passenger;
 use super::store::CoreStore;
 
-/// `CPassenger::Step` (0x523160) on the passenger at `this`: the walk of the gravity point (`host.walk`), then the spring
-/// and the pull (`host.spring`, `host.pull`). Returns the eax the original leaves, or None before any call when the
+/// The passenger step on the passenger at `this`: the walk of the gravity point (`host.walk`), then the spring
+/// and the pull (`host.spring`, `host.pull`). Returns what the pull leaves, or None before any call when the
 /// gravity pointer is the sentinel.
 pub fn passenger_step<S: CoreStore>(
     store: &mut S,
@@ -21,8 +21,8 @@ pub fn passenger_step<S: CoreStore>(
     Some(host.pull(this, dt))
 }
 
-/// `E45PSmalls::M2BC0` (0x522bc0) on the passenger at `this`: the pull on its host's vectors (`passenger::pull_to_rest`).
-/// Returns the eax the original leaves, the host's +0x90 vector.
+/// The small passenger pull on the passenger at `this`: the pull on its host's vectors (`passenger::pull_to_rest`).
+/// Returns what the pull leaves, the host's second vector.
 pub fn passenger_pull<S: CoreStore>(store: &mut S, this: u32, dt: f32) -> u32 {
     let host = store.passenger_host(this);
     let (h40, h90) = store.host_pull_vectors(host);

@@ -1,6 +1,5 @@
-//! Flag dispatch (`CScratchSim::FlagDispatch`, 0x537a80, called UpdateD in the notes): a packet of
-//! request flags turns into gear requests and lockouts. The asm decides the order; the slip query
-//! (`E50_QuerySlip`) is an input here, as the drive accessors are.
+//! Flag dispatch: a packet of request flags turns into gear requests and lockouts. The slip query
+//! is an input here, as the drive accessors are.
 
 use super::gear::{request, set_gear};
 use super::layout::{Def, Gearbox, Packet, State, Tuning};
@@ -11,8 +10,8 @@ const UP: u8 = 1;
 const DOWN: u8 = 2;
 const SET: u8 = 4;
 
-/// Applies the packet. `query_slip` is `E50_QuerySlip` (read only when the downshift flag is set).
-/// Returns whether anything was requested (the asm's return value).
+/// Applies the packet. `query_slip` is the slip query (read only when the downshift flag is set).
+/// Returns whether anything was requested.
 pub fn flag_dispatch(
     packet: Packet,
     query_slip: impl FnOnce() -> bool,

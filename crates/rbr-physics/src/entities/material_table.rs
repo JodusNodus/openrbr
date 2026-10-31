@@ -37,17 +37,17 @@ impl MaterialTable {
     }
 }
 
-/// What the indexed lookup (0x520240) found.
+/// What the indexed lookup found.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Indexed {
     Texel(u32),
-    /// The table's own address (+0x800) is 0: the original clears only al of eax.
+    /// No table.
     NoTable,
     OutOfRange,
 }
 
-/// `E44MatTable` lookup by index (0x520240): slot `index` of the table at `this`, if it has one. The slot lookup is
-/// NGP's (`ngp::layout::material`, in place of 1.02's `0x520010`), which also reads `b`.
+/// The material table's lookup by index: slot `index` of the table at `this`, if it has one. The slot sampling is
+/// NGP's (`ngp::layout::material`), which also reads `b`.
 pub fn sample_indexed<S: EntityStore>(store: &S, this: u32, index: u8, f: f32, b: f32) -> Indexed {
     match store.material_slot(this, index) {
         SlotLookup::NoTable => Indexed::NoTable,
