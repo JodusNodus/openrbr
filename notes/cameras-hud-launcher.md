@@ -73,5 +73,6 @@ Form in `rbr-launcher/src/settings.rs`, folder and once-only migrate in `rbr-lau
 
 - Quality keys (`graphics_page::Graphics`): `lighting`, `particles`, `surfaces`, `cabin`, `contact`, `grass`, `windscreen`,
   `marks`, `wet_roads`, `detail`, `mirrors`; unset takes the High preset. The preset box is not stored: it shows the preset the
-  keys match, else Custom; presets leave `marks`, the render scale and anti-aliasing alone.
+  keys match, else Custom; presets leave `marks`, the render scale and anti-aliasing alone. `surfaces` is off in every
+  preset until the scanned surfaces suit every stage (user's call, 2026-10-31); a saved `surfaces = on` stays on.
 - `perf_log` defaults off; on, the viewer logs with `viewer --perf-log <files folder>/logs` (`home::LOGS`, shown on the Graphics page).

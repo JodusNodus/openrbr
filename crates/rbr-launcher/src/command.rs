@@ -1206,10 +1206,11 @@ mod tests {
         assert_eq!(enhance_list(&Quality::Low.graphics(false)), "anisotropy,decals,water");
         assert_eq!(
             enhance_list(&DEFAULT_GRAPHICS),
-            "anisotropy,asphalt,cabin,contact,decals,grass,gravel,ground,lighting,particles,snow,water,wet,windscreen"
+            "anisotropy,cabin,contact,decals,grass,lighting,particles,water,wet,windscreen"
         );
-        // Ultra with the tyre marks is every addition.
-        assert_eq!(Enhance::parse(&enhance_list(&Quality::Ultra.graphics(true))), Enhance::parse("all,grass"));
+        // Ultra with the tyre marks and the scanned surfaces is every addition.
+        let every = Graphics { surfaces: true, ..Quality::Ultra.graphics(true) };
+        assert_eq!(Enhance::parse(&enhance_list(&every)), Enhance::parse("all,grass"));
         for preset in Quality::ALL {
             assert_eq!(Quality::of(preset.graphics(true)), Some(preset));
         }
