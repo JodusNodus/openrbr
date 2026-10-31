@@ -226,7 +226,7 @@ impl Buffers<'_> {
         }
         let at = v.checked_mul(self.stride)?;
         let b = self.vertices.get(at..at.checked_add(12)?)?;
-        Some(read_vec3(b))
+        Some(crate::le::floats_of(b))
     }
 }
 
@@ -715,11 +715,6 @@ impl From<crate::le::Truncated> for Error {
     fn from(t: crate::le::Truncated) -> Self {
         Error::Truncated { offset: t.offset, needed: t.needed, len: t.len }
     }
-}
-
-fn read_vec3(b: &[u8]) -> [f32; 3] {
-    let f = |at: usize| f32::from_bits(u32::from_le_bytes([b[at], b[at + 1], b[at + 2], b[at + 3]]));
-    [f(0), f(4), f(8)]
 }
 
 #[cfg(test)]
