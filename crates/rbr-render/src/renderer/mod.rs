@@ -15,7 +15,7 @@ use crate::post::{Post, SCENE_FORMAT};
 use crate::profile::Profiler;
 use crate::puddles;
 use crate::skylight::{self, SkyLight};
-use crate::stage::{Anchor, Draw, Image, Layer, Stage, TextureRef, Weather};
+use crate::stage::{Anchor, Draw, Image, Layer, Lod, Stage, TextureRef, Weather};
 use crate::start_board::{self, StartBoard, StartLamp};
 use crate::sun::{self, Cascades, SunShadow};
 use glam::{Mat4, Vec3, Vec4};
@@ -546,9 +546,13 @@ impl Renderer {
                 continue;
             }
             slots.push(Some(meshes.len()));
-            // The sun's light needs the normals the baked stage draws do not store, the sun's shadows the plants.
+            // The sun's light needs the normals the baked stage draws do not store, the sun's shadows the plants. The
+            // grass's tile meshes (`Lod::Close`) have none to light: `Renderer::stream_grass` gives them their cards'
+            // vertices. Their zeroed ones, all in one place, made grouping the plants into trees quadratic: 5 s of the
+            // load on 580.
             let backdrop = mesh.anchor == Anchor::World && mesh.layer == Layer::Sky;
-            let (slot, first_index) = if enhance.lighting || enhance.wet || timed {
+            let grass = mesh.draws.iter().all(|draw| draw.lod == Lod::Close);
+            let (slot, first_index) = if (enhance.lighting || enhance.wet || timed) && !grass {
                 let mut vertices = sun::with_normals(mesh);
                 // The fences carry their own light (`fences::FENCE`).
                 if mesh.anchor == Anchor::World && !crate::fences::is_fence(mesh) {
