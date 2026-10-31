@@ -121,8 +121,7 @@ mod tests {
 
     #[test]
     fn earlier_files_are_copied_once() {
-        let root = std::env::temp_dir().join(format!("rerbr-home-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let root = crate::test_dir("home-copied-once");
         let (old, new) = (root.join("launcher"), root.join("data/ReRBR"));
         let write = |path: &Path, text: &str| {
             fs::create_dir_all(path.parent().unwrap()).unwrap();

@@ -177,6 +177,16 @@ use setup_page::SetupPage;
 use window::App;
 use winit::event_loop::EventLoop;
 
+/// A fresh empty scratch folder for a test, unique per `name` (with the process id): names stay distinct so
+/// parallel tests never share one, and reruns start empty.
+#[cfg(test)]
+pub(crate) fn test_dir(name: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("rbr-launcher-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
 const SETTINGS_FILE: &str = "launcher-settings.ini";
 /// The folder in the player's folder with NGP's own `SavedGames/` and `GhostCars/` (ours).
 const NGP_RECORDS: &str = "NGP";

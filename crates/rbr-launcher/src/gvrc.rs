@@ -677,8 +677,7 @@ mod tests {
     fn files_are_fetched_with_their_size_and_progress() {
         let body: Vec<u8> = (0..300_000u32).map(|n| n as u8).collect();
         let base = serve(vec![("/a.bin", body.clone())]);
-        let dir = std::env::temp_dir().join(format!("rbr-gvrc-fetch-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
+        let dir = crate::test_dir("gvrc-fetch");
         let (agent, cancel) = (agent(), AtomicBool::new(false));
         let url = format!("{base}/a.bin");
         assert_eq!(size_of(&agent, &url), 300_000);
@@ -700,8 +699,7 @@ mod tests {
     #[test]
     fn a_failed_car_download_is_reported_and_leaves_no_temp_folder() {
         let base = serve(vec![]);
-        let dir = std::env::temp_dir().join(format!("rbr-gvrc-cars-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
+        let dir = crate::test_dir("gvrc-cars");
         let car = Entry {
             name: "Ghost Car".into(),
             cat: "Group B".into(),

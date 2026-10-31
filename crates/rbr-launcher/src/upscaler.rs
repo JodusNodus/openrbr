@@ -188,7 +188,7 @@ mod tests {
     #[test]
     #[ignore]
     fn the_download_is_found() {
-        let dir = std::env::temp_dir().join(format!("rerbr-upscaler-{}", std::process::id()));
+        let dir = crate::test_dir("upscaler-download");
         download(&dir, &|_| {}, &AtomicBool::new(false)).unwrap();
         assert!(upscale::Upscaler::find(&dir).is_some());
         assert_eq!(fs::read_dir(&dir).unwrap().count(), 1 + RELEASE.unwrap().files.len(), "no temp folder left");

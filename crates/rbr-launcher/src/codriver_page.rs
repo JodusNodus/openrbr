@@ -463,9 +463,7 @@ mod tests {
             eprintln!("skipping: RBR_SCREENSHOTS, RBR_DATA, RBR_PATCH, RBR_NGP_PHYSICS or RBR_RSF not set");
             return;
         };
-        let root = std::env::temp_dir().join(format!("rbr-launcher-codriver-shots-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).unwrap();
+        let root = crate::test_dir("page-codriver-shots");
         // A voice download and a notes-only download, as imported.
         let download = root.join("voice");
         write(download.join("PaceNote.ini"), "[SETTINGS]\nsounds=english/steve\n");
@@ -562,9 +560,7 @@ mod tests {
             eprintln!("skipping: RBR_DATA, RBR_PATCH or RBR_NGP_PHYSICS not set");
             return;
         };
-        let root = std::env::temp_dir().join(format!("rbr-launcher-notes-cache-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).unwrap();
+        let root = crate::test_dir("page-notes-cache");
         let download = root.join("voice");
         write(download.join("PaceNote.ini"), "[SETTINGS]\nsounds=english/steve\n");
         write(download.join("config/pacenotes/Rbr.ini"), "[PACKAGE::RBR]\nfile=calls.ini\n");

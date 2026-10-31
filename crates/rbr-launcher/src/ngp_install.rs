@@ -182,12 +182,6 @@ mod tests {
 
     use crate::job::Progress;
 
-    fn temp(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("rbr-ngp-install-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        dir
-    }
-
     /// A `physics.rbz` (NGP's when `ngp`) holding its `Physics/physics.lsp`.
     fn physics_rbz(ngp: bool) -> Vec<u8> {
         let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
@@ -220,7 +214,7 @@ mod tests {
 
     #[test]
     fn a_package_that_is_not_ngp_778_changes_nothing() {
-        let dir = temp("bad");
+        let dir = crate::test_dir("ngp-bad");
         fs::create_dir_all(&dir).unwrap();
         let game = retail_game(&dir);
         let package = dir.join("ngp.7z");
@@ -250,7 +244,7 @@ mod tests {
         let Some(dll) = rbr_formats::ngp::path(&data).and_then(|p| fs::read(p).ok()) else {
             return;
         };
-        let dir = temp("ok");
+        let dir = crate::test_dir("ngp-ok");
         fs::create_dir_all(&dir).unwrap();
         let game = retail_game(&dir);
         let package = dir.join("ngp.7z");

@@ -598,8 +598,7 @@ mod tests {
             eprintln!("skipping: RBR_DATA not set");
             return;
         };
-        let dir = std::env::temp_dir().join(format!("rbr-launcher-added-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        let dir = crate::test_dir("catalog-added");
         let car = |id, name: &str, pack: &str| rsf::Car {
             id,
             name: name.into(),

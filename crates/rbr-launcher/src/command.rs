@@ -759,6 +759,37 @@ mod tests {
     use rbr_render::shifter::Engagement;
     use std::path::PathBuf;
 
+    /// The tests' `Start`: the canned viewer and standalone, the scratch `settings` file, and the game folders.
+    fn start(settings: PathBuf, data: Option<PathBuf>, patch: Option<PathBuf>) -> Start {
+        Start {
+            viewer: PathBuf::from("/bin/viewer"),
+            standalone: PathBuf::from("/bin/rbr-standalone"),
+            settings,
+            data,
+            patch,
+        }
+    }
+
+    /// A non-empty environment variable.
+    fn env(key: &str) -> Option<String> {
+        std::env::var(key).ok().filter(|v| !v.is_empty())
+    }
+
+    /// A non-empty environment variable as a path.
+    fn env_path(key: &str) -> Option<PathBuf> {
+        std::env::var_os(key).map(PathBuf::from)
+    }
+
+    /// The flag's value in a launch's arguments.
+    fn value(args: &[String], flag: &str) -> Option<String> {
+        args.iter().position(|a| a == flag).map(|i| args[i + 1].clone())
+    }
+
+    /// The viewer command a form starts, with the tests' seed.
+    fn launch(form: &mut Form) -> Vec<String> {
+        form.start_args(&mut CrtRand::srand(1234)).unwrap()
+    }
+
     /// Saved settings and the viewer command Start runs for them (`testdata/commands.txt`): the pages may move,
     /// the command stays. Needs `RBR_DATA`, `RBR_PATCH`, `RBR_NGP_PHYSICS` and `RBR_RSF` (unsaved, the last two are
     /// the defaults); `{ngp}` and `{rsf}` are theirs. `RBR_LAUNCHER_BLESS=1` writes the file.
@@ -1016,9 +1047,7 @@ mod tests {
         };
         let section = catalog::environment_rows(&season(), 54)[1].1.clone();
         assert_eq!(section, "54O_M_norain_partcloud");
-        let here = std::env::temp_dir().join(format!("rbr-launcher-environment-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&here);
-        std::fs::create_dir_all(&here).unwrap();
+        let here = crate::test_dir("command-environment");
         let paths = || Paths {
             data: here.join("data"),
             patch: None,
@@ -1097,22 +1126,13 @@ mod tests {
 
     #[test]
     fn a_specific_row_starts_with_its_sky_and_the_overrides() {
-        let env = |key| std::env::var(key).ok().filter(|v| !v.is_empty());
         let (Some(data), Some(patch), Some(_), Some(_)) =
             (env("RBR_DATA"), env("RBR_PATCH"), env("RBR_NGP_PHYSICS"), env("RBR_RSF"))
         else {
             return;
         };
-        let here = std::env::temp_dir().join(format!("rbr-launcher-row-start-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&here);
-        std::fs::create_dir_all(&here).unwrap();
-        let start = Start {
-            viewer: PathBuf::from("/bin/viewer"),
-            standalone: PathBuf::from("/bin/rbr-standalone"),
-            settings: here.join(SETTINGS_FILE),
-            data: Some(PathBuf::from(&data)),
-            patch: Some(PathBuf::from(&patch)),
-        };
+        let here = crate::test_dir("command-row-start");
+        let start = start(here.join(SETTINGS_FILE), Some(PathBuf::from(&data)), Some(PathBuf::from(&patch)));
         let mut form = load(&start, Settings::parse("[launcher]\nmap = 54\n")).unwrap();
         form.read_only = true;
         form.map = form.catalog.maps.iter().position(|m| m.number == 54).unwrap();
@@ -1132,36 +1152,35 @@ mod tests {
             let standalone = args[live..].to_vec();
             (args[..live].to_vec(), standalone)
         };
-        let pair = |args: &[String], flag: &str| args.iter().position(|a| a == flag).map(|at| args[at + 1].clone());
         // The stage's weather is the row as authored: the Custom fog, rain, wetness and time stay out.
         let (_, weather) = form.selection().unwrap();
         let (viewer, standalone) = split(form.start_args(&mut CrtRand::srand(1)).unwrap());
-        assert_eq!(pair(&viewer, "--sky"), weather.section());
+        assert_eq!(value(&viewer, "--sky"), weather.section());
         for flag in ["--fog", "--clouds", "--precipitation", "--clock"] {
-            assert_eq!(pair(&viewer, flag), None, "{flag}");
+            assert_eq!(value(&viewer, flag), None, "{flag}");
         }
         assert_eq!(weather.wetness, 1);
-        assert_eq!(pair(&viewer, "--weather").as_deref(), Some("damp"));
-        assert_eq!(pair(&standalone, "--wetness"), None);
-        assert_eq!(pair(&standalone, "--wear").as_deref(), Some("normal"));
-        assert_eq!(pair(&standalone, "--season-row"), weather.row.map(|row| row.to_string()));
+        assert_eq!(value(&viewer, "--weather").as_deref(), Some("damp"));
+        assert_eq!(value(&standalone, "--wetness"), None);
+        assert_eq!(value(&standalone, "--wear").as_deref(), Some("normal"));
+        assert_eq!(value(&standalone, "--season-row"), weather.row.map(|row| row.to_string()));
         // The Custom weather takes them all over the bad weather (a wet road).
         form.clouds = Some(Clouds::Light);
         let (_, weather) = form.selection().unwrap();
         let (viewer, standalone) = split(form.start_args(&mut CrtRand::srand(1)).unwrap());
-        assert_eq!(pair(&viewer, "--sky"), weather.section());
-        assert_eq!(pair(&viewer, "--fog").as_deref(), Some("heavy"));
-        assert_eq!(pair(&viewer, "--clouds").as_deref(), Some("light"));
-        assert_eq!(pair(&viewer, "--precipitation").as_deref(), Some("heavy"));
+        assert_eq!(value(&viewer, "--sky"), weather.section());
+        assert_eq!(value(&viewer, "--fog").as_deref(), Some("heavy"));
+        assert_eq!(value(&viewer, "--clouds").as_deref(), Some("light"));
+        assert_eq!(value(&viewer, "--precipitation").as_deref(), Some("heavy"));
         form.precipitation = Some(Precipitation::Moderate);
         let (viewer, _) = split(form.start_args(&mut CrtRand::srand(1)).unwrap());
-        assert_eq!(pair(&viewer, "--precipitation").as_deref(), Some("moderate"));
+        assert_eq!(value(&viewer, "--precipitation").as_deref(), Some("moderate"));
         form.precipitation = Some(Precipitation::Heavy);
-        assert_eq!(pair(&viewer, "--clock").as_deref(), Some("16:30"));
-        assert_eq!(pair(&viewer, "--weather").as_deref(), Some("wet"));
-        assert_eq!(pair(&standalone, "--wetness").as_deref(), Some("wet"));
-        assert_eq!(pair(&standalone, "--weather").as_deref(), Some("2"));
-        assert_eq!(pair(&standalone, "--wear").as_deref(), Some("normal"));
+        assert_eq!(value(&viewer, "--clock").as_deref(), Some("16:30"));
+        assert_eq!(value(&viewer, "--weather").as_deref(), Some("wet"));
+        assert_eq!(value(&standalone, "--wetness").as_deref(), Some("wet"));
+        assert_eq!(value(&standalone, "--weather").as_deref(), Some("2"));
+        assert_eq!(value(&standalone, "--wear").as_deref(), Some("normal"));
         let lock = viewer.iter().position(|a| a == "--car-lock").map(|at| viewer[at + 1].clone());
         assert_eq!(lock, form.setup.steering_lock().map(|l| rbr_render::wheel_rotation::car_degrees(l).to_string()));
         std::fs::remove_dir_all(&here).unwrap();
@@ -1169,7 +1188,7 @@ mod tests {
 
     #[test]
     fn codriver_args_name_the_mod_and_voice() {
-        let tmp = std::env::temp_dir().join(format!("rbr-launcher-codriver-{}", std::process::id()));
+        let tmp = crate::test_dir("command-codriver");
         let plugin = tmp.join("Plugins/Pacenote");
         std::fs::create_dir_all(&plugin).unwrap();
         std::fs::write(plugin.join("PaceNote.ini"), "[SETTINGS]\nsounds=english/steve\n").unwrap();
@@ -1201,7 +1220,7 @@ mod tests {
     /// The advanced H-shifter takes the car's gearbox and the grind from RBRControls' folder.
     #[test]
     fn shifter_args_read_the_grind() {
-        let root = std::env::temp_dir().join(format!("rbr-launcher-shifter-{}", std::process::id()));
+        let root = crate::test_dir("command-shifter");
         let dir = root.join("Plugins").join("RBRControls");
         std::fs::create_dir_all(&dir).unwrap();
         let dog = CarBox { engagement: Engagement::Dog, sequential: false };
@@ -1217,26 +1236,17 @@ mod tests {
     /// as `start_rally_stage` calls it), which keeps the stage's own light and the season's start clock.
     #[test]
     fn the_time_of_day_is_the_quick_races_only() {
-        let env = |key| std::env::var(key).ok().filter(|v| !v.is_empty());
         let (Some(data), Some(patch), Some(_)) = (env("RBR_DATA"), env("RBR_PATCH"), env("RBR_RSF")) else {
             return;
         };
-        let here = std::env::temp_dir().join(format!("rbr-launcher-clock-{}", std::process::id()));
-        std::fs::create_dir_all(&here).unwrap();
+        let here = crate::test_dir("command-clock");
         let text = "[launcher]\ncar = Mitsubishi Lancer Evo IX N4\nmap = 54\nclouds = partly\nstart_time = 20:30\n";
-        let start = Start {
-            viewer: PathBuf::from("/bin/viewer"),
-            standalone: PathBuf::from("/bin/rbr-standalone"),
-            settings: here.join(SETTINGS_FILE),
-            data: Some(PathBuf::from(&data)),
-            patch: Some(PathBuf::from(&patch)),
-        };
+        let start = start(here.join(SETTINGS_FILE), Some(PathBuf::from(&data)), Some(PathBuf::from(&patch)));
         let mut form = load(&start, Settings::parse(text)).unwrap();
         form.read_only = true;
-        let after = |args: &[String], flag: &str| args.iter().position(|a| a == flag).map(|i| args[i + 1].clone());
         let quick = form.start_args(&mut CrtRand::srand(1234)).unwrap();
-        assert_eq!(after(&quick, "--clock").as_deref(), Some("20:30"));
-        assert_eq!(after(&quick, "--start-time").as_deref(), Some("20:30"));
+        assert_eq!(value(&quick, "--clock").as_deref(), Some("20:30"));
+        assert_eq!(value(&quick, "--start-time").as_deref(), Some("20:30"));
         let (stage, weather) = form.selection().unwrap();
         let stage_args = vec!["--championship".to_owned(), "rookie".to_owned()];
         let rally = form.launch_args(stage, form.options, weather, stage_args, Vec::new()).unwrap();
@@ -1246,7 +1256,6 @@ mod tests {
 
     #[test]
     fn the_viewer_command_follows_the_saved_settings() {
-        let env = |key| std::env::var(key).ok().filter(|v| !v.is_empty());
         let (Some(data), Some(patch), Some(ngp), Some(rsf)) =
             (env("RBR_DATA"), env("RBR_PATCH"), env("RBR_NGP_PHYSICS"), env("RBR_RSF"))
         else {
@@ -1256,18 +1265,10 @@ mod tests {
         let mut cases = Vec::new();
         for (n, (name, text)) in COMMAND_CASES.into_iter().enumerate() {
             let text = text.replace("{ngp}", &ngp).replace("{rsf}", &rsf);
-            let here = std::env::temp_dir().join(format!("rbr-launcher-command-{}-{n}", std::process::id()));
-            let _ = std::fs::remove_dir_all(&here);
-            std::fs::create_dir_all(&here).unwrap();
+            let here = crate::test_dir(&format!("command-case-{n}"));
             let settings = here.join(SETTINGS_FILE);
             std::fs::write(&settings, &text).unwrap();
-            let start = Start {
-                viewer: PathBuf::from("/bin/viewer"),
-                standalone: PathBuf::from("/bin/rbr-standalone"),
-                settings: settings.clone(),
-                data: Some(PathBuf::from(&data)),
-                patch: Some(PathBuf::from(&patch)),
-            };
+            let start = start(settings.clone(), Some(PathBuf::from(&data)), Some(PathBuf::from(&patch)));
             let mut form = load(&start, Settings::parse(&text)).unwrap();
             form.read_only = true;
             let mut rand = CrtRand::srand(1234);
@@ -1312,23 +1313,15 @@ mod tests {
     /// removes the mod without changing the stepping process's arguments.
     #[test]
     fn the_installed_codriver_reaches_the_viewer_on_tanner() {
-        let env = |key| std::env::var_os(key).map(PathBuf::from);
         let (Some(data), Some(patch), Some(ngp), Some(rsf)) =
-            (env("RBR_DATA"), env("RBR_PATCH"), env("RBR_NGP_PHYSICS"), env("RBR_RSF"))
+            (env_path("RBR_DATA"), env_path("RBR_PATCH"), env_path("RBR_NGP_PHYSICS"), env_path("RBR_RSF"))
         else {
             return;
         };
         let Some(mods) = CodriverMods::scan(&rsf.to_string_lossy()) else { return };
         let Some(voice) = mods.voice(None) else { return };
-        let here = std::env::temp_dir().join(format!("rbr-launcher-tanner-codriver-{}", std::process::id()));
-        std::fs::create_dir_all(&here).unwrap();
-        let start = Start {
-            viewer: PathBuf::from("/bin/viewer"),
-            standalone: PathBuf::from("/bin/rbr-standalone"),
-            settings: here.join(SETTINGS_FILE),
-            data: Some(data),
-            patch: Some(patch),
-        };
+        let here = crate::test_dir("command-tanner-codriver");
+        let start = start(here.join(SETTINGS_FILE), Some(data), Some(patch));
         let settings = Settings {
             map: Some(54),
             ngp_physics: Some(ngp.to_string_lossy().into_owned()),
@@ -1337,8 +1330,6 @@ mod tests {
         };
         let mut form = load(&start, settings).unwrap();
         form.read_only = true;
-        let launch = |form: &mut Form| form.start_args(&mut CrtRand::srand(1234)).unwrap();
-        let value = |args: &[String], flag| args.iter().position(|a| a == flag).map(|i| args[i + 1].clone());
         let defaults = launch(&mut form);
         assert_eq!(value(&defaults, "--codriver-mod"), Some(mods.dir.display().to_string()));
         assert_eq!(value(&defaults, "--codriver-voice"), Some(voice.clone()));
@@ -1378,13 +1369,12 @@ mod tests {
     fn local_codriver_packs_drive_without_rsf() {
         use crate::codriver_packs;
         use rbr_formats::rsf::codriver;
-        let env = |key| std::env::var_os(key).map(PathBuf::from);
-        let (Some(data), Some(patch), Some(ngp)) = (env("RBR_DATA"), env("RBR_PATCH"), env("RBR_NGP_PHYSICS")) else {
+        let (Some(data), Some(patch), Some(ngp)) =
+            (env_path("RBR_DATA"), env_path("RBR_PATCH"), env_path("RBR_NGP_PHYSICS"))
+        else {
             return;
         };
-        let root = std::env::temp_dir().join(format!("rbr-launcher-local-codriver-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).unwrap();
+        let root = crate::test_dir("command-local-codriver");
         let write = |path: PathBuf, text: &str| {
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
             std::fs::write(&path, text).unwrap();
@@ -1407,13 +1397,7 @@ mod tests {
         std::fs::create_dir_all(&home).unwrap();
         codriver_packs::import(&home, &root.join("download"), &std::sync::atomic::AtomicBool::new(false)).unwrap();
         codriver_packs::import(&home, &notes_src, &std::sync::atomic::AtomicBool::new(false)).unwrap();
-        let start = Start {
-            viewer: PathBuf::from("/bin/viewer"),
-            standalone: PathBuf::from("/bin/rbr-standalone"),
-            settings: home.join(SETTINGS_FILE),
-            data: Some(data),
-            patch: Some(patch),
-        };
+        let start = start(home.join(SETTINGS_FILE), Some(data), Some(patch));
         let settings = Settings {
             map: Some(54),
             ngp_physics: Some(ngp.to_string_lossy().into_owned()),
@@ -1429,8 +1413,6 @@ mod tests {
         let mut form = load(&start, settings).unwrap();
         form.read_only = true;
         assert!(form.codriver_mods.is_some());
-        let launch = |form: &mut Form| form.start_args(&mut CrtRand::srand(1234)).unwrap();
-        let value = |args: &[String], flag| args.iter().position(|a| a == flag).map(|i| args[i + 1].clone());
         let args = launch(&mut form);
         let pack = home.join(codriver_packs::VOICES_DIR).join("download");
         assert_eq!(value(&args, "--codriver-mod"), Some(pack.display().to_string()));
@@ -1508,9 +1490,7 @@ mod tests {
         else {
             return;
         };
-        let here = std::env::temp_dir().join(format!("rbr-e2e-championship-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&here);
-        std::fs::create_dir_all(&here).unwrap();
+        let here = crate::test_dir("command-e2e-championship");
         let paths = Paths {
             data: PathBuf::from(&install),
             patch: std::env::var_os("RBR_PATCH").map(PathBuf::from),
