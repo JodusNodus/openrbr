@@ -6,6 +6,7 @@
 //! emulator's memory in the hybrid step (`rbr-hybrid`), with the same API. `Mem::with_pages` keeps them in [`Pages`],
 //! which a word access reads and writes directly, without a call through the backend.
 
+use crate::math::quat::Quat;
 use crate::math::vec::{Vec3, Vec4};
 use crate::store::Raw;
 use std::collections::BTreeMap;
@@ -467,6 +468,20 @@ impl Vec4 {
         mem.set_f32(at + 4, self.y);
         mem.set_f32(at + 8, self.z);
         mem.set_f32(at + 12, self.w);
+    }
+}
+
+/// A quaternion as the game stores it: four consecutive f32 lanes from `at`, `w` last.
+impl Quat {
+    #[inline]
+    pub fn load<R: Raw + ?Sized>(mem: &R, at: u32) -> Self {
+        let v = Vec4::load(mem, at);
+        Self { x: v.x, y: v.y, z: v.z, w: v.w }
+    }
+
+    #[inline]
+    pub fn store<R: Raw + ?Sized>(self, mem: &mut R, at: u32) {
+        Vec4 { x: self.x, y: self.y, z: self.z, w: self.w }.store(mem, at);
     }
 }
 

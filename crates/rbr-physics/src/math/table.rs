@@ -1,6 +1,6 @@
-//! `E46_IdxWrite` (0x528980): the segment of a sorted table that holds a value, walked from a hint. Physics core's
-//! table lookups and the tyre's table search (`Step`) both use it. The comparisons follow the asm (`x > t` and
-//! `!(t >= x)`), so a NaN value takes the same path as the original.
+//! The segment of a sorted table that holds a value, walked from a hint. Physics core's table lookups and the
+//! tyre's table search both use it. The comparisons are ordered (`x > t` and `!(t >= x)`), so a NaN value takes
+//! the same path.
 
 /// The two table indices around a value, and the fraction between them.
 #[derive(Clone, Copy, Debug, PartialEq)]

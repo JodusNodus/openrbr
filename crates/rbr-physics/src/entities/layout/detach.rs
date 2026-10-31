@@ -1,6 +1,5 @@
 //! The detach of a hinged or mounted body: `SimF350`, `SimDA60`, `SimFD00`, `CMountedRigidBody::StepBig`.
 
-use super::entity_slots::{load_vec4, vec4_of};
 use super::hinge_state::HINGE_OWNER;
 use crate::entities::layout::ROOT_IDENTITY;
 use crate::entities::{hinge_detach, hinge_impulse};
@@ -29,9 +28,9 @@ pub fn sim_f350(mem: &mut Mem, this: u32, args: [u32; 8], frame: u32, calls: &mu
 
     let point = args[0];
     let impulse = args[1];
-    let p = vec4_of(load_vec4(mem, point));
-    let b = vec4_of(load_vec4(mem, impulse));
-    let origin = vec4_of(load_vec4(mem, this + 0x5c0));
+    let p = Vec4::load(mem, point);
+    let b = Vec4::load(mem, impulse);
+    let origin = Vec4::load(mem, this + 0x5c0);
     let arm = Vec4 { x: p.x - origin.x, y: p.y - origin.y, z: p.z - origin.z, w: 0.0 };
     let cross = arm.cross3(b);
     for (i, lane) in [arm.x, arm.y, arm.z].into_iter().enumerate() {
@@ -40,7 +39,7 @@ pub fn sim_f350(mem: &mut Mem, this: u32, args: [u32; 8], frame: u32, calls: &mu
     for (i, lane) in [cross.x, cross.y, cross.z].into_iter().enumerate() {
         mem.set_f32(frame - 0x30 + 4 * i as u32, lane);
     }
-    let t = vec4_of(load_vec4(mem, transformed));
+    let t = Vec4::load(mem, transformed);
     let c = Vec3::load(mem, frame - 0x30).extend(0.0);
     let projection = hinge_impulse::torque_about_axis(t, c);
     let denominator = mem.f32(def + 0x4bc);
@@ -48,7 +47,7 @@ pub fn sim_f350(mem: &mut Mem, this: u32, args: [u32; 8], frame: u32, calls: &mu
     let angle = mem.f32(this + 0x40c) + projection / denominator;
     mem.set_f32(this + 0x40c, angle);
 
-    let dot_impulse = vec4_of(load_vec4(mem, impulse));
+    let dot_impulse = Vec4::load(mem, impulse);
     let dot = dot_impulse.z * t.z + dot_impulse.y * t.y;
     let dot = dot + dot_impulse.x * t.x;
     let (dot, clamped) = hinge_impulse::clamp_axial_impulse(dot, mem.f32(0x731d00), mem.f32(0x73d3bc));

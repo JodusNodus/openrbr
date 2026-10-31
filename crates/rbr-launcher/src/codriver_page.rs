@@ -7,7 +7,7 @@ use rbr_sound::preview::{self as codriver_preview, Preview};
 
 use crate::codriver_packs::{set_label, NoteSet};
 use crate::command::ORIGINAL_VOICE;
-use crate::pages::{fields, section, FIELD, GOOD, WARN};
+use crate::pages::{combo, fields, section, FIELD, GOOD, WARN};
 use crate::Form;
 
 /// A call style or range set file's stem: without `.ini`.
@@ -274,16 +274,8 @@ impl Form {
         label: fn(&str) -> String,
     ) {
         ui.label(name).on_hover_text(tip);
-        ComboBox::from_id_salt(name)
-            .selected_text(label(chosen))
-            .show_ui(ui, |ui| {
-                let shown: Vec<&String> = files.iter().filter(|f| show_call_file(f, chosen)).collect();
-                for file in shown {
-                    ui.selectable_value(chosen, file.clone(), label(file));
-                }
-            })
-            .response
-            .on_hover_text(tip);
+        let shown: Vec<String> = files.iter().filter(|f| show_call_file(f, chosen)).cloned().collect();
+        combo(ui, name, None, chosen, &shown, |file| label(&file)).on_hover_text(tip);
         ui.end_row();
     }
 
@@ -471,9 +463,7 @@ mod tests {
             eprintln!("skipping: RBR_SCREENSHOTS, RBR_DATA, RBR_PATCH, RBR_NGP_PHYSICS or RBR_RSF not set");
             return;
         };
-        let root = std::env::temp_dir().join(format!("rbr-launcher-codriver-shots-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).unwrap();
+        let root = crate::test_dir("page-codriver-shots");
         // A voice download and a notes-only download, as imported.
         let download = root.join("voice");
         write(download.join("PaceNote.ini"), "[SETTINGS]\nsounds=english/steve\n");
@@ -570,9 +560,7 @@ mod tests {
             eprintln!("skipping: RBR_DATA, RBR_PATCH or RBR_NGP_PHYSICS not set");
             return;
         };
-        let root = std::env::temp_dir().join(format!("rbr-launcher-notes-cache-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).unwrap();
+        let root = crate::test_dir("page-notes-cache");
         let download = root.join("voice");
         write(download.join("PaceNote.ini"), "[SETTINGS]\nsounds=english/steve\n");
         write(download.join("config/pacenotes/Rbr.ini"), "[PACKAGE::RBR]\nfile=calls.ini\n");

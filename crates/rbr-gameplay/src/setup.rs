@@ -232,34 +232,6 @@ impl Range {
             value = next;
         }
     }
-
-    /// One step up of an unsigned slider: `CTweakSliderMenuItemUnsigned::Vf38` (0x54f140).
-    pub fn up_unsigned(self, value: u32) -> u32 {
-        let (min, max, step) = (self.min as u32, self.max as u32, self.step as u32);
-        let value = value.wrapping_add(step);
-        if value > max {
-            if self.wrap {
-                min
-            } else {
-                max
-            }
-        } else {
-            value
-        }
-    }
-
-    /// One step down of an unsigned slider: `CTweakSliderMenuItemUnsigned::Vf34` (0x54f050).
-    pub fn down_unsigned(self, value: u32) -> u32 {
-        let (min, max, step) = (self.min as u32, self.max as u32, self.step as u32);
-        let mut value = value.wrapping_sub(step);
-        if value < min {
-            value = if self.wrap { max } else { min };
-        }
-        if value > max {
-            value = if self.wrap { max } else { min };
-        }
-        value
-    }
 }
 
 fn triple(area: Area, label: &'static str, group: &str, key: &str, options: &str, prefix: &'static str) -> Spec {
@@ -666,9 +638,6 @@ mod tests {
         let length = Range { min: 0.15, max: 0.35, step: 0.005, wrap: false };
         assert_eq!(length.down(0.31), 0.31f32 - 0.005f32);
         assert_eq!(length.toward(0.31, 0.2), (0..22).fold(0.31f32, |v, _| length.down(v)));
-        let gear = Range { min: 10.0, max: 12.0, step: 1.0, wrap: false };
-        assert_eq!((gear.up_unsigned(12), gear.down_unsigned(10), gear.down_unsigned(11)), (12, 10, 10));
-        assert_eq!(Range { min: 0.0, max: 2.0, ..gear }.down_unsigned(0), 0);
     }
 
     #[test]

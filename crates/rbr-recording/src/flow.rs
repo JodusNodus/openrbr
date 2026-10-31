@@ -18,6 +18,8 @@
 //! It is one of the tagged records (`crate::live`), so a reader that does not know it skips it by its length. A step
 //! the game does not run (after the race's end) writes it with no flags.
 
+use crate::word;
+
 /// The tag.
 pub const FLW1: [u8; 4] = *b"FLW1";
 const PAYLOAD_BYTES: usize = 16;
@@ -74,9 +76,7 @@ impl Flow {
         for alpha in [self.red, self.black] {
             payload.extend_from_slice(&alpha.unwrap_or(f32::NAN).to_le_bytes());
         }
-        let mut out = Vec::with_capacity(8 + PAYLOAD_BYTES);
-        crate::live::write_record(&mut out, FLW1, &payload);
-        out
+        crate::live::record(FLW1, &payload)
     }
 
     /// Reads the record's payload (the bytes after its tag and length); `None` when it is neither 16 nor 8 bytes.
@@ -84,9 +84,9 @@ impl Flow {
         if payload.len() != PAYLOAD_BYTES && payload.len() != OLD_PAYLOAD_BYTES {
             return None;
         }
-        let word = |i: usize| u32::from_le_bytes(payload[4 * i..4 * i + 4].try_into().unwrap());
-        let alpha = |i: usize| payload.get(4 * i..4 * i + 4).map(|_| f32::from_bits(word(i))).filter(|a| !a.is_nan());
-        let flags = word(0);
+        let alpha =
+            |i: usize| payload.get(4 * i..4 * i + 4).map(|_| f32::from_bits(word(payload, i))).filter(|a| !a.is_nan());
+        let flags = word(payload, 0);
         let message = if flags & BOX_BYSTAND != 0 {
             Some(MessageBox::RetireBystand)
         } else if flags & BOX_OFFSTAGE != 0 {
@@ -99,7 +99,7 @@ impl Flow {
             rally_incident: flags & INCIDENT != 0,
             finish_line: flags & FINISH_LINE != 0,
             ended: flags & ENDED != 0,
-            page: word(1),
+            page: word(payload, 1),
             helicopter_active: flags & HELICOPTER_ACTIVE != 0,
             message,
             service_next: flags & SERVICE_NEXT != 0,

@@ -16,7 +16,7 @@ use super::hinge_solve::cross;
 pub struct SlipInput {
     /// The hinged body, as an object handle: the receiver of the first carry.
     pub body: u32,
-    /// `vecFaceNormal_BF`, as a handle: the first carry's vector.
+    /// The face normal in the body frame, as a handle: the first carry's vector.
     pub face_normal_bf: u32,
     /// The body's car, as an object handle: the frame the carries go into.
     pub car: u32,
@@ -32,7 +32,7 @@ pub struct SlipInput {
     pub composed_hinge_point: [f32; 3],
     /// `FaceArea`, scaling the carried vector's dot product with the face normal.
     pub face_area: f32,
-    /// `vecHingeAxis_RF`: the torque is projected on it.
+    /// The hinge axis in the reference frame: the torque is projected on it.
     pub hinge_axis_rf: [f32; 3],
 }
 

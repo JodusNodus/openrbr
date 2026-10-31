@@ -179,11 +179,6 @@ pub fn entry_id(save: &Season, entry: usize) -> Option<i32> {
     save.drivers.get(entry).map(|d| d.id)
 }
 
-/// Whether the entry is the player.
-pub fn entry_is_player(save: &Season, entry: usize) -> bool {
-    save.drivers.get(entry).is_some_and(|d| d.id == super::PLAYER_ID)
-}
-
 /// An entry's qualifying rank.
 pub fn entry_rank(save: &Season, entry: usize) -> u32 {
     save.drivers.get(entry).map_or(0, |d| d.w900)
@@ -227,8 +222,13 @@ pub fn out_of_rally(save: &Season, entry: usize) -> bool {
     e.rallies.get(pos.rally as usize).is_some_and(retired_in)
 }
 
-fn retired_in(r: &rbr_formats::saves::season::DriverRally) -> bool {
-    r.stages.iter().any(|s| s.retired != 0 || s.time < 0.0)
+/// Whether one stage result is out: retired or a negative time.
+pub(crate) fn stage_retired(stage: &save::StageResult) -> bool {
+    stage.retired != 0 || stage.time < 0.0
+}
+
+pub(crate) fn retired_in(r: &save::DriverRally) -> bool {
+    r.stages.iter().any(stage_retired)
 }
 
 /// The rally's time total with penalties, -1e8 when out of the rally.

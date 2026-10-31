@@ -31,6 +31,10 @@ use rbr_physics::physics_core::layout::PHYSICS_GLOBAL;
 use std::collections::{BTreeMap, VecDeque};
 use std::io::Read;
 
+mod common;
+
+use common::hex;
+
 #[path = "common/patch.rs"]
 mod patch;
 
@@ -73,10 +77,6 @@ struct Run {
     grids: BTreeMap<u32, Vec<u8>>,
     descs: BTreeMap<u32, (u32, Vec<u8>)>,
     blocks: BTreeMap<(u32, String), Block>,
-}
-
-fn hex(s: &str) -> Vec<u8> {
-    (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap()).collect()
 }
 
 fn runs() -> Vec<Run> {

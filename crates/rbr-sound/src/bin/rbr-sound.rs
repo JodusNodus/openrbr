@@ -61,6 +61,7 @@ fn main() {
     }
 }
 
+#[derive(Default)]
 struct Args {
     recording: PathBuf,
     stage: Option<String>,
@@ -92,51 +93,55 @@ struct CodriverMod {
 }
 
 fn args() -> Result<Args, String> {
-    let mut args = std::env::args().skip(1);
-    let (mut recording, mut stage, mut out, mut standalone, mut log, mut events) = (None, None, None, None, None, None);
-    let (mut car, mut ngp_physics, mut rsf_car) = (None, None, None);
-    let (mut seconds, mut camera, mut codriver, mut volume, mut from) = (60.0, Camera::Chase, true, 1.0, 0.0);
-    let (mut fmod, mut solo, mut volumes) = (true, None, rbr_sound::mixer::Volumes::default());
-    let (mut codriver_mod, mut voice, mut pacenotes) = (None, None, None);
+    parse(std::env::args().skip(1))
+}
+
+/// `args()` of an argument list.
+fn parse(mut it: impl Iterator<Item = String>) -> Result<Args, String> {
+    // The command line so far; the required paths, the standalone and the co-driver mod are computed below.
+    let mut args =
+        Args { seconds: 60.0, camera: Camera::Chase, codriver: true, volume: 1.0, fmod: true, ..Args::default() };
+    let (mut recording, mut out, mut ngp_physics, mut standalone) = (None, None, None, None);
+    let (mut plugin, mut voice, mut pacenotes) = (None, None, None);
     let mut style = rbr_sound::custom_codriver::DEFAULT_STYLE.to_owned();
     let mut ranges = rbr_sound::custom_codriver::DEFAULT_RANGES.to_owned();
-    while let Some(arg) = args.next() {
-        let mut value = || args.next().ok_or_else(|| format!("{arg} needs a value"));
+    while let Some(arg) = it.next() {
+        let mut value = || it.next().ok_or_else(|| format!("{arg} needs a value"));
         match arg.as_str() {
             "--recording" => recording = Some(PathBuf::from(value()?)),
-            "--stage" => stage = Some(value()?),
+            "--stage" => args.stage = Some(value()?),
             "--out" => out = Some(PathBuf::from(value()?)),
-            "--seconds" => seconds = value()?.parse().map_err(|e| format!("--seconds: {e}"))?,
-            "--volume" => volume = value()?.parse().map_err(|e| format!("--volume: {e}"))?,
-            "--volumes" => volumes = rbr_sound::mixer::Volumes::parse(&value()?)?,
+            "--seconds" => args.seconds = value()?.parse().map_err(|e| format!("--seconds: {e}"))?,
+            "--volume" => args.volume = value()?.parse().map_err(|e| format!("--volume: {e}"))?,
+            "--volumes" => args.volumes = rbr_sound::mixer::Volumes::parse(&value()?)?,
             "--standalone" => standalone = Some(PathBuf::from(value()?)),
-            "--inside" => camera = Camera::Inside,
+            "--inside" => args.camera = Camera::Inside,
             "--camera" => {
-                camera = match value()?.as_str() {
+                args.camera = match value()?.as_str() {
                     "inside" => Camera::Inside,
                     "chase" => Camera::Chase,
                     "trackside" => Camera::Trackside { at: None, id: 0 },
                     other => return Err(format!("--camera {other}: inside, chase or trackside")),
                 }
             }
-            "--no-codriver" => codriver = false,
-            "--log" => log = Some(PathBuf::from(value()?)),
-            "--events" => events = Some(PathBuf::from(value()?)),
-            "--car" => car = Some(value()?),
+            "--no-codriver" => args.codriver = false,
+            "--log" => args.log = Some(PathBuf::from(value()?)),
+            "--events" => args.events = Some(PathBuf::from(value()?)),
+            "--car" => args.car = Some(value()?),
             "--ngp-physics" => ngp_physics = Some(PathBuf::from(value()?)),
-            "--rsf-car" => rsf_car = Some(value()?),
-            "--no-fmod" => fmod = false,
+            "--rsf-car" => args.rsf_car = Some(value()?),
+            "--no-fmod" => args.fmod = false,
             "--solo" => {
                 let name = value()?;
-                solo = Some(
+                args.solo = Some(
                     rbr_sound::mixer::LAYERS
                         .iter()
                         .position(|&l| l == name)
                         .ok_or_else(|| format!("--solo {name}: one of {}", rbr_sound::mixer::LAYERS.join(", ")))?,
                 )
             }
-            "--from" => from = value()?.parse().map_err(|e| format!("--from: {e}"))?,
-            "--codriver-mod" => codriver_mod = Some(PathBuf::from(value()?)),
+            "--from" => args.from = value()?.parse().map_err(|e| format!("--from: {e}"))?,
+            "--codriver-mod" => plugin = Some(PathBuf::from(value()?)),
             "--codriver-voice" => voice = Some(value()?),
             "--codriver-style" => style = value()?,
             "--codriver-ranges" => ranges = value()?,
@@ -144,32 +149,20 @@ fn args() -> Result<Args, String> {
             other => return Err(format!("unknown argument {other}")),
         }
     }
-    let standalone = match standalone {
+    args.recording = recording.ok_or("--recording is required")?;
+    args.out = out.ok_or("--out is required")?;
+    args.ngp_physics = ngp_physics.ok_or("--ngp-physics is required (ReRBR steps NGP physics only)")?;
+    args.standalone = match standalone {
         Some(path) => path,
         None => std::env::current_exe()
             .map_err(|e| e.to_string())?
             .with_file_name(format!("rbr-standalone{}", std::env::consts::EXE_SUFFIX)),
     };
-    Ok(Args {
-        recording: recording.ok_or("--recording is required")?,
-        stage,
-        out: out.ok_or("--out is required")?,
-        seconds,
-        camera,
-        codriver,
-        volume,
-        standalone,
-        log,
-        from,
-        events,
-        car: if rsf_car.is_some() { Some(rbr_formats::rsf::SLOT.to_string()) } else { car },
-        ngp_physics: ngp_physics.ok_or("--ngp-physics is required (ReRBR steps NGP physics only)")?,
-        rsf_car,
-        fmod,
-        solo,
-        volumes,
-        codriver_mod: codriver_mod.map(|plugin| CodriverMod { plugin, voice, style, ranges, notes: pacenotes }),
-    })
+    if args.rsf_car.is_some() {
+        args.car = Some(rbr_formats::rsf::SLOT.to_string());
+    }
+    args.codriver_mod = plugin.map(|plugin| CodriverMod { plugin, voice, style, ranges, notes: pacenotes });
+    Ok(args)
 }
 
 /// The scripted events of an `--events` CSV, by recording frame.
@@ -222,9 +215,10 @@ fn spheres(data: &Data, stage: &str) -> Result<Vec<Sphere>, String> {
 }
 
 /// Where the listener is (ours; see the module docs).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 enum Camera {
     Inside,
+    #[default]
     Chase,
     /// The trackside camera's position and id.
     Trackside {
@@ -523,4 +517,79 @@ fn run() -> Result<(), String> {
     let seconds = rendered as f64 / f64::from(RATE);
     eprintln!("rbr-sound: mixer {:.2} ms per second of audio", busy.as_secs_f64() * 1000.0 / seconds.max(1e-9));
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `parse` of a whitespace-separated command line (no value holds a space).
+    fn run(argv: &str) -> Result<Args, String> {
+        parse(argv.split_whitespace().map(str::to_owned))
+    }
+
+    #[test]
+    fn good_command_lines_parse() {
+        let args = run("--recording R --out O --ngp-physics N").unwrap();
+        assert_eq!(args.recording, PathBuf::from("R"));
+        assert_eq!((args.stage, args.log, args.events), (None, None, None));
+        assert_eq!(args.out, PathBuf::from("O"));
+        assert_eq!((args.seconds, args.volume, args.from), (60.0, 1.0, 0.0));
+        assert!(matches!(args.camera, Camera::Chase));
+        assert!(args.codriver && args.fmod);
+        assert_eq!((args.solo, args.car, args.rsf_car), (None, None, None));
+        assert_eq!(args.volumes, rbr_sound::mixer::Volumes::default());
+        assert!(args.codriver_mod.is_none());
+        assert_eq!(
+            args.standalone.file_name().unwrap(),
+            format!("rbr-standalone{}", std::env::consts::EXE_SUFFIX).as_str()
+        );
+        let args = run("--recording R --stage S --out O --seconds 10 --inside --no-codriver --volume 0.5 \
+                         --volumes 0.5,1,2,0 --standalone BIN --log L --from 5 --events E --car 5 \
+                         --ngp-physics N --solo engine --codriver-mod P --codriver-voice V \
+                         --codriver-style S --codriver-ranges R --pacenotes PN")
+        .unwrap();
+        assert_eq!(args.stage.as_deref(), Some("S"));
+        assert_eq!((args.seconds, args.volume, args.from), (10.0, 0.5, 5.0));
+        assert!(matches!(args.camera, Camera::Inside));
+        assert!(!args.codriver);
+        assert_eq!(args.volumes, rbr_sound::mixer::Volumes { engine: 0.5, codriver: 1.0, effects: 2.0, tyres: 0.0 });
+        assert_eq!((args.standalone, args.car), (PathBuf::from("BIN"), Some("5".to_owned())));
+        assert_eq!((args.log, args.events), (Some(PathBuf::from("L")), Some(PathBuf::from("E"))));
+        assert_eq!(args.solo, Some(0));
+        let custom = args.codriver_mod.unwrap();
+        assert_eq!(
+            (custom.plugin, custom.voice, custom.style, custom.ranges, custom.notes),
+            (PathBuf::from("P"), Some("V".to_owned()), "S".to_owned(), "R".to_owned(), Some(PathBuf::from("PN")))
+        );
+        // An RSF car runs in its slot, and `--camera` picks the listener.
+        let args = run("--recording R --out O --ngp-physics N --rsf-car PACK --car 2 --camera chase").unwrap();
+        assert_eq!((args.car, args.rsf_car), (Some("5".to_owned()), Some("PACK".to_owned())));
+        assert!(matches!(args.camera, Camera::Chase));
+        let args = run("--recording R --out O --ngp-physics N --camera trackside --no-fmod").unwrap();
+        assert!(matches!(args.camera, Camera::Trackside { .. }) && !args.fmod);
+    }
+
+    #[test]
+    fn bad_command_lines_fail() {
+        let bad: Vec<(&str, &str)> = vec![
+            ("", "--recording is required"),
+            ("--recording", "--recording needs a value"),
+            ("--recording R", "--out is required"),
+            ("--recording R --out O", "--ngp-physics is required (ReRBR steps NGP physics only)"),
+            ("--recording R --out O --ngp-physics N --warp x", "unknown argument --warp"),
+            ("--recording R --out O --ngp-physics N --camera warp", "--camera warp: inside, chase or trackside"),
+            ("--recording R --out O --ngp-physics N --volumes 1,1,1", "--volumes 1,1,1: engine,codriver,effects,tyres"),
+            (
+                "--recording R --out O --ngp-physics N --solo warp",
+                "--solo warp: one of engine, reflections, loops, tyres, wheel, fmod, rain, shots, speech",
+            ),
+        ];
+        for (argv, want) in &bad {
+            match run(argv) {
+                Err(e) => assert_eq!(&e, want, "{argv}"),
+                Ok(_) => panic!("{argv}: parsed, want error {want}"),
+            }
+        }
+    }
 }

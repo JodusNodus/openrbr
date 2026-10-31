@@ -2,7 +2,8 @@
 //! solid's general state (key, position, orientation, velocities) and the hinged body's three words (`BodyId`, whether the
 //! link flag is zero, and the angle's distance from `HingeDefaultAngle`), then runs the entity pass. The position and the
 //! orientation come from one of two sources, chosen by the key and the owner car: the hinge point composed with the body and
-//! the body's own orientation, or `vecHingePoint_RF` and the quaternion of the body's orientation matrix. The calls are the
+//! the body's own orientation, or the reference-frame hinge point and the quaternion of the body's orientation
+//! matrix. The calls are the
 //! caller's ([`SignalCalls`]); the payloads are built here, in the original's field order.
 //!
 //! The payload's words 1..=3 are not written by the original (padding in its frame), so they are not part of the state.
@@ -12,7 +13,7 @@
 pub struct SolidGeneralState {
     /// The body's key (named by use: the meaning is not known).
     pub key: u32,
-    /// The body's position: the hinge point composed with the body, or `vecHingePoint_RF`.
+    /// The body's position: the hinge point composed with the body, or the reference-frame hinge point.
     pub position: [f32; 4],
     /// The body's orientation: the body's own, or the quaternion of its orientation matrix.
     pub orientation: [f32; 4],
@@ -40,11 +41,11 @@ pub struct HingedBodySignal {
 pub struct SignalInput {
     /// The hinged body, as an object handle.
     pub body: u32,
-    /// The body's orientation matrix (a handle): `SimD160`'s product, which the quaternion is taken from.
+    /// The body's orientation matrix (a handle): the pose products' matrix, which the quaternion is taken from.
     pub orientation_matrix: u32,
     /// The identity frame (the root), as an object handle.
     pub identity: u32,
-    /// `vecHingePoint_BF`, as a handle: what the body composes.
+    /// The hinge point in the body frame, as a handle: what the body composes.
     pub hinge_point_bf: u32,
     /// The body's key.
     pub key: u32,
@@ -55,7 +56,7 @@ pub struct SignalInput {
     /// The body's linear and angular velocities.
     pub linear_velocity: [f32; 4],
     pub angular_velocity: [f32; 4],
-    /// `vecHingePoint_RF`.
+    /// The reference-frame hinge point.
     pub hinge_point_rf: [f32; 4],
     /// `BodyId`, as bits.
     pub body_id: u32,

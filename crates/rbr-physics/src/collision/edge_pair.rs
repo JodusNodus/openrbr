@@ -3,45 +3,11 @@
 //! precision (`fpu::round_x87`: 24 bits in 1.02, 53 under NGP); the SSE ops go through `math::sse`. Each sum is in
 //! the original's order.
 
-use crate::fpu::round_x87;
+use crate::fpu::{x87_add, x87_div, x87_mul, x87_sub};
 use crate::math::sse;
 use crate::math::vec::{Vec3, Vec4};
 
 use super::face_sweep::table_index;
-
-/// The x87 "real indefinite" (the default NaN, negative), which an invalid x87 operation gives.
-const X87_INDEFINITE: f64 = f64::from_bits(0xfff8_0000_0000_0000);
-
-/// The x87 works in f64 here: the operands are f32-valued or 53-bit results, so f64 holds each result before
-/// `round_x87` rounds it to the thread's precision. Unlike f32 the x87 keeps an extended exponent, so a value past
-/// f32's range stays finite until it is stored (`as f32` rounds it to infinity, as `fstps` does).
-fn x87_add(a: f64, b: f64) -> f64 {
-    if a.is_infinite() && b.is_infinite() && a.is_sign_negative() != b.is_sign_negative() {
-        return X87_INDEFINITE;
-    }
-    round_x87(a + b)
-}
-
-fn x87_sub(a: f64, b: f64) -> f64 {
-    if a.is_infinite() && b.is_infinite() && a.is_sign_negative() == b.is_sign_negative() {
-        return X87_INDEFINITE;
-    }
-    round_x87(a - b)
-}
-
-fn x87_mul(a: f64, b: f64) -> f64 {
-    if (a == 0.0 && b.is_infinite()) || (a.is_infinite() && b == 0.0) {
-        return X87_INDEFINITE;
-    }
-    round_x87(a * b)
-}
-
-fn x87_div(a: f64, b: f64) -> f64 {
-    if (a == 0.0 && b == 0.0) || (a.is_infinite() && b.is_infinite()) {
-        return X87_INDEFINITE;
-    }
-    round_x87(a / b)
-}
 
 /// The grid reads the search makes: a row is two vertex slots, a slot names a vertex, and the sample data is a table
 /// of byte pairs, the table sizes, the two byte tables and the sample index of each vertex.
@@ -84,11 +50,6 @@ fn dot_zyx(a: Vec3, b: Vec3) -> f32 {
     sse::add(sse::add(sse::mul(a.z, b.z), sse::mul(a.y, b.y)), sse::mul(a.x, b.x))
 }
 
-/// The three first lanes.
-fn xyz(v: Vec4) -> Vec3 {
-    Vec3 { x: v.x, y: v.y, z: v.z }
-}
-
 fn sub(a: Vec3, b: Vec3) -> Vec3 {
     Vec3 { x: sse::sub(a.x, b.x), y: sse::sub(a.y, b.y), z: sse::sub(a.z, b.z) }
 }
@@ -115,8 +76,8 @@ pub fn row_frame_normal(row_end: Vec3, row_start: Vec3, a: Vec3, b: Vec3) -> Vec
     if dot_zyx(row_end, n) < 0.0 {
         n = n.scale(-1.0);
     }
-    let unit = Vec4 { x: n.x, y: n.y, z: n.z, w: 0.0 }.normalize();
-    let w = sse::sub(0.0, dot_zyx(row_start, Vec3 { x: unit.x, y: unit.y, z: unit.z }));
+    let unit = n.extend(0.0).normalize();
+    let w = sse::sub(0.0, dot_zyx(row_start, unit.xyz()));
     Vec4 { x: unit.x, y: unit.y, z: unit.z, w }
 }
 
@@ -125,8 +86,8 @@ pub fn row_frame_normal(row_end: Vec3, row_start: Vec3, a: Vec3, b: Vec3) -> Vec
 /// cross `g7`/`g8` (both signs) before the hit point is taken; each gate is an ordered compare, so a NaN passes it.
 /// The volumes are stored as f32; `t` is stored.
 pub fn row_walk(row_start: Vec3, row_end: Vec3, a0: Vec4, a1: Vec4, b0: Vec4, b1: Vec4) -> RowWalk {
-    let f2 = signed_volume(row_start, row_end, xyz(a0), xyz(a1)) as f32;
-    let f7 = signed_volume(row_start, row_end, xyz(b0), xyz(b1)) as f32;
+    let f2 = signed_volume(row_start, row_end, a0.xyz(), a1.xyz()) as f32;
+    let f7 = signed_volume(row_start, row_end, b0.xyz(), b1.xyz()) as f32;
     let miss = |lerps| RowWalk { t: 2.0, lerps, point: None };
     if (f2 > 0.0 && f7 > 0.0) || (f2 < 0.0 && f7 < 0.0) {
         return miss(None);
@@ -135,14 +96,14 @@ pub fn row_walk(row_start: Vec3, row_end: Vec3, a0: Vec4, a1: Vec4, b0: Vec4, b1
     let a = a0.lerp(b0, t);
     let b = a1.lerp(b1, t);
     let lerps = Some([a, b]);
-    let (a3, b3) = (xyz(a), xyz(b));
+    let (a3, b3) = (a.xyz(), b.xyz());
     let n_a = sub(row_start, a3).cross3(sub(b3, a3));
     let n_b = sub(b3, row_start).cross3(sub(row_end, row_start));
     let n_c = sub(row_end, b3).cross3(sub(a3, b3));
     let n_d = sub(a3, row_end).cross3(sub(row_start, row_end));
     let frame = row_start.cross3(row_end);
-    let g7 = dot_zyx(xyz(b0), frame);
-    let g8 = dot_zyx(xyz(b1), frame);
+    let g7 = dot_zyx(b0.xyz(), frame);
+    let g8 = dot_zyx(b1.xyz(), frame);
     if (g7 > 0.0 && g8 > 0.0) || (g7 < 0.0 && g8 < 0.0) {
         return miss(lerps);
     }
@@ -173,7 +134,7 @@ pub fn edge_pair(grid: &impl PairGrid, a0: Vec4, a1: Vec4, b0: Vec4, b1: Vec4) -
     let Some((rows, point, a, b)) = best else {
         return PairResult { t: t_min, hit: None };
     };
-    let normal = row_frame_normal(grid.vertex(rows[1]), grid.vertex(rows[0]), xyz(a), xyz(b));
+    let normal = row_frame_normal(grid.vertex(rows[1]), grid.vertex(rows[0]), a.xyz(), b.xyz());
     let samples = grid.sample_dimensions().map(|dimensions| pair_samples(grid, rows, point, dimensions));
     PairResult { t: t_min, hit: Some(PairHit { point, normal, samples }) }
 }
@@ -183,7 +144,7 @@ pub fn edge_pair(grid: &impl PairGrid, a0: Vec4, a1: Vec4, b0: Vec4, b1: Vec4) -
 fn pair_samples(grid: &impl PairGrid, rows: [u8; 2], hit: Vec4, (width, height): (u16, u16)) -> [u8; 2] {
     let row_end = grid.vertex(rows[1]);
     let row_start = grid.vertex(rows[0]);
-    let r = sse::div(sub(xyz(hit), row_end).length3(), sub(row_end, row_start).length3());
+    let r = sse::div(sub(hit.xyz(), row_end).length3(), sub(row_end, row_start).length3());
     let one_minus = sse::sub(1.0, r);
     let end_sample = grid.sample_pair(grid.sample_slot(rows[1]));
     let start_sample = grid.sample_pair(grid.sample_slot(rows[0]));

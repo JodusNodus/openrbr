@@ -53,7 +53,7 @@ use rbr_formats::fmod::{self, interpolate, Bank, Bus, Layer, Property, Sample};
 use rbr_recording::sound::{FmodBlock, Inputs, Sound};
 
 use crate::car::{blow_off_volume, turbo_level, BLOW_OFF_CAP, BLOW_OFF_RISE};
-use crate::data::Wave;
+use crate::data::{mono, Wave};
 use crate::engine::Rng;
 use crate::voice::Command;
 use crate::world::Scene;
@@ -147,17 +147,16 @@ const STATE_SPAN: f32 = 0.4;
 const START_GEAR: i32 = 1;
 
 /// One sample mixed down to mono, at the 16-bit scale of the retail waves.
-pub fn decode(bank: &Bank, sample: &Sample) -> Result<Wave, String> {
+fn decode(bank: &Bank, sample: &Sample) -> Result<Wave, String> {
     if sample.rate == 0 {
         return Err(format!("{}: sample rate 0", sample.name));
     }
     let data = bank.sample_data(sample);
     let channels = usize::from(sample.channels.max(1));
-    let mono = |frame: &mut dyn Iterator<Item = f32>| frame.sum::<f32>() / channels as f32;
     let mut samples: Vec<f32> = match sample.codec {
         fmod::PCM16 => data
             .chunks_exact(2 * channels)
-            .map(|f| mono(&mut f.chunks_exact(2).map(|s| f32::from(i16::from_le_bytes([s[0], s[1]])))))
+            .map(|f| mono(channels, f.chunks_exact(2).map(|s| f32::from(i16::from_le_bytes([s[0], s[1]])))))
             .collect(),
         fmod::VORBIS => {
             let crc = sample.vorbis_crc.ok_or("no Vorbis CRC")?;
@@ -182,7 +181,7 @@ pub fn decode(bank: &Bank, sample: &Sample) -> Result<Wave, String> {
                 };
                 let block = read_audio_packet(&ident, &setup, packet, &mut window).map_err(|e| format!("{e:?}"))?;
                 let len = block.first().map_or(0, Vec::len);
-                out.extend((0..len).map(|i| mono(&mut block.iter().map(|c| f32::from(c[i])))));
+                out.extend((0..len).map(|i| mono(channels, block.iter().map(|c| f32::from(c[i])))));
                 at += 2 + size;
             }
             out
@@ -738,6 +737,26 @@ mod tests {
             ],
             bus: None,
         }
+    }
+
+    #[test]
+    fn stereo_pcm_is_mixed_down_to_mono() {
+        let mut bytes = Vec::new();
+        for s in [1000i16, 3000, -1000, -3000] {
+            bytes.extend_from_slice(&s.to_le_bytes());
+        }
+        let sample = Sample {
+            name: "s".into(),
+            rate: 44100,
+            channels: 2,
+            frames: 2,
+            vorbis_crc: None,
+            codec: fmod::PCM16,
+            data: 0..8,
+        };
+        let bank =
+            Bank { bytes, samples: vec![sample.clone()], params: Vec::new(), events: Vec::new(), buses: Vec::new() };
+        assert_eq!(decode(&bank, &sample).unwrap(), Wave { rate: 44100, samples: vec![2000.0, -2000.0] });
     }
 
     #[test]

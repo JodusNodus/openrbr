@@ -4,7 +4,7 @@
 
 mod common;
 
-use common::{load, map_windows, Call};
+use common::{load, map_windows, After, Call, Window};
 use rbr_physics::fpu::Precision;
 use rbr_physics::math::vec::Vec4;
 use rbr_physics::mem::Mem;
@@ -71,7 +71,7 @@ fn replay_run(
                 );
             }
         }
-        for (k, at, len, _, post) in &call.windows {
+        for Window { index: k, at, len, before: _, after: post } in &call.windows {
             let now = mem.read(*at, *len);
             let same = if nan_tolerant { same_words(&now, post) } else { now == *post };
             assert!(same, "{name} call {} window {k}: {now:02x?} vs {post:02x?}", call.index);
@@ -113,7 +113,7 @@ fn replay_frame(
 
 /// Whether the call's windows hold the `len` bytes at `at`.
 fn recorded(call: &Call, at: u32, len: u32) -> bool {
-    call.windows.iter().any(|(_, w, wlen, _, _)| *w <= at && at + len <= *w + *wlen as u32)
+    call.windows.iter().any(|Window { at: w, len: wlen, .. }| *w <= at && at + len <= *w + *wlen as u32)
 }
 
 /// The memory of a frame call: the recorded windows, then zeros over the frame's footprint (`load_frame` reads
@@ -608,7 +608,7 @@ fn scratch_ctor_matches_original_calls() {
 /// The memory of `CreateScratch`: the recorded windows, then the block it allocated, zeroed as a fresh allocation.
 fn map_scratch_block(call: &Call) -> Mem {
     let mut mem = map_windows(call);
-    for (at, len, _) in &call.after {
+    for After { at, len, .. } in &call.after {
         mem.map(*at, &vec![0; *len]);
     }
     mem
@@ -620,7 +620,7 @@ fn create_scratch_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
     replay_run(0x535220, "create_scratch", false, map_scratch_block, |mem, c| {
         assert_eq!(layout::create_scratch(mem, c.eax), c.eax, "create_scratch call {}: eax", c.index);
-        for (at, len, bytes) in &c.after {
+        for After { at, len, bytes } in &c.after {
             assert_eq!(&mem.read(*at, *len), bytes, "create_scratch call {}: block", c.index);
         }
         Ok(None)

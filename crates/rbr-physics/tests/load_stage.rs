@@ -46,6 +46,10 @@ use rbr_physics::stage::layout::{self as stage, StageHost};
 use rbr_physics::stage::Stuff;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
+mod common;
+
+use common::hex;
+
 #[path = "common/patch.rs"]
 mod patch;
 
@@ -110,10 +114,6 @@ impl Object {
             Payload::Pages(..) => panic!("{} is digested", self.kind),
         }
     }
-}
-
-fn hex(text: &str) -> Vec<u8> {
-    (0..text.len()).step_by(2).map(|i| u8::from_str_radix(&text[i..i + 2], 16).unwrap()).collect()
 }
 
 fn objects() -> Vec<Object> {

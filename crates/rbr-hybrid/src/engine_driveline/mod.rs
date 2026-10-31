@@ -56,7 +56,7 @@ pub(crate) const E01LOG: u32 = 0x43c8e0; // E01Log (cdecl)
 const FLOOR_S32_FORMAT: u32 = 0x72dcb0; // "FloorS32: Invalid argument %f\n"
 
 const fn bind(addr: u32, name: &'static str, run: crate::BindingFn) -> Binding {
-    Binding { addr, name, subsystem: "engine_driveline", run }
+    crate::bind("engine_driveline", addr, name, run)
 }
 
 pub static BINDINGS: [Binding; 99] = [

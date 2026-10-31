@@ -1,5 +1,5 @@
-//! The CRT sine and cosine the original calls (`__CIsin` 0x53f3b0 and `__CIcos` 0x53f3a0, both `fsin`/`fcos`), shared
-//! by the entities and the tyre ports. `notes/physics.md` "x87 and float rules" has the x87 model.
+//! The CRT sine and cosine the game calls (`fsin`/`fcos`), shared by the entities and the tyre ports.
+//! `notes/physics.md` "x87 and float rules" has the x87 model.
 
 const X87_BIAS: i32 = 16383;
 // The x87's 66-bit pi/2, scaled by 2^65. This is the full 66-bit fraction from Intel's manual.
@@ -231,7 +231,7 @@ fn x87_sincos(value: X87Ext80, cosine: bool) -> X87Ext80 {
 
     let unbiased = i32::from(exponent) - X87_BIAS;
     if unbiased >= 63 {
-        // FSIN and FCOS set C2 and leave ST(0) unchanged outside their reduction range.
+        // Outside their reduction range the sine and cosine set the C2 flag and leave the input unchanged.
         return value;
     }
     if unbiased <= -33 {
@@ -449,19 +449,19 @@ mod tests {
     }
 }
 
-/// The CRT sine the original calls (`__CIsin`, 0x53f3b0, `fsin`), rounded from the modeled extended result to f64.
+/// The CRT sine the game calls (`fsin`), rounded from the modeled extended result to f64.
 pub fn x87_sin(angle: f32) -> f64 {
     fsin(X87Ext80::from_f32(angle)).to_f64()
 }
 
-/// The CRT cosine (`__CIcos`, 0x53f3a0), rounded from the modeled extended result to f64. The original's `fcos` result is
+/// The CRT cosine (`fcos`), rounded from the modeled extended result to f64. The `fcos` result is
 /// an extended (64-bit mantissa) value, which this f64 does not keep: a caller that subtracts the cosine from 1 must use
 /// `one_minus_x87_cos` instead.
 pub fn x87_cos(angle: f32) -> f64 {
     fcos(X87Ext80::from_f32(angle)).to_f64()
 }
 
-/// `1 - cos(angle)` from the CRT cosine's extended result (`__CIcos`, then `fsubr` of 1.0), rounded once to f64: the
+/// `1 - cos(angle)` from the CRT cosine's extended result (then subtracted from 1.0), rounded once to f64: the
 /// subtraction is exact on the 64-bit mantissa, so a caller at 53-bit precision control gets this value.
 pub fn one_minus_x87_cos_f64(angle: f32) -> f64 {
     let c = fcos(X87Ext80::from_f32(angle));
@@ -474,10 +474,11 @@ pub fn one_minus_x87_cos_f64(angle: f32) -> f64 {
     ((1i128 << shift) - units) as f64 * (-f64::from(shift)).exp2()
 }
 
-/// `1 - cos(angle)` as the original stores it. `__CIcos` leaves the extended cosine in st0 (64-bit mantissa); the
-/// caller runs `fsubr` of 1.0 at the game's 24-bit precision control and `fstp`s the result to f32, so the subtraction
-/// rounds once, to f32. This evaluates the cosine in double-double (`cos_dd`), rounds it to a 64-bit mantissa with ties
-/// to even (`round_to_64_bits`), forms 1 minus it exactly, and rounds once to f32. Non-finite angles give NaN.
+/// `1 - cos(angle)` as the game stores it. The cosine leaves the extended result in the x87 register (64-bit
+/// mantissa); the caller subtracts it from 1.0 at the game's 24-bit precision control and stores the result to f32,
+/// so the subtraction rounds once, to f32. This evaluates the cosine in double-double (`cos_dd`), rounds it to a 64-bit
+/// mantissa with ties to even (`round_to_64_bits`), forms 1 minus it exactly, and rounds once to f32. Non-finite
+/// angles give NaN.
 ///
 /// The last bit of the x87's own `fcos` is not reproduced: the model is the correctly rounded 64-bit cosine. The angles
 /// are small in the callers; `cos_dd` reduces by a three-part pi/2, which is exact enough for |angle| below 2^20.

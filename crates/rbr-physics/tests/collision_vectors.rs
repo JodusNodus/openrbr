@@ -7,7 +7,7 @@
 
 mod common;
 
-use common::shared_mem;
+use common::{shared_mem, Call, Inner};
 use rbr_physics::collision::{contact_solver, face_sweep, grid_contact, layout, overlap, triangle};
 use rbr_physics::fpu::Precision;
 use rbr_physics::math::vec::Vec3;
@@ -193,140 +193,11 @@ const BODY_VF118: u32 = 0x4e11f0;
 const ENTITY_S30: u32 = 0x519c00;
 const FLOAT3_LENGTH: u32 = 0x473b30;
 
-struct Window {
-    index: usize,
-    at: u32,
-    len: usize,
-    before: Vec<u8>,
-    after: Vec<u8>,
-}
-
-struct Call {
-    index: usize,
-    addr: u32,
-    args: Vec<u32>,
-    windows: Vec<Window>,
-    eax: u32,
-    st0: u64,
-    branch: String,
-    inner: Vec<Inner>,
-    after: Vec<AfterWindow>,
-}
-
-struct Inner {
-    addr: u32,
-    args: Vec<u32>,
-    eax: u32,
-    st0: u64,
-    windows: Vec<Window>,
-    after: Vec<AfterWindow>,
-}
-
-struct AfterWindow {
-    at: u32,
-    len: usize,
-    bytes: Vec<u8>,
-}
-
-fn hex_bytes(text: &str) -> Vec<u8> {
-    (0..text.len()).step_by(2).map(|i| u8::from_str_radix(&text[i..i + 2], 16).unwrap()).collect()
-}
-
-fn parse(text: &str) -> Vec<Call> {
-    let mut calls = Vec::<Call>::new();
-    let mut pending = Vec::<(usize, u32, usize, Vec<u8>)>::new();
-    for line in text.lines() {
-        let fields: Vec<&str> = line.split_whitespace().collect();
-        match fields.first().copied() {
-            Some("call") => calls.push(Call {
-                index: fields[1].parse().unwrap(),
-                addr: u32::from_str_radix(fields[2].trim_start_matches("0x"), 16).unwrap(),
-                args: Vec::new(),
-                windows: Vec::new(),
-                eax: 0,
-                st0: 0,
-                branch: String::new(),
-                inner: Vec::new(),
-                after: Vec::new(),
-            }),
-            Some("args") => {
-                calls.last_mut().unwrap().args =
-                    fields[1..].iter().map(|word| u32::from_str_radix(word, 16).unwrap()).collect();
-            }
-            Some("win") => {
-                let index = fields[1].parse().unwrap();
-                let at = u32::from_str_radix(fields[2].trim_start_matches("0x"), 16).unwrap();
-                let len = fields[3].parse().unwrap();
-                let bytes = if fields.len() > 5 { hex_bytes(fields[5]) } else { Vec::new() };
-                if fields[4] == "pre" {
-                    assert_eq!(bytes.len(), len, "window pre length");
-                    pending.push((index, at, len, bytes));
-                } else {
-                    let (before_index, before_at, before_len, before) = pending.pop().unwrap();
-                    assert_eq!((before_index, before_at, before_len), (index, at, len));
-                    assert_eq!(bytes.len(), len, "window post length");
-                    calls.last_mut().unwrap().windows.push(Window { index, at, len, before, after: bytes });
-                }
-            }
-            Some("ret") => {
-                let call = calls.last_mut().unwrap();
-                call.eax = u32::from_str_radix(fields[1], 16).unwrap();
-                call.st0 = u64::from_str_radix(fields[2], 16).unwrap();
-            }
-            Some("inner") => calls.last_mut().unwrap().inner.push(Inner {
-                addr: u32::from_str_radix(fields[1].trim_start_matches("0x"), 16).unwrap(),
-                eax: u32::from_str_radix(fields[2], 16).unwrap(),
-                st0: u64::from_str_radix(fields[3], 16).unwrap(),
-                args: fields[4..].iter().map(|word| u32::from_str_radix(word, 16).unwrap()).collect(),
-                windows: Vec::new(),
-                after: Vec::new(),
-            }),
-            Some("iwin") => {
-                let index = fields[1].parse().unwrap();
-                let at = u32::from_str_radix(fields[2].trim_start_matches("0x"), 16).unwrap();
-                let len = fields[3].parse().unwrap();
-                let (before, after) =
-                    if len == 0 { (Vec::new(), Vec::new()) } else { (hex_bytes(fields[4]), hex_bytes(fields[5])) };
-                assert_eq!(before.len(), len, "inner window pre length");
-                assert_eq!(after.len(), len, "inner window post length");
-                calls.last_mut().unwrap().inner.last_mut().unwrap().windows.push(Window {
-                    index,
-                    at,
-                    len,
-                    before,
-                    after,
-                });
-            }
-            Some("iawin") => {
-                let at = u32::from_str_radix(fields[1].trim_start_matches("0x"), 16).unwrap();
-                let len = fields[2].parse().unwrap();
-                let bytes = hex_bytes(fields[3]);
-                assert_eq!(bytes.len(), len, "inner after window length");
-                calls.last_mut().unwrap().inner.last_mut().unwrap().after.push(AfterWindow { at, len, bytes });
-            }
-            Some("awin") => {
-                let at = u32::from_str_radix(fields[1].trim_start_matches("0x"), 16).unwrap();
-                let len = fields[2].parse().unwrap();
-                let bytes = hex_bytes(fields[3]);
-                assert_eq!(bytes.len(), len, "after window length");
-                calls.last_mut().unwrap().after.push(AfterWindow { at, len, bytes });
-            }
-            Some("branch") => calls.last_mut().unwrap().branch = fields[1].to_string(),
-            _ => {}
-        }
-    }
-    assert!(pending.is_empty(), "unpaired pre windows");
-    calls
-}
-
+/// The recorded calls of `addr` in the files named by `RBR_COLLISION_VECTORS`, or None to skip (no variable,
+/// or no call of `addr` in the set).
 fn recorded_calls(addr: u32) -> Option<Vec<Call>> {
-    let paths = std::env::var("RBR_COLLISION_VECTORS").ok()?;
-    let mut found = Vec::new();
-    for path in paths.split(':') {
-        let text = std::fs::read_to_string(path).unwrap_or_else(|error| panic!("{path}: {error}"));
-        found.extend(parse(&text).into_iter().filter(|call| call.addr == addr));
-    }
-    (!found.is_empty()).then_some(found)
+    let calls = common::load("RBR_COLLISION_VECTORS", addr)?;
+    (!calls.is_empty()).then_some(calls)
 }
 
 fn replay(addr: u32, name: &str, eax_mask: u32, port: impl Fn(&mut Mem, &[u32]) -> u32) {
@@ -367,7 +238,7 @@ fn replay_st0(addr: u32, name: &str, port: impl Fn(&Mem, &[u32]) -> f32) {
         }
         assert_eq!(
             port(&mem, &call.args).to_bits(),
-            (f64::from_bits(call.st0) as f32).to_bits(),
+            (f64::from_bits(call.st0_bits) as f32).to_bits(),
             "{name} call {} ({}) ST0",
             call.index,
             call.branch
@@ -398,7 +269,7 @@ fn replay_st0_writes(addr: u32, name: &str, port: impl Fn(&mut Mem, &[u32]) -> f
         }
         assert_eq!(
             port(&mut mem, &call.args).to_bits(),
-            (f64::from_bits(call.st0) as f32).to_bits(),
+            (f64::from_bits(call.st0_bits) as f32).to_bits(),
             "{name} call {} ({}) ST0",
             call.index,
             call.branch
@@ -976,7 +847,7 @@ impl layout::e36_collect::CollectHost for CollectReplayHost<'_> {
         let call = self.take(FLOAT3_LENGTH, "CFloat3::Length");
         let window = call.windows.first().expect("CFloat3::Length vector bytes");
         assert_eq!(mem.read(vector, window.len), window.before, "CFloat3::Length input");
-        f64::from_bits(call.st0) as f32
+        f64::from_bits(call.st0_bits) as f32
     }
 }
 
@@ -3189,7 +3060,7 @@ impl SolverReplayHost<'_> {
             self.mem.map(window.at, &window.bytes);
         }
         self.next += 1;
-        (call.eax, call.st0)
+        (call.eax, call.st0_bits)
     }
 }
 
@@ -3403,7 +3274,7 @@ fn e38_impulse_matches_original_calls() {
         let esp = velocity_at - 0x50 + 0x94;
         let mut host = ImpulseReplayHost { inner, next: 0, mem: mem.clone() };
         let impulse = layout::solve_event(&mut host, &mut mem, call.args[1], esp);
-        assert_eq!(f64::from(impulse).to_bits(), call.st0, "M_C1A0 call {} impulse {impulse}", call.index);
+        assert_eq!(f64::from(impulse).to_bits(), call.st0_bits, "M_C1A0 call {} impulse {impulse}", call.index);
         assert_eq!(host.next, host.inner.len(), "M_C1A0 call {} calls", call.index);
         for window in &call.windows {
             assert_eq!(

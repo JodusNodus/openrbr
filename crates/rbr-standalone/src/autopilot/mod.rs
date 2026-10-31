@@ -368,10 +368,10 @@ pub struct Driver<'a> {
 }
 
 impl<'a> Driver<'a> {
-    pub fn new(track: &'a [DriveLineRecord], top: f32, aim: Option<Aim>) -> Self {
+    pub fn new(track: &'a [DriveLineRecord], values: Vec<f32>, top: f32, aim: Option<Aim>) -> Self {
         Self {
             track,
-            values: track.iter().map(|r| r.value).collect(),
+            values,
             shifted: 0,
             top,
             aim,

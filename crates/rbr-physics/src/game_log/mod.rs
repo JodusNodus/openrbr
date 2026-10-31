@@ -1,9 +1,8 @@
-//! The game's logger: `E01Log(channel, level, format, ...)` (0x43c8e0), which hands its arguments to `GameLog`
-//! (0x490f50). The retail game logs: the console flag (`0x7c18f8`) is clear, and the channel and level pick a sink from
-//! the table at 0x7c29d8. Sink 2 (every channel 6 and 7 the physics logs on) writes the text with `vsprintf` into the
-//! static buffer at 0x7ece58, copies it to a new block, hands that to `OutputDebugStringA` and frees it (0x4dedb0);
-//! sink 1 writes to the log file when one is open (0x4ded80); sink 0 is none. [`format`] is msvcr71's `vsprintf` on
-//! the conversions the exe's log formats use.
+//! The game's logger: it takes a channel, level, format and arguments, and hands them to a sink. The retail game
+//! logs: the console flag is clear, and the channel and level pick a sink. The sink every channel 6 and 7 the physics
+//! logs on writes the text with the C formatter into a static buffer, copies it to a new block, hands that to the
+//! debug output and frees it; sink 1 writes to the log file when one is open; sink 0 is none. [`format`] is the
+//! C formatter on the conversions the log formats use.
 
 pub mod layout;
 mod ld12;
@@ -14,15 +13,14 @@ pub use layout::{log, LogHost, BUFFER};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Unsupported(pub &'static str);
 
-/// What `vsprintf` reads for a conversion: the next argument word, and the string at an address.
+/// What the formatter reads for a conversion: the next argument word, and the string at an address.
 pub trait Args {
     fn word(&mut self) -> u32;
     fn string(&self, at: u32) -> Vec<u8>;
 }
 
-/// msvcr71's `vsprintf(buf, fmt, args)` (`_output`): the text it writes, without its NUL. Covers the flags `-+ #0`,
-/// width and precision (digits or `*`), the sizes `h` and `l`, and `d i u x X c s p f %`; anything else is
-/// [`Unsupported`].
+/// The C formatter: the text it writes, without its NUL. Covers the flags `-+ #0`, width and precision
+/// (digits or `*`), the sizes `h` and `l`, and `d i u x X c s p f %`; anything else is [`Unsupported`].
 pub fn format(fmt: &[u8], args: &mut impl Args) -> Result<Vec<u8>, Unsupported> {
     let mut out = Vec::new();
     let mut i = 0;
@@ -191,7 +189,7 @@ impl Spec {
         self.pad(head, body)
     }
 
-    /// `%f`: `_cftof` on `_fltout2`'s digits ([`digits`]) rounded by `_fptostr` to the precision.
+    /// `%f`: the C float conversion on the digits ([`digits`]) rounded to the precision.
     fn fixed(&self, v: f64) -> Vec<u8> {
         let ndec = self.precision.unwrap_or(6);
         let (negative, mantissa, decpt) = digits(v);
@@ -216,9 +214,9 @@ impl Spec {
     }
 }
 
-/// `_fltout2` (`$I10_OUTPUT` with 17 digits, [`ld12::digits`]): the sign, the significant digits without trailing zeros and the decimal
-/// point's place (`decpt`: digits before it). Zero is `"0"` at 0, without a sign (`-0.0` too); the others are msvcr71's `1#INF`, `1#QNAN`, `1#SNAN`
-/// and `1#IND` (the default NaN, sign set) at 1.
+/// The float-to-digits conversion (with 17 digits, [`ld12::digits`]): the sign, the significant digits without trailing
+/// zeros and the decimal point's place (`decpt`: digits before it). Zero is `"0"` at 0, without a sign (`-0.0` too);
+/// the others are the CRT's `1#INF`, `1#QNAN`, `1#SNAN` and `1#IND` (the default NaN, sign set) at 1.
 fn digits(v: f64) -> (bool, Vec<u8>, i32) {
     let negative = v.is_sign_negative();
     if v.is_infinite() {
@@ -241,9 +239,9 @@ fn digits(v: f64) -> (bool, Vec<u8>, i32) {
     (negative, mantissa, decpt)
 }
 
-/// `_fptostr(buf, count, flt)`: the first `count` digits of `mantissa` (padded with zeros), rounded up on the next
-/// digit when it is at least `'5'` (a character compare, so the letters of `#INF` round up too); a carry out of the
-/// first digit moves the point. Returns the digits and the point.
+/// Rounds the first `count` digits of `mantissa` (padded with zeros), rounding up on the next digit when it is at
+/// least `'5'` (a character compare, so the letters of `#INF` round up too); a carry out of the first digit moves the
+/// point. Returns the digits and the point.
 fn round_digits(mantissa: &[u8], count: i32, decpt: i32) -> (Vec<u8>, i32) {
     let mut buf = vec![b'0'];
     let mut next = 0;

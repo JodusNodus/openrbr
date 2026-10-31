@@ -11,6 +11,7 @@
 //! animation arrays are referenced from records, and some of their field
 //! meanings are still unknown.
 
+use crate::le::{self, Reader, Truncated};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt::{self, Display, Formatter};
@@ -186,9 +187,7 @@ pub enum Error {
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Error::Truncated { offset, needed, len } => {
-                write!(f, "truncated at offset {offset}: need {needed} bytes but file is {len} bytes")
-            }
+            Error::Truncated { offset, needed, len } => le::fmt_truncated(f, *offset, *needed, *len),
             Error::BadMagic => write!(f, "bad AnimData magic; expected MINAATAD"),
             Error::BadOffset { table, value, len } => {
                 write!(f, "table {table} offset {value:#x} is outside the {len}-byte file")
@@ -202,55 +201,13 @@ impl Display for Error {
 
 impl std::error::Error for Error {}
 
-struct Cursor<'a> {
-    bytes: &'a [u8],
-    offset: usize,
-}
-
-impl<'a> Cursor<'a> {
-    fn at(bytes: &'a [u8], offset: usize) -> Result<Self, Error> {
-        if offset > bytes.len() {
-            return Err(Error::Truncated { offset, needed: 0, len: bytes.len() });
-        }
-        Ok(Self { bytes, offset })
-    }
-
-    fn take(&mut self, count: usize) -> Result<&'a [u8], Error> {
-        let end = self.offset.checked_add(count).ok_or(Error::Truncated {
-            offset: self.offset,
-            needed: count,
-            len: self.bytes.len(),
-        })?;
-        if end > self.bytes.len() {
-            return Err(Error::Truncated { offset: self.offset, needed: count, len: self.bytes.len() });
-        }
-        let out = &self.bytes[self.offset..end];
-        self.offset = end;
-        Ok(out)
-    }
-
-    fn u32(&mut self) -> Result<u32, Error> {
-        let mut b = [0u8; 4];
-        b.copy_from_slice(self.take(4)?);
-        Ok(u32::from_le_bytes(b))
-    }
-
-    fn words<const N: usize>(&mut self) -> Result<[u32; N], Error> {
-        let mut words = [0u32; N];
-        for word in &mut words {
-            *word = self.u32()?;
-        }
-        Ok(words)
+impl From<Truncated> for Error {
+    fn from(t: Truncated) -> Self {
+        Error::Truncated { offset: t.offset, needed: t.needed, len: t.len }
     }
 }
 
-fn checked_range(bytes: &[u8], offset: usize, size: usize) -> Result<(), Error> {
-    let end = offset.checked_add(size).ok_or(Error::Truncated { offset, needed: size, len: bytes.len() })?;
-    if end > bytes.len() {
-        return Err(Error::Truncated { offset, needed: size, len: bytes.len() });
-    }
-    Ok(())
-}
+type Cursor<'a> = Reader<'a, Error>;
 
 fn checked_product(count: usize, stride: usize, offset: usize, len: usize) -> Result<usize, Error> {
     count.checked_mul(stride).ok_or(Error::Truncated { offset, needed: usize::MAX, len })
@@ -267,7 +224,7 @@ fn table_offset(offsets: &[u32; 10], index: usize, bytes: &[u8]) -> Result<usize
 fn parse_rows<const N: usize>(bytes: &[u8], offset: usize, count: usize) -> Result<Vec<[u32; N]>, Error> {
     let stride = N.checked_mul(4).ok_or(Error::Truncated { offset, needed: usize::MAX, len: bytes.len() })?;
     let total = checked_product(count, stride, offset, bytes.len())?;
-    checked_range(bytes, offset, total)?;
+    le::need(bytes, offset, total)?;
     let mut cursor = Cursor::at(bytes, offset)?;
     let mut rows = Vec::new();
     rows.try_reserve_exact(count).map_err(|_| Error::Allocation { offset, count })?;
@@ -280,7 +237,7 @@ fn parse_rows<const N: usize>(bytes: &[u8], offset: usize, count: usize) -> Resu
 fn parse_table<const N: usize>(bytes: &[u8], offset: usize) -> Result<Vec<[u32; N]>, Error> {
     let mut cursor = Cursor::at(bytes, offset)?;
     let count = cursor.u32()? as usize;
-    parse_rows(bytes, cursor.offset, count)
+    parse_rows(bytes, cursor.pos(), count)
 }
 
 fn parse_raw_array(bytes: &[u8], count: u32, offset: u32, record_words: u8) -> Result<DlsRawArray, Error> {
@@ -291,7 +248,7 @@ fn parse_raw_array(bytes: &[u8], count: u32, offset: u32, record_words: u8) -> R
     let stride = record_words as usize * 4;
     let offset_usize = offset as usize;
     let total = checked_product(count_usize, stride, offset_usize, bytes.len())?;
-    checked_range(bytes, offset_usize, total)?;
+    le::need(bytes, offset_usize, total)?;
     let word_count = count_usize.checked_mul(record_words as usize).ok_or(Error::Truncated {
         offset: offset_usize,
         needed: usize::MAX,
@@ -311,7 +268,7 @@ fn parse_nested_groups(bytes: &[u8], count: u32, offset: u32) -> Result<Vec<DlsN
         return Ok(Vec::new());
     }
     let minimum_bytes = checked_product(count as usize, 12, offset as usize, bytes.len())?;
-    checked_range(bytes, offset as usize, minimum_bytes)?;
+    le::need(bytes, offset as usize, minimum_bytes)?;
     let mut cursor = Cursor::at(bytes, offset as usize)?;
     let mut groups = Vec::new();
     groups
@@ -320,12 +277,12 @@ fn parse_nested_groups(bytes: &[u8], count: u32, offset: u32) -> Result<Vec<DlsN
     for _ in 0..count {
         let header = cursor.words::<3>()?;
         let pair_count = header[2] as usize;
-        let bytes_needed = checked_product(pair_count, 8, cursor.offset, bytes.len())?;
-        checked_range(bytes, cursor.offset, bytes_needed)?;
+        let bytes_needed = checked_product(pair_count, 8, cursor.pos(), bytes.len())?;
+        le::need(bytes, cursor.pos(), bytes_needed)?;
         let mut pairs = Vec::new();
         pairs
             .try_reserve_exact(pair_count)
-            .map_err(|_| Error::Allocation { offset: cursor.offset, count: pair_count })?;
+            .map_err(|_| Error::Allocation { offset: cursor.pos(), count: pair_count })?;
         for _ in 0..pair_count {
             pairs.push(cursor.words::<2>()?);
         }
@@ -344,19 +301,19 @@ fn parse_replay_stream(bytes: &[u8], offset: u32) -> Result<DlsReplayStream, Err
         let n10 = header[1] as usize;
         let n6 = header[2] as usize;
         let n2 = header[3] as usize;
-        let bytes10 = checked_product(n10, 40, cursor.offset, bytes.len())?;
-        checked_range(bytes, cursor.offset, bytes10)?;
-        ten_word_records = parse_rows::<10>(bytes, cursor.offset, n10)?;
-        cursor.offset += bytes10;
+        let bytes10 = checked_product(n10, 40, cursor.pos(), bytes.len())?;
+        le::need(bytes, cursor.pos(), bytes10)?;
+        ten_word_records = parse_rows::<10>(bytes, cursor.pos(), n10)?;
+        cursor.take(bytes10)?;
 
-        let bytes6 = checked_product(n6, 24, cursor.offset, bytes.len())?;
-        checked_range(bytes, cursor.offset, bytes6)?;
-        six_word_records = parse_rows::<6>(bytes, cursor.offset, n6)?;
-        cursor.offset += bytes6;
+        let bytes6 = checked_product(n6, 24, cursor.pos(), bytes.len())?;
+        le::need(bytes, cursor.pos(), bytes6)?;
+        six_word_records = parse_rows::<6>(bytes, cursor.pos(), n6)?;
+        cursor.take(bytes6)?;
 
-        let bytes2 = checked_product(n2, 8, cursor.offset, bytes.len())?;
-        checked_range(bytes, cursor.offset, bytes2)?;
-        pairs = parse_rows::<2>(bytes, cursor.offset, n2)?;
+        let bytes2 = checked_product(n2, 8, cursor.pos(), bytes.len())?;
+        le::need(bytes, cursor.pos(), bytes2)?;
+        pairs = parse_rows::<2>(bytes, cursor.pos(), n2)?;
     }
     Ok(DlsReplayStream { offset, header, ten_word_records, six_word_records, pairs })
 }
@@ -391,10 +348,10 @@ fn parse_animation_entries(bytes: &[u8], offset: usize) -> Result<Vec<DlsAnimati
 fn entries_within(bytes: &[u8], offset: usize, mut budget: usize) -> Result<Vec<DlsAnimationEntry>, Error> {
     let mut cursor = Cursor::at(bytes, offset)?;
     let count = cursor.u32()? as usize;
-    let pair_bytes = checked_product(count, 8, cursor.offset, bytes.len())?;
-    checked_range(bytes, cursor.offset, pair_bytes)?;
+    let pair_bytes = checked_product(count, 8, cursor.pos(), bytes.len())?;
+    le::need(bytes, cursor.pos(), pair_bytes)?;
     let mut pairs = Vec::new();
-    pairs.try_reserve_exact(count).map_err(|_| Error::Allocation { offset: cursor.offset, count })?;
+    pairs.try_reserve_exact(count).map_err(|_| Error::Allocation { offset: cursor.pos(), count })?;
     for _ in 0..count {
         pairs.push(cursor.words::<2>()?);
     }
@@ -462,21 +419,21 @@ pub fn parse(bytes: &[u8]) -> Result<DlsFile<'_>, Error> {
 
     let mut track_cursor = Cursor::at(bytes, table_offset(&table_offsets, 1, bytes)?)?;
     let track_count = track_cursor.u32()? as usize;
-    let minimum_track_bytes = checked_product(track_count, 12, track_cursor.offset, bytes.len())?;
-    checked_range(bytes, track_cursor.offset, minimum_track_bytes)?;
+    let minimum_track_bytes = checked_product(track_count, 12, track_cursor.pos(), bytes.len())?;
+    le::need(bytes, track_cursor.pos(), minimum_track_bytes)?;
     let mut track_groups = Vec::new();
     track_groups
         .try_reserve_exact(track_count)
-        .map_err(|_| Error::Allocation { offset: track_cursor.offset, count: track_count })?;
+        .map_err(|_| Error::Allocation { offset: track_cursor.pos(), count: track_count })?;
     for _ in 0..track_count {
         let group_header = track_cursor.words::<3>()?;
         let child_count = group_header[2] as usize;
-        let needed = checked_product(child_count, 44, track_cursor.offset, bytes.len())?;
-        checked_range(bytes, track_cursor.offset, needed)?;
+        let needed = checked_product(child_count, 44, track_cursor.pos(), bytes.len())?;
+        le::need(bytes, track_cursor.pos(), needed)?;
         let mut children = Vec::new();
         children
             .try_reserve_exact(child_count)
-            .map_err(|_| Error::Allocation { offset: track_cursor.offset, count: child_count })?;
+            .map_err(|_| Error::Allocation { offset: track_cursor.pos(), count: child_count })?;
         for _ in 0..child_count {
             children.push(track_cursor.words::<11>()?);
         }
@@ -513,12 +470,12 @@ pub fn parse(bytes: &[u8]) -> Result<DlsFile<'_>, Error> {
 
     let mut sphere_cursor = Cursor::at(bytes, table_offset(&table_offsets, 6, bytes)?)?;
     let sphere_count = sphere_cursor.u32()? as usize;
-    let sphere_bytes = checked_product(sphere_count, 16, sphere_cursor.offset, bytes.len())?;
-    checked_range(bytes, sphere_cursor.offset, sphere_bytes)?;
+    let sphere_bytes = checked_product(sphere_count, 16, sphere_cursor.pos(), bytes.len())?;
+    le::need(bytes, sphere_cursor.pos(), sphere_bytes)?;
     let mut spheres = Vec::new();
     spheres
         .try_reserve_exact(sphere_count)
-        .map_err(|_| Error::Allocation { offset: sphere_cursor.offset, count: sphere_count })?;
+        .map_err(|_| Error::Allocation { offset: sphere_cursor.pos(), count: sphere_count })?;
     for _ in 0..sphere_count {
         let words = sphere_cursor.words::<4>()?;
         spheres.push(DlsSphere {

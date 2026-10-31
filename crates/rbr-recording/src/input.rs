@@ -26,7 +26,7 @@
 //! u32 magic      INPUT_MAGIC
 //! ```
 
-use crate::CONTROL_BYTES;
+use crate::{word, CONTROL_BYTES};
 
 /// Word 7 of an input payload: `'INP2'` little-endian. A later layout takes a new value.
 pub const INPUT_MAGIC: u32 = u32::from_le_bytes(*b"INP2");
@@ -103,7 +103,7 @@ impl Payload {
     /// Reads a payload; an error for a word 7 that is neither a recorded payload's nor [`INPUT_MAGIC`], or input bits
     /// outside the layout.
     pub fn read(bytes: &[u8; CONTROL_BYTES]) -> Result<Payload, String> {
-        let words: [u32; 8] = std::array::from_fn(|i| u32::from_le_bytes(bytes[4 * i..4 * i + 4].try_into().unwrap()));
+        let words: [u32; 8] = std::array::from_fn(|i| word(bytes, i));
         match words[7] {
             0 | 1 => Ok(Payload::Recorded(words)),
             INPUT_MAGIC => {

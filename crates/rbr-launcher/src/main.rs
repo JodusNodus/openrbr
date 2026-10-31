@@ -125,6 +125,7 @@
 // No console window on Windows: stderr goes to the log file (`rbr_render::console`).
 #![windows_subsystem = "windows"]
 
+mod archive;
 mod browser;
 mod capture;
 mod car_browser;
@@ -141,7 +142,9 @@ mod graphics_page;
 mod gvrc;
 mod home;
 mod install;
+mod job;
 mod ngp_dll;
+mod ngp_install;
 mod pages;
 mod preview;
 mod rally_page;
@@ -173,6 +176,16 @@ use settings::{load, or_folder, read_settings, Gearboxes, SeasonCars};
 use setup_page::SetupPage;
 use window::App;
 use winit::event_loop::EventLoop;
+
+/// A fresh empty scratch folder for a test, unique per `name` (with the process id): names stay distinct so
+/// parallel tests never share one, and reruns start empty.
+#[cfg(test)]
+pub(crate) fn test_dir(name: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("rbr-launcher-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
 
 const SETTINGS_FILE: &str = "launcher-settings.ini";
 /// The folder in the player's folder with NGP's own `SavedGames/` and `GhostCars/` (ours).
@@ -480,7 +493,7 @@ struct Form {
     owned_voices: Vec<codriver_packs::VoicePack>,
     owned_notes: Vec<codriver_packs::NotePack>,
     /// "Import co-driver…" and its last result (`codriver_packs`).
-    codriver_job: Option<disc_install::Job<Vec<String>>>,
+    codriver_job: Option<job::Job<Vec<String>>>,
     codriver_status: Option<Result<String, String>>,
     codriver_voice: Option<String>,
     codriver_style: String,
@@ -594,7 +607,8 @@ impl Form {
         self.rsf_scanned = self.rsf_root.clone();
         self.rescan_codrivers();
         let (catalog, season) = (&self.catalog, &self.season);
-        self.map = (catalog.maps.iter().position(|m| m.number == number))
+        self.map = catalog
+            .map_index(number)
             .or_else(|| catalog.maps.iter().position(|map| catalog.availability(season, map).is_ok()))
             .unwrap_or(0);
         self.validate_weather_row();

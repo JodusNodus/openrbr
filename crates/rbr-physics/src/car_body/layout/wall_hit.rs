@@ -7,7 +7,6 @@ use crate::car_body::step::WallHit;
 use crate::math::vec::Vec4;
 
 /// Byte offsets of the hit's words.
-pub const NORMAL_AT: usize = 0x0;
 pub const PENETRATION_AT: usize = 0x10;
 pub const PERPENDICULAR_AT: usize = 0x14;
 pub const FLAGS_AT: usize = 0x18;

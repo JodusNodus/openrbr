@@ -1,27 +1,27 @@
-//! The NTweak apply walk: one `.lsp` group applied to a tweak object, as `NTweak::CBase::Parse` (0x52f0c0) does it
-//! (`src/rbr/RBR_E48_NTweak.cpp`). The group comes as the reader's items (`rbr_formats::lsp`); the reader sees each
-//! retail file as the game's tokenizer does (`rbr-formats/tests/lsp_tokens.rs`).
+//! The NTweak apply walk: one `.lsp` group applied to a tweak object. The group comes as the reader's items
+//! (`rbr_formats::lsp`); the reader sees each retail file as the game's tokenizer does
+//! (`rbr-formats/tests/lsp_tokens.rs`).
 //!
 //! For each item, in order:
-//! - a leading quoted string names the object: a copy goes to the token heap and `+0x04` points at it;
-//! - a number (a signed digit string, or what `IsFloat` takes) is skipped;
+//! - a leading quoted string names the object: a copy goes to the token heap and the object points at it;
+//! - a number (a signed digit string, or what `is_float` takes) is skipped;
 //! - an atom that is a key of the object's table (`lsp_keys`, the class's own keys, then its parents') hands the items
-//!   after it to that member's own parse (its vtable slot 2): a `CReal` takes one float (at `+0x0c`), a `CUnsigned`
-//!   or `CInteger` one integer (`+0x0c`, both `atoi`), a `CVector` up to three floats (`+0x10`), a `CVector4` up to
-//!   four, a bit-field the `+name`/`-name` items after it (its mask at `+0x0c`, [`set_bit`]), and a member object
-//!   (slot 2 is `CBase::Parse`, such as a wheel's `SpringDamper`) its group, walked the same way. A member that refuses
+//!   after it to that member's own parse (its table's parse entry): a real takes one float, an unsigned
+//!   or integer one integer (both `atoi`), a vector up to three floats, a four-vector up to
+//!   four, a bit-field the `+name`/`-name` items after it ([`set_bit`]), and a member object
+//!   (whose parse is the base parse, such as a wheel's spring-damper) its group, walked the same way. A member that refuses
 //!   the item leaves it for the walk. A key with nothing after it ends the walk. The material manager's keys name its
 //!   materials by tag;
-//! - a group (not a member's) goes to the object's slot 5 (`Unk14`) once per item after its leading quoted name, each
+//! - a group (not a member's) goes to the object's inner-group entry once per item after its leading quoted name, each
 //!   item's quoted name ([`get_quoted`]) first copied to a token-heap block: an entity definition's appends the
-//!   registry index of the group's name to its links (`+0x18` count, `+0x1c` indices), such as `prime.lsp`'s
-//!   `("CAR_WHEEL_LF" ("CAR_WHEEL_LF"))` in the car's group; the definition manager's (`CDefManager::Vf14`, 0x501ef0)
+//!   registry index of the group's name to its links, such as `prime.lsp`'s
+//!   `("CAR_WHEEL_LF" ("CAR_WHEEL_LF"))` in the car's group; the definition manager's
 //!   takes the group's name as a factory and each item as a definition, which the host makes or finds and walks the
-//!   item on; `CBase`'s does nothing;
+//!   item on; the base's does nothing;
 //! - anything else is skipped.
 //!
-//! Then the object's slot 17 (`Unk44`) runs. Values are stored as the original's `atof`/`atoi` give them, the float
-//! rounded once from the double. The definition manager's dictionary is the registry itself (`Unk20`, 0x501ed0): an
+//! Then the object's post-walk entry runs. Values are stored as `atof`/`atoi` give them, the float
+//! rounded once from the double. The definition manager's dictionary is the registry itself: an
 //! atom of its group that names a definition would hand the items after it to that definition. No retail file has one
 //! (their atoms there are `NULL_PPTOKEN`), and the walk skips such atoms.
 
@@ -42,25 +42,25 @@ pub use layout::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Unsupported(pub &'static str);
 
-/// `CTokenCursor::IsFloat` (0x52eed0): an optional sign, then digits with at most one dot.
+/// Whether the text is a float: an optional sign, then digits with at most one dot.
 pub fn is_float(t: &str) -> bool {
     let digits = t.strip_prefix(['+', '-']).unwrap_or(t);
     digits.bytes().all(|c| c.is_ascii_digit() || c == b'.') && digits.bytes().filter(|&c| c == b'.').count() <= 1
 }
 
-/// `CTokenCursor::IsInteger` (0x52ef40): an optional sign, then digits.
+/// Whether the text is an integer: an optional sign, then digits.
 pub fn is_integer(t: &str) -> bool {
     let digits = t.strip_prefix(['+', '-']).unwrap_or(t);
     digits.bytes().all(|c| c.is_ascii_digit())
 }
 
-/// `atof` on what `IsFloat` takes, rounded to the float the member stores.
+/// `atof` on what `is_float` takes, rounded to the float the member stores.
 pub fn atof(t: &str) -> f32 {
     t.parse::<f64>().unwrap_or(0.0) as f32
 }
 
-/// `CTokenCursor::GetQuoted(buf, len)` (0x52f000) on an item: the quoted string it starts with, inside its opening
-/// parentheses, cut to `len - 1` bytes; empty for anything else.
+/// The quoted name of an item: the quoted string it starts with, inside its opening parentheses, cut to `len - 1`
+/// bytes; empty for anything else.
 pub fn get_quoted(item: &lsp::Node, len: u32) -> String {
     match item {
         lsp::Node::Quoted(s) => s.chars().take(len as usize - 1).collect(),
@@ -69,8 +69,8 @@ pub fn get_quoted(item: &lsp::Node, len: u32) -> String {
     }
 }
 
-/// `CBitField::Parse` (0x52f930) on one item, `+name` or `-name`: the bit of the name `names` has (compared ignoring
-/// case) set or cleared in `mask`. An unknown name leaves the mask; the item is taken all the same.
+/// On one item, `+name` or `-name`: the bit of the name `names` has (compared ignoring case) set or cleared in
+/// `mask`. An unknown name leaves the mask; the item is taken all the same.
 pub fn set_bit(mask: u32, names: &[String], item: &str) -> u32 {
     let set = item.starts_with('+');
     match names.iter().position(|n| n.eq_ignore_ascii_case(&item[1..])) {
@@ -80,7 +80,7 @@ pub fn set_bit(mask: u32, names: &[String], item: &str) -> u32 {
     }
 }
 
-/// `atoi` on what `IsInteger` takes.
+/// `atoi` on what `is_integer` takes.
 pub fn atoi(t: &str) -> u32 {
     t.parse::<i64>().unwrap_or(0) as u32
 }

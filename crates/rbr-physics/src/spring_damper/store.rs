@@ -13,7 +13,7 @@ pub trait SpringStore: Raw {
     fn fade_at(&self, controller: u32) -> u32;
 
     fn definition(&self, at: u32) -> Definition;
-    /// The nine setup reals a definition adopts (`CopyStateToDef`), and their store into the definition.
+    /// The nine setup reals a definition adopts, and their store into the definition.
     fn setup_values(&self, at: u32) -> SetupValues;
     fn store_setup_values(&mut self, definition_at: u32, definition: &Definition);
 
@@ -30,7 +30,7 @@ pub trait SpringStore: Raw {
     fn fade_state(&self, at: u32) -> FadeState;
     fn store_fade_state(&mut self, at: u32, value: FadeState);
 
-    /// A `CU32Value`'s payload word.
+    /// An unsigned tweak value's payload word.
     fn unsigned_value(&self, at: u32) -> u32;
     fn store_unsigned_value(&mut self, at: u32, value: u32);
 

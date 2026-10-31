@@ -1,7 +1,7 @@
 //! The Mem store of the rigid body: the layout's reads and writes behind `RigidStore`.
 
 use super::contacts::{self, CONTACT_LIST, HALF, HOOK, RING_TAIL};
-use super::scratch_state::load_quat;
+
 use super::solid_ctor::SOLID_STATE;
 use super::{
     Body, Def, ParentFrame, Vec4, ANGULAR_VELOCITY, BODY_FLAG_8, DEFINITION, DEF_INVERSE_MASS, DEF_VERY_SOFT,
@@ -117,7 +117,7 @@ impl RigidStore for Mem {
     }
 
     fn start_orientation(&self, this: u32) -> Quat {
-        load_quat(self, this + START_ORIENTATION)
+        Quat::load(self, this + START_ORIENTATION)
     }
 
     fn start_offset(&self, this: u32) -> Vec4 {
@@ -190,7 +190,7 @@ impl RigidStore for Mem {
 
     fn state_rotation(&self, state: u32) -> StateRotation {
         StateRotation {
-            orientation: load_quat(self, state + STATE_ORIENTATION),
+            orientation: Quat::load(self, state + STATE_ORIENTATION),
             gate: self.f32(state + STATE_GATE),
             diagonal: [
                 self.f32(state + STATE_DIAGONAL),

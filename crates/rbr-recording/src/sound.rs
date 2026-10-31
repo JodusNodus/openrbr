@@ -35,6 +35,7 @@
 //! step's `FillOutputs` term ([`TyreMax`]) from the finish's 0, as the frame the game emits it after has it.
 
 use crate::damage::{CAR_DAMAGE_HANDLER, HANDLER_EVENT_CODE};
+use crate::word;
 
 /// The tag.
 pub const SND1: [u8; 4] = *b"SND1";
@@ -206,7 +207,7 @@ impl Sound {
         if bytes.len() != SND1_BYTES {
             return None;
         }
-        let word = |i: usize| u32::from_le_bytes(bytes[4 * i..4 * i + 4].try_into().unwrap());
+        let word = |i: usize| word(bytes, i);
         let tyres = ENGINE_WORDS + DRIVETRAIN_WORDS + 1;
         let hit = tyres + 4 * TYRE_WORDS;
         let tail = hit + HIT_WORDS;
@@ -282,8 +283,12 @@ impl NgpSound {
         if bytes.len() != 16 {
             return None;
         }
-        let word = |i: usize| f32::from_le_bytes(bytes[4 * i..4 * i + 4].try_into().unwrap());
-        Some(NgpSound { gear_load_cap: word(0), diff_load_cap: word(1), min_rpm: word(2), idle_rpm: word(3) })
+        Some(NgpSound {
+            gear_load_cap: f32::from_bits(word(bytes, 0)),
+            diff_load_cap: f32::from_bits(word(bytes, 1)),
+            min_rpm: f32::from_bits(word(bytes, 2)),
+            idle_rpm: f32::from_bits(word(bytes, 3)),
+        })
     }
 }
 
@@ -344,7 +349,7 @@ impl FmodBlock {
         if bytes.len() != 28 {
             return None;
         }
-        let word = |i: usize| u32::from_le_bytes(bytes[4 * i..4 * i + 4].try_into().unwrap());
+        let word = |i: usize| word(bytes, i);
         Some(FmodBlock {
             gear: word(0) as i32,
             brake: f32::from_bits(word(1)),

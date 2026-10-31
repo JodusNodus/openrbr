@@ -14,6 +14,8 @@
 
 use std::io::{self, Read};
 
+use crate::{invalid, word};
+
 /// The tag.
 pub const DMG1: u32 = 0x3147_4d44;
 /// The tagged CDM1 record (`rbr_recording::live`, after FMB1): the handler's words the service park reads, as
@@ -60,15 +62,14 @@ impl Damage {
     pub fn read(reader: &mut impl Read) -> io::Result<Damage> {
         let mut bytes = [0u8; DMG1_BYTES];
         reader.read_exact(&mut bytes)?;
-        let word = |i: usize| u32::from_le_bytes(bytes[4 * i..4 * i + 4].try_into().unwrap());
-        if word(0) != DMG1 {
-            let tag = word(0);
-            return Err(io::Error::new(io::ErrorKind::InvalidData, format!("{tag:#010x} is not a damage record")));
+        if word(&bytes, 0) != DMG1 {
+            let tag = word(&bytes, 0);
+            return Err(invalid(format!("{tag:#010x} is not a damage record")));
         }
         Ok(Damage {
-            zones: std::array::from_fn(|zone| f32::from_bits(word(1 + zone))),
-            code: word(1 + ZONES),
-            index: word(2 + ZONES),
+            zones: std::array::from_fn(|zone| f32::from_bits(word(&bytes, 1 + zone))),
+            code: word(&bytes, 1 + ZONES),
+            index: word(&bytes, 2 + ZONES),
         })
     }
 }

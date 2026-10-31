@@ -96,12 +96,12 @@ pub fn under_frame(under: &Under) -> Frame {
     }
 }
 
-/// `CEntityFrame::Vf04..Vf18` at `this` (0x519530..0x519620).
+/// An entity frame's hook at `this`.
 pub fn entity_hook_at<S: EntityStore>(store: &S, this: u32, hook: Hook, a: u32, b: u32, owner: &mut impl Owner) -> u32 {
     entity_hook(&store.load_entity_frame(this), hook, a, b, owner)
 }
 
-/// `CEntityOldFrame::Vf04..Vf18` at `this` (0x5196d0..0x519860).
+/// An old frame's hook at `this`.
 pub fn old_hook_at<S: EntityStore>(store: &S, this: u32, hook: Hook, a: u32, b: u32, owner: &mut impl Owner) -> u32 {
     old_hook(&store.load_entity_frame(this), hook, a, b, owner)
 }

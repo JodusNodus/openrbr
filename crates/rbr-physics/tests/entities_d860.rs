@@ -8,7 +8,7 @@
 
 mod common;
 
-use common::{check_windows, load, map_windows, Inner};
+use common::{check_windows, load, map_windows, Inner, Window};
 use rbr_physics::entities::hinge_offset::{self, OffsetCalls};
 use rbr_physics::entities::store::HingeStore;
 use rbr_physics::mem::Mem;
@@ -32,7 +32,7 @@ impl<'a> Answers<'a> {
             .unwrap_or_else(|| panic!("the port made call {}, the original made {}", self.next, self.inner.len()));
         assert_eq!(call.addr, addr, "call {}: callee", self.next);
         self.next += 1;
-        for (_, at, _, _, post) in &call.windows {
+        for Window { index: _, at, len: _, before: _, after: post } in &call.windows {
             self.mem.map(*at, post);
         }
         call
@@ -50,10 +50,10 @@ impl OffsetCalls for Answers<'_> {
         let window = call
             .windows
             .iter()
-            .find(|w| w.1 == at)
+            .find(|w| w.at == at)
             .unwrap_or_else(|| panic!("walk {index}: no window at the input vector {at:#x}"));
         let recorded = [0, 1, 2].map(|i| {
-            let bytes: [u8; 4] = window.3[4 * i..4 * i + 4].try_into().unwrap();
+            let bytes: [u8; 4] = window.before[4 * i..4 * i + 4].try_into().unwrap();
             f32::from_le_bytes(bytes)
         });
         for (i, (port, original)) in a.iter().zip(recorded).enumerate() {

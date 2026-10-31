@@ -136,7 +136,7 @@ const REFRESH_WRITES: [Range<usize>; 2] = [0x80..0xa0, 0x110..0x140];
 /// Checks the body window (window 0) of `call` against the original, except the `masked` bytes. The other windows
 /// must match exactly.
 fn check_except(call: &Call, mem: &Mem, name: &str, masked: &[Range<usize>]) {
-    for (k, at, len, _, post) in &call.windows {
+    for Window { index: k, at, len, after: post, .. } in &call.windows {
         let now = mem.read(*at, *len);
         for (i, (ours, theirs)) in now.iter().zip(post).enumerate() {
             assert!(
@@ -194,52 +194,31 @@ fn store_quat(mem: &mut Mem, at: u32, q: Quat) {
 #[test]
 fn quat_mul_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, M83DD0) else {
-        eprintln!("skipping M83DD0: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        let (p, q) = (load_quat(&mem, call.args[0]), load_quat(&mem, call.args[1]));
-        store_quat(&mut mem, call.args[2], mul(p, q));
+    common::replay(VAR, M83DD0, "M83DD0", |call, mem| {
+        let (p, q) = (load_quat(mem, call.args[0]), load_quat(mem, call.args[1]));
+        store_quat(mem, call.args[2], mul(p, q));
         assert_eq!(call.eax, call.args[2], "M83DD0 call {} returns out", call.index);
-        check_windows(call, &mem, "M83DD0");
-    }
-    eprintln!("M83DD0: {} calls match", calls.len());
+    });
 }
 
 #[test]
 fn normalize_in_place_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, E18_NORMALIZE) else {
-        eprintln!("skipping E18_QuatNormalize: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        let q = load_quat(&mem, call.args[0]);
-        store_quat(&mut mem, call.args[0], normalize(q));
+    common::replay(VAR, E18_NORMALIZE, "E18_QuatNormalize", |call, mem| {
+        let q = load_quat(mem, call.args[0]);
+        store_quat(mem, call.args[0], normalize(q));
         assert_eq!(call.eax, call.args[0], "E18_QuatNormalize call {} returns q", call.index);
-        check_windows(call, &mem, "E18_QuatNormalize");
-    }
-    eprintln!("E18_QuatNormalize: {} calls match", calls.len());
+    });
 }
 
 #[test]
 fn normalize_to_output_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, E34_NORM) else {
-        eprintln!("skipping E34Quat::Norm: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        let v = load_quat(&mem, call.args[0]);
-        store_quat(&mut mem, call.args[1], normalize(v));
+    common::replay(VAR, E34_NORM, "E34Quat::Norm", |call, mem| {
+        let v = load_quat(mem, call.args[0]);
+        store_quat(mem, call.args[1], normalize(v));
         assert_eq!(call.eax, call.args[1], "E34Quat::Norm call {} returns out", call.index);
-        check_windows(call, &mem, "E34Quat::Norm");
-    }
-    eprintln!("E34Quat::Norm: {} calls match", calls.len());
+    });
 }
 
 /// Replays a call's recorded callees, in order, as the pose step's host. Each host call must be the next record, with
@@ -337,7 +316,7 @@ impl IntegrateHost for Replay<'_> {
 
     fn emit_state(&mut self, state: &StateSignal) -> Result<(), HostUnavailable> {
         let emit = self.take_through(STATE_EMIT, None);
-        let payload = &emit.windows[0].4;
+        let payload = &emit.windows[0].after;
         let orientation =
             Vec4 { x: state.orientation.x, y: state.orientation.y, z: state.orientation.z, w: state.orientation.w };
         assert_eq!(payload[..4], state.owner.to_le_bytes(), "the state signal's owner");
@@ -501,7 +480,7 @@ fn vec4_of(bytes: &[u8]) -> Vec4 {
 
 /// The bytes of window `k` of `call` before the call.
 fn window_pre(call: &Call, k: usize) -> &[u8] {
-    &call.windows.iter().find(|w| w.0 == k).expect("window").3
+    &call.windows.iter().find(|w| w.index == k).expect("window").before
 }
 
 /// The callees of one recorded BigA call, as the port's host. The frame point is the call's first ComposeA. The
@@ -583,7 +562,7 @@ fn contact_step_matches_original_calls() {
         };
         let inner_after = |addr: u32, at_arg: u32| -> Vec<u8> {
             let r = call.inner.iter().find(|r| r.addr == addr).expect("the original's callee");
-            r.after.iter().find(|(at, _, _)| *at == at_arg).expect("the callee's output").2.clone()
+            r.after.iter().find(|run| run.at == at_arg).expect("the callee's output").bytes.clone()
         };
         let compose = call.inner.iter().find(|r| r.addr == COMPOSE_A).expect("ComposeA");
         // Inner windows are numbered in the order the spec lists them: 0 the source, 1 the matrix, 2 the output.
@@ -591,7 +570,7 @@ fn contact_step_matches_original_calls() {
             .inner
             .iter()
             .find(|r| r.addr == MB560 && r.args[3] == a)
-            .map(|r| (vec4_of(&r.windows[0].3), vec4_of(&r.windows[2].4)));
+            .map(|r| (vec4_of(&r.windows[0].before), vec4_of(&r.windows[2].after)));
         let response = call.inner.iter().find(|r| r.addr == SLOT80).map(|r| vec4_of(&inner_after(SLOT80, r.args[2])));
         // The sample hook: the call on the hook object (its ecx) after `0x4e6000`.
         let hook_object = mem.u32(this + 0x3CC);
@@ -718,15 +697,15 @@ fn lanes_bits(v: Vec4) -> [u32; 4] {
 
 /// The bytes a callee wrote for the pointer `at` (its `after` output).
 fn output_at(call: &Inner, at: u32) -> Vec<u8> {
-    call.after.iter().find(|a| a.0 == at).expect("the callee's output").2.clone()
+    call.after.iter().find(|a| a.at == at).expect("the callee's output").bytes.clone()
 }
 
 /// The contact list `E36Collect` returned (`None` when it returned 0: no list).
 fn collected(collect: &Inner) -> Option<Vec<Record>> {
     (collect.eax != 0).then(|| {
         // The list pointer and the count are the cells of windows 0 and 1, read after the call.
-        let list = u32_of(&collect.windows[0].4);
-        let count = u32_of(&collect.windows[1].4) as usize;
+        let list = u32_of(&collect.windows[0].after);
+        let count = u32_of(&collect.windows[1].after) as usize;
         let bytes = if count == 0 { Vec::new() } else { output_at(collect, list) };
         bytes.chunks_exact(0x40).take(count).map(record_of).collect::<Vec<_>>()
     })
@@ -745,7 +724,7 @@ fn list_replay(own: &[Inner], matrices: &[u32], records: Option<Vec<Record>>) ->
         transforms: own
             .iter()
             .filter(|r| r.addr == MB560 && matrices.contains(&r.args[0]))
-            .map(|r| (vec4_of(&r.windows[0].3), vec4_of(&r.windows[2].4)))
+            .map(|r| (vec4_of(&r.windows[0].before), vec4_of(&r.windows[2].after)))
             .collect(),
         retires: 0,
         applied: 0,
@@ -786,7 +765,7 @@ fn contact_list_matches_original_calls() {
         match (own.iter().find(|r| r.addr == EMIT), host.emitted) {
             (None, None) => {}
             (Some(r), Some(event)) => {
-                let want = event_of(&r.windows[0].3);
+                let want = event_of(&r.windows[0].before);
                 assert_eq!(
                     (event.weight.to_bits(), event.kind),
                     (want.weight.to_bits(), want.kind),
@@ -870,9 +849,9 @@ impl ForceHost for ForceReplay {
 
 /// The body after the apply record `apply` (its post window 0).
 fn body_after(call: &Call, apply: &Inner) -> Body {
-    assert_eq!(apply.windows[0].1, call.args[0], "the apply's body window");
+    assert_eq!(apply.windows[0].at, call.args[0], "the apply's body window");
     let mut after = map_windows(call);
-    after.map(call.args[0], &apply.windows[0].4);
+    after.map(call.args[0], &apply.windows[0].after);
     Body::load(&after, call.args[0])
 }
 
@@ -915,7 +894,7 @@ fn force_pass_matches_original_calls() {
         let walked = &call.inner[at + 1 + vote.inner.len()..];
         lists += usize::from(mem.u32(this + 0x274) != 0);
         let voted = (vote.eax != 0).then(|| {
-            let v = |k: usize| vec4_of(&vote.windows.iter().find(|w| w.0 == k).expect("the vote's vector").4);
+            let v = |k: usize| vec4_of(&vote.windows.iter().find(|w| w.index == k).expect("the vote's vector").after);
             (v(1), v(2))
         });
         hits += usize::from(voted.is_some());
@@ -1002,7 +981,7 @@ impl ContactVoteHost for ContactVoteReplay<'_> {
         let e = rbr_physics::rigid_body::layout::contact_record(&self.mem, self.this, k);
         assert_eq!(c.args[5], e, "BigA's contact");
         Ok((c.eax != 0).then(|| {
-            let a = &c.windows.iter().find(|w| w.0 == 1).expect("BigA's a").4;
+            let a = &c.windows.iter().find(|w| w.index == 1).expect("BigA's a").after;
             Impulse { force: vec4_of(&a[..0x10]), torque: vec4_of(&a[0x10..0x20]) }
         }))
     }
@@ -1063,7 +1042,7 @@ fn e43vf74_matches_original_calls() {
                 }
                 let this = rec.args[0];
                 // Windows 2 and 3 are the gate words (`q` and `b`, see the spec).
-                let gate = u32_of(&rec.windows[2].3) | u32_of(&rec.windows[3].3);
+                let gate = u32_of(&rec.windows[2].before) | u32_of(&rec.windows[3].before);
                 // The flush is a child of the call, so the original records it just before the call's line.
                 let recorded = i > 0 && call.inner[i - 1].addr == SLOT0_FLUSH && call.inner[i - 1].args == [this];
                 assert_eq!(recorded, gate & FLUSH_BIT != 0, "E43Vf74 call {} flush", call.index);
@@ -1087,7 +1066,7 @@ fn e43vf74_matches_original_calls() {
 
 /// The first three lanes of the vector at window `k` (the window's bytes before the call).
 fn vec3_at(windows: &[Window], k: usize) -> Vec4 {
-    let [x, y, z] = floats3(&windows[k].3);
+    let [x, y, z] = floats3(&windows[k].before);
     Vec4 { x, y, z, w: 0.0 }
 }
 
@@ -1098,12 +1077,12 @@ fn floats3(bytes: &[u8]) -> [f32; 3] {
 }
 
 fn f32_at(windows: &[Window], k: usize) -> f32 {
-    f32::from_le_bytes(windows[k].3[..4].try_into().unwrap())
+    f32::from_le_bytes(windows[k].before[..4].try_into().unwrap())
 }
 
 /// One Dot60 call (top-level or inside E43Vf138): windows 0..2 are `a`, `b` and `c`, window 3 the def's vector.
 fn check_dot60(windows: &[Window], st0: u64, name: &str) {
-    let got = dot60(vec3_at(windows, 0), vec3_at(windows, 1), floats3(&windows[2].3), vec3_at(windows, 3));
+    let got = dot60(vec3_at(windows, 0), vec3_at(windows, 1), floats3(&windows[2].before), vec3_at(windows, 3));
     assert_eq!(f64::from(got).to_bits(), st0, "{name}: Dot60 result");
 }
 
@@ -1148,8 +1127,8 @@ fn e43vf138_matches_original_calls() {
                 Dot138 { a: vec3_at(w, 0), b: vec3_at(w, 1), c: vec3_at(w, 2), scale: vec3_at(w, 5), k: f32_at(w, 6) };
             let (f, e) = e43vf138(&input, call.args[4], f32_at(w, 4), f32_at(w, 3));
             let mut mem = map_window_list(w);
-            mem.set_f32(w[4].1, f);
-            mem.set_f32(w[3].1, e);
+            mem.set_f32(w[4].at, f);
+            mem.set_f32(w[3].at, e);
             check_window_list(w, &mem, "E43Vf138");
             calls += 1;
         }
@@ -1165,12 +1144,12 @@ struct VoteReplay<'a>(&'a Inner);
 impl VoteHost for VoteReplay<'_> {
     fn vote(&mut self, pos: Vec4, point: Vec4) -> Result<Option<Vote>, HostUnavailable> {
         let rec = self.0;
-        assert_eq!(rec.windows[0].3, vec4_bytes(pos), "vote position");
-        assert_eq!(rec.windows[1].3, vec4_bytes(point), "vote point");
+        assert_eq!(rec.windows[0].before, vec4_bytes(pos), "vote position");
+        assert_eq!(rec.windows[1].before, vec4_bytes(point), "vote point");
         if rec.eax == 0 {
             return Ok(None);
         }
-        let out = &rec.after[0].2;
+        let out = &rec.after[0].bytes;
         Ok(Some(Vote { index: u32_of(&out[0x20..]), scale: f32::from_le_bytes(out[0x30..0x34].try_into().unwrap()) }))
     }
 }
@@ -1213,17 +1192,10 @@ fn step77_matches_original_calls() {
 #[test]
 fn step76_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, STEP76) else {
-        eprintln!("skipping Step76: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
+    common::replay(VAR, STEP76, "Step76", |call, mem| {
         let (this, point, out) = (call.args[0], call.args[1], call.args[2]);
-        point_velocity(&mut mem, this, point, out);
-        check_windows(call, &mem, "Step76");
-    }
-    eprintln!("Step76: {} calls match", calls.len());
+        point_velocity(mem, this, point, out);
+    });
 }
 
 /// CSolid::Vf85 (direct records): the answer is the definition's word at +0x1ec being nonzero, and the call writes nothing.
@@ -1290,7 +1262,8 @@ fn emit_body_event_matches_original_calls() {
         // as slot 18 left it, so its post-window goes into the memory first.
         // The root's own calls are the ones on `this`: the host notify's children (other bodies) come before them.
         let s18 = call.inner.iter().find(|r| r.addr == S18 && r.args.first() == Some(&this)).expect("S18");
-        let (_, _, _, _, after) = s18.windows.iter().find(|w| w.1 == this).expect("S18's body window");
+        let Window { index: _, at: _, len: _, before: _, after } =
+            s18.windows.iter().find(|w| w.at == this).expect("S18's body window");
         mem.map(this, after);
         let mut body = Body::load(&mem, this);
         let mut host = EmitReplay::default();
@@ -1313,7 +1286,7 @@ fn emit_body_event_matches_original_calls() {
 /// The event payload of `call`'s emit (its last emit, the root's own), against the port's `event`.
 fn check_event(call: &Call, event: &BodyEvent, kind: u32) {
     let emit = call.inner.iter().rev().find(|r| r.addr == EVENT_EMIT).expect("the event's emit");
-    let payload = &emit.windows[0].4;
+    let payload = &emit.windows[0].after;
     assert_eq!(u32_of(&payload[..4]), kind, "the event's kind");
     assert_eq!(u32_of(&payload[4..8]), event.owner, "the event's owner");
     assert_eq!(payload[0x10..0x20], vec4_bytes(event.position)[..], "the event's position");
@@ -1402,8 +1375,8 @@ fn response_matches_original_calls() {
         // Records of other layouts (the store holds older roots of this address) have no body window: skipped. The
         // parent path is not replayed here: a body with a parent is skipped.
         let this = call.args[0];
-        let has_body = call.windows.iter().any(|w| w.0 == 0 && w.1 == this);
-        let has_out = call.windows.iter().any(|w| w.0 == 2 && w.2 == 0xC);
+        let has_body = call.windows.iter().any(|w| w.index == 0 && w.at == this);
+        let has_out = call.windows.iter().any(|w| w.index == 2 && w.len == 0xC);
         if !(has_body && has_out) {
             continue;
         }
@@ -1413,10 +1386,11 @@ fn response_matches_original_calls() {
             continue;
         }
         checked += 1;
-        let point = vec4_of(&call.windows.iter().find(|w| w.0 == 1).expect("the point").3);
+        let point = vec4_of(&call.windows.iter().find(|w| w.index == 1).expect("the point").before);
         let out = response(&body, point, &mut NoParent);
         // The original writes three floats at the output (window 2); the port's are written there before the check.
-        let (_, at, _, _, _) = call.windows.iter().find(|w| w.0 == 2).expect("the output");
+        let Window { index: _, at, len: _, before: _, after: _ } =
+            call.windows.iter().find(|w| w.index == 2).expect("the output");
         mem.map(*at, &vec4_bytes(out)[..12]);
         check_windows(call, &mem, "E43Vf140");
     }
@@ -1437,9 +1411,10 @@ fn e44_jmp_a570_matches_original_calls() {
         let this = call.args[0];
         let body = Body::load(&mem, this);
         assert_eq!(body.parent, 0, "E44_JmpA570 call {}: direct fuzz parent", call.index);
-        let point = vec4_of(&call.windows.iter().find(|w| w.0 == 1).expect("point window").3);
+        let point = vec4_of(&call.windows.iter().find(|w| w.index == 1).expect("point window").before);
         let out = response(&body, point, &mut NoParent);
-        let (_, at, _, _, _) = call.windows.iter().find(|w| w.0 == 2).expect("output window");
+        let Window { index: _, at, len: _, before: _, after: _ } =
+            call.windows.iter().find(|w| w.index == 2).expect("output window");
         mem.map(*at, &vec4_bytes(out)[..12]);
         assert_eq!(call.eax, *at, "E44_JmpA570 call {}: eax", call.index);
         check_windows(call, &mem, "E44_JmpA570");
@@ -1504,7 +1479,7 @@ impl TailReplay<'_> {
             assert_eq!(call.addr, addr, "E43Vf128 call {}: tail call {}", self.index, self.next);
         }
         assert_eq!(call.args, args, "E43Vf128 call {}: tail call {} args", self.index, self.next);
-        for (_, at, _, _, post) in &call.windows {
+        for Window { index: _, at, len: _, before: _, after: post } in &call.windows {
             mem.map(*at, post);
         }
         self.next += 1;
@@ -1595,7 +1570,7 @@ fn replay_impulse(call: &Call, mem: &mut Mem) {
             .inner
             .iter()
             .filter(|r| r.addr == MB560)
-            .map(|r| (vec4_of(&r.windows[0].3), vec4_of(&r.windows[2].4)))
+            .map(|r| (vec4_of(&r.windows[0].before), vec4_of(&r.windows[2].after)))
             .collect(),
     };
     impulse(&mut body, &def, point, kick, &mut host);
@@ -1617,7 +1592,7 @@ fn impulse_matches_original_calls() {
         replay_impulse(call, &mut mem);
         // The records with the physics global's debug word (G-hinge3's) also replay the tail: the calls after the
         // second MB560, the first one's output 0x30 above the frame.
-        if call.windows.iter().any(|w| w.1 == PHYSICS_GLOBAL) {
+        if call.windows.iter().any(|w| w.at == PHYSICS_GLOBAL) {
             let mb560: Vec<usize> = (0..call.inner.len()).filter(|&k| call.inner[k].addr == MB560).collect();
             let mut tail = TailReplay { index: call.index, inner: &call.inner[mb560[1] + 1..], next: 0 };
             let frame = call.inner[mb560[0]].args[3] - 0x30;
@@ -1685,215 +1660,117 @@ fn accumulate_force_matches_original_calls() {
 #[test]
 fn reset_block_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, SCRATCH_VF04) else {
-        eprintln!("skipping E47SolidScratch::Vf04: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        store_scratch_reset(&mut mem, call.args[0]);
-        check_windows(call, &mem, "E47SolidScratch::Vf04");
-    }
-    eprintln!("E47SolidScratch::Vf04: {} calls match", calls.len());
+    common::replay(VAR, SCRATCH_VF04, "E47SolidScratch::Vf04", |call, mem| {
+        store_scratch_reset(mem, call.args[0]);
+    });
 }
 
 #[test]
 fn scratch_base_init_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, SCRATCH_BASE_INIT) else {
-        eprintln!("skipping E47_ScratchBaseInit: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        store_scratch_base_init(&mut mem, call.args[0]);
-        check_windows(call, &mem, "E47_ScratchBaseInit");
-    }
-    eprintln!("E47_ScratchBaseInit: {} calls match", calls.len());
+    common::replay(VAR, SCRATCH_BASE_INIT, "E47_ScratchBaseInit", |call, mem| {
+        store_scratch_base_init(mem, call.args[0]);
+    });
 }
 
 #[test]
 fn set_from_quat_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, SET_FROM_QUAT) else {
-        eprintln!("skipping E01Mat3::SetFromQuat: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
+    common::replay(VAR, SET_FROM_QUAT, "E01Mat3::SetFromQuat", |call, mem| {
         let q = vec4_of(window_pre(call, 1));
         let m = from_quat(Quat { x: q.x, y: q.y, z: q.z, w: q.w });
         for (k, v) in m.iter().flatten().enumerate() {
             mem.set_f32(call.args[0] + 4 * k as u32, *v);
         }
-        check_windows(call, &mem, "E01Mat3::SetFromQuat");
-    }
-    eprintln!("E01Mat3::SetFromQuat: {} calls match", calls.len());
+    });
 }
 
 #[test]
 fn transform_rows_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, E43_VFAC) else {
-        eprintln!("skipping E43VfAC: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        transform_body_rows(&mut mem, call.args[0], call.args[1], call.args[2]);
-        check_windows(call, &mem, "CSolid::E43VfAC");
-    }
-    eprintln!("CSolid::E43VfAC: {} calls match", calls.len());
+    common::replay(VAR, E43_VFAC, "CSolid::E43VfAC", |call, mem| {
+        transform_body_rows(mem, call.args[0], call.args[1], call.args[2]);
+    });
 }
 
 #[test]
 fn transform_rows3_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, E43_VFB0) else {
-        eprintln!("skipping E43VfB0: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        transform_body_rows3(&mut mem, call.args[0], call.args[1], call.args[2]);
-        check_windows(call, &mem, "CSolid::E43VfB0");
-    }
-    eprintln!("CSolid::E43VfB0: {} calls match", calls.len());
+    common::replay(VAR, E43_VFB0, "CSolid::E43VfB0", |call, mem| {
+        transform_body_rows3(mem, call.args[0], call.args[1], call.args[2]);
+    });
 }
 
 #[test]
 fn subtract_origin_and_transform_rows_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, E43_VFA0) else {
-        eprintln!("skipping E43VfA0: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        solid_e43vfa0(&mut mem, call.args[0], call.args[1], call.args[2]);
-        check_windows(call, &mem, "CSolid::E43VfA0");
-    }
-    eprintln!("CSolid::E43VfA0: {} calls match", calls.len());
+    common::replay(VAR, E43_VFA0, "CSolid::E43VfA0", |call, mem| {
+        solid_e43vfa0(mem, call.args[0], call.args[1], call.args[2]);
+    });
 }
 
 #[test]
 fn fold_rows_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, E43_VFBC) else {
-        eprintln!("skipping E43VfBC: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        fold_body_rows(&mut mem, call.args[0], call.args[1], call.args[2]);
-        check_windows(call, &mem, "CSolid::E43VfBC");
-    }
-    eprintln!("CSolid::E43VfBC: {} calls match", calls.len());
+    common::replay(VAR, E43_VFBC, "CSolid::E43VfBC", |call, mem| {
+        fold_body_rows(mem, call.args[0], call.args[1], call.args[2]);
+    });
 }
 
 #[test]
 fn fold_rows_reordered_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, E43_VFC0) else {
-        eprintln!("skipping E43VfC0: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        fold_body_rows_reordered(&mut mem, call.args[0], call.args[1], call.args[2]);
-        check_windows(call, &mem, "CSolid::E43VfC0");
-    }
-    eprintln!("CSolid::E43VfC0: {} calls match", calls.len());
+    common::replay(VAR, E43_VFC0, "CSolid::E43VfC0", |call, mem| {
+        fold_body_rows_reordered(mem, call.args[0], call.args[1], call.args[2]);
+    });
 }
 
 #[test]
 fn quat_plus_rows_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, E43_VFA4) else {
-        eprintln!("skipping E43VfA4: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        quat_plus_body_rows(&mut mem, call.args[0], call.args[1], call.args[2]);
-        check_windows(call, &mem, "CSolid::E43VfA4");
-    }
-    eprintln!("CSolid::E43VfA4: {} calls match", calls.len());
+    common::replay(VAR, E43_VFA4, "CSolid::E43VfA4", |call, mem| {
+        quat_plus_body_rows(mem, call.args[0], call.args[1], call.args[2]);
+    });
 }
 
 #[test]
 fn quat_diff_rows_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, E43_VFA8) else {
-        eprintln!("skipping E43VfA8: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        quat_diff_body_rows(&mut mem, call.args[0], call.args[1], call.args[2]);
-        check_windows(call, &mem, "CSolid::E43VfA8");
-    }
-    eprintln!("CSolid::E43VfA8: {} calls match", calls.len());
+    common::replay(VAR, E43_VFA8, "CSolid::E43VfA8", |call, mem| {
+        quat_diff_body_rows(mem, call.args[0], call.args[1], call.args[2]);
+    });
 }
 
 #[test]
 fn quat_transform_rows_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, E43_VFB4) else {
-        eprintln!("skipping E43VfB4: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        quat_transform_body_rows(&mut mem, call.args[0], call.args[1], call.args[2]);
-        check_windows(call, &mem, "CSolid::E43VfB4");
-    }
-    eprintln!("CSolid::E43VfB4: {} calls match", calls.len());
+    common::replay(VAR, E43_VFB4, "CSolid::E43VfB4", |call, mem| {
+        quat_transform_body_rows(mem, call.args[0], call.args[1], call.args[2]);
+    });
 }
 
 #[test]
 fn quat_rows_b8_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, E43_VFB8) else {
-        eprintln!("skipping E43VfB8: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        quat_body_rows_b8(&mut mem, call.args[0], call.args[1], call.args[2]);
-        check_windows(call, &mem, "CSolid::E43VfB8");
-    }
-    eprintln!("CSolid::E43VfB8: {} calls match", calls.len());
+    common::replay(VAR, E43_VFB8, "CSolid::E43VfB8", |call, mem| {
+        quat_body_rows_b8(mem, call.args[0], call.args[1], call.args[2]);
+    });
 }
 
 #[test]
 fn quat_fold_rows_c4_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, E43_VFC4) else {
-        eprintln!("skipping E43VfC4: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        fold_quat_body_rows_c4(&mut mem, call.args[0], call.args[1], call.args[2]);
-        check_windows(call, &mem, "CSolid::E43VfC4");
-    }
-    eprintln!("CSolid::E43VfC4: {} calls match", calls.len());
+    common::replay(VAR, E43_VFC4, "CSolid::E43VfC4", |call, mem| {
+        fold_quat_body_rows_c4(mem, call.args[0], call.args[1], call.args[2]);
+    });
 }
 
 #[test]
 fn quat_fold_rows_c8_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, E43_VFC8) else {
-        eprintln!("skipping E43VfC8: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        fold_quat_body_rows_c8(&mut mem, call.args[0], call.args[1], call.args[2]);
-        check_windows(call, &mem, "CSolid::E43VfC8");
-    }
-    eprintln!("CSolid::E43VfC8: {} calls match", calls.len());
+    common::replay(VAR, E43_VFC8, "CSolid::E43VfC8", |call, mem| {
+        fold_quat_body_rows_c8(mem, call.args[0], call.args[1], call.args[2]);
+    });
 }
 
 /// One recorded `E46Mat::Mul` (the child of `Vf17x`): its inputs and its output.
@@ -1906,10 +1783,10 @@ struct MulRecord {
 fn mul_record(inner: &Inner) -> MulRecord {
     // Window 0 is the matrix (before), 1 the output (after), 2 the diagonal (before), each nine words.
     let before = |k: usize| -> [u32; 9] {
-        let w = &inner.windows.iter().find(|w| w.0 == k).expect("window").3;
+        let w = &inner.windows.iter().find(|w| w.index == k).expect("window").before;
         std::array::from_fn(|i| u32::from_le_bytes(w[4 * i..4 * i + 4].try_into().unwrap()))
     };
-    let out = &inner.windows.iter().find(|w| w.0 == 1).expect("window").4;
+    let out = &inner.windows.iter().find(|w| w.index == 1).expect("window").after;
     MulRecord {
         m: before(0),
         b: before(2),
@@ -1967,24 +1844,17 @@ impl Vf54Host for EntityCount {
 #[test]
 fn vf54_helper_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, VF54_HELPER) else {
-        eprintln!("skipping E47_Vf54Helper: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
+    common::replay(VAR, VF54_HELPER, "E47_Vf54Helper", |call, mem| {
         let mut host = EntityCount::default();
-        scratch_reset_after_entity(&mut mem, call.args[0], &mut host)
+        scratch_reset_after_entity(mem, call.args[0], &mut host)
             .expect("E47_Vf54Helper: the entity host is not called");
         assert_eq!(host.0, 1, "E47_Vf54Helper call {}: one entity call", call.index);
-        check_windows(call, &mem, "E47_Vf54Helper");
-    }
-    eprintln!("E47_Vf54Helper: {} calls match", calls.len());
+    });
 }
 
 /// Writes the recorded windows of one physics-core call into `mem`, after checking the bytes before the call.
 fn replay_windows(mem: &mut Mem, windows: &[Window], name: &str) {
-    for (k, at, len, pre, post) in windows {
+    for Window { index: k, at, len, before: pre, after: post } in windows {
         assert_eq!(mem.read(*at, *len), *pre, "{name} window {k} before");
         mem.map(*at, post);
     }
@@ -1993,17 +1863,10 @@ fn replay_windows(mem: &mut Mem, windows: &[Window], name: &str) {
 #[test]
 fn scale_add_rows_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, VF39X) else {
-        eprintln!("skipping E47Solid::Vf39x: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        let ret = scale_add_rows(&mut mem, call.args[0], call.args[1], call.args[2]);
+    common::replay(VAR, VF39X, "E47Solid::Vf39x", |call, mem| {
+        let ret = scale_add_rows(mem, call.args[0], call.args[1], call.args[2]);
         assert_eq!(ret, call.eax, "E47Solid::Vf39x call {}: returns dst", call.index);
-        check_windows(call, &mem, "E47Solid::Vf39x");
-    }
-    eprintln!("E47Solid::Vf39x: {} calls match", calls.len());
+    });
 }
 
 /// The calls one `Vf16Helper` call makes outside the port: the product calls of its two `Vf17x` calls (in order), the
@@ -2092,8 +1955,8 @@ fn entity_vf20_jump_passes_through() {
 /// Maps the windows of the call's inner calls that its own windows do not cover, as recorded before the call, so a
 /// replayed child can read them (the owner object of `CBody::CState::Unk44`, the block of the `CDef` constructor).
 fn map_inner_windows(mem: &mut Mem, call: &Call) {
-    for (_, at, len, pre, _) in call.inner.iter().flat_map(|i| &i.windows) {
-        if !call.windows.iter().any(|w| w.1 <= *at && *at + *len as u32 <= w.1 + w.2 as u32) {
+    for Window { index: _, at, len, before: pre, after: _ } in call.inner.iter().flat_map(|i| &i.windows) {
+        if !call.windows.iter().any(|w| w.at <= *at && *at + *len as u32 <= w.at + w.len as u32) {
             mem.map(*at, pre);
         }
     }
@@ -2114,7 +1977,7 @@ impl Heap for NewDefReplay {
 /// final bytes of the block (an inner call's window can hold a vptr that a later write in the same constructor replaces).
 fn check_cdef_windows(call: &Call, mem: &Mem, name: &str) {
     for inner in call.inner.iter().filter(|i| i.addr == CDEF_CTOR) {
-        for (k, at, len, _, post) in &inner.windows {
+        for Window { index: k, at, len, after: post, .. } in &inner.windows {
             assert_eq!(mem.read(*at, *len), *post, "{name} call {} CSolid::CDef window {k}", call.index);
         }
     }
@@ -2212,14 +2075,7 @@ fn e47_state_ctor_matches_original_calls() {
 #[test]
 fn cdef_ctor_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, CDEF_CTOR) else {
-        eprintln!("skipping CSolid::CDef::CDef: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        solid_def_ctor(&mut mem, call.args[0], call.args[1]);
-        check_windows(call, &mem, "CSolid::CDef::CDef");
-    }
-    eprintln!("CSolid::CDef::CDef: {} calls match", calls.len());
+    common::replay(VAR, CDEF_CTOR, "CSolid::CDef::CDef", |call, mem| {
+        solid_def_ctor(mem, call.args[0], call.args[1]);
+    });
 }

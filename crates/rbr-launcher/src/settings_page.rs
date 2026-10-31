@@ -7,7 +7,7 @@ use egui::{Color32, Id};
 
 use crate::disc_install::DiscSetup;
 use crate::pages::{fields, section, Page, GOOD, NO_NGP, WARN};
-use crate::{controls_page, install, Form};
+use crate::{controls_page, install, job, Form};
 
 /// The RSF field's egui id: its folder is scanned when it loses focus.
 pub const RSF_FIELD: &str = "rsf_root";
@@ -29,7 +29,7 @@ impl Form {
                     let edit = ui
                         .add(egui::TextEdit::singleline(&mut self.install_folder).hint_text(hint).desired_width(340.0));
                     let picked = ui.button("Browse…").clicked()
-                        && install::pick_folder("Your Richard Burns Rally folder")
+                        && job::pick_folder("Your Richard Burns Rally folder")
                             .map(|d| self.install_folder = d)
                             .is_some();
                     self.disc_setup.open |= ui.button("Set up from the disc…").clicked();
@@ -193,7 +193,7 @@ pub fn folder_row(ui: &mut egui::Ui, folder: &mut String, setup: &mut DiscSetup)
         let hint = "the Richard Burns Rally folder, with RichardBurnsRally_SSE.exe";
         let edit = ui.add(egui::TextEdit::singleline(folder).hint_text(hint).desired_width(420.0));
         let picked = ui.button("Browse…").clicked()
-            && install::pick_folder("Your Richard Burns Rally folder").map(|dir| *folder = dir).is_some();
+            && job::pick_folder("Your Richard Burns Rally folder").map(|dir| *folder = dir).is_some();
         setup.open |= ui.button("Set up from the disc…").clicked();
         picked || edit.lost_focus()
     })

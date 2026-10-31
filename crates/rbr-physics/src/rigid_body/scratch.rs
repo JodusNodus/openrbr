@@ -1,21 +1,19 @@
-//! `CSolid::E43Vf74` (slot 29, 0x529ea0): the scratch accumulate. The body's scale (`+0xd0`) times the vector `pp` is
-//! added to the scratch (`+0x310`), lane by lane (`mulps`, then `addps`). When the gate word has bit 0x4000 the call
-//! runs the body's slot 0 (`CEntity::Vf00`, 0x519950: a read that returns the name, so it changes nothing), which the
-//! host makes. The gate is the caller's: the original reads `q` and `b` from the app globals and tests `(q | b)`.
+//! The scratch accumulate: the body's scale times the vector `pp` is added to the scratch, lane by lane. When the
+//! gate word has `FLUSH_BIT` the call runs the slot-0 call, which the host makes. The gate is the caller's.
 
 use super::host::HostUnavailable;
 use super::layout::{Body, Vec4};
 
-/// The gate bit that runs the body's slot 0.
+/// The gate bit that runs the slot-0 call.
 pub const FLUSH_BIT: u32 = 0x4000;
 
-/// The body's slot-0 call the gate runs. The original's result is not used.
+/// The slot-0 call the gate runs. Its result is not used.
 pub trait FlushHost {
     fn flush(&mut self) -> Result<(), HostUnavailable>;
 }
 
-/// `E43Vf74`: adds `pp * scratch_scale` to the scratch, then runs the flush when `gate` has `FLUSH_BIT`. A host error
-/// stops the call after the scratch is written, as the original's calls before it would have.
+/// Adds `pp * scratch_scale` to the scratch, then runs the flush when `gate` has `FLUSH_BIT`. A host error stops the
+/// call after the scratch is written.
 pub fn accumulate(body: &mut Body, pp: Vec4, gate: u32, host: &mut impl FlushHost) -> Result<(), HostUnavailable> {
     let k = body.scratch_scale;
     let s = body.scratch;

@@ -17,7 +17,7 @@ impl LinkRef {
     }
 }
 
-/// The address of a list head (`E34LinkList10`, 12 bytes).
+/// The address of a list head (12 bytes).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ListRef(u32);
 

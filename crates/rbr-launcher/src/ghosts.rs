@@ -98,7 +98,7 @@ mod tests {
 
     #[test]
     fn a_saved_ghost_lists_its_weather_words() {
-        let here = std::env::temp_dir().join(format!("rbr-launcher-ghost-{}", std::process::id()));
+        let here = crate::test_dir("ghost-words");
         std::fs::create_dir_all(here.join(GHOST_DIR)).unwrap();
         let weather =
             rbr_formats::ghost::Weather { track_letter: 3, cloud: 2, wetness: 2, wear: 1, ..Default::default() };

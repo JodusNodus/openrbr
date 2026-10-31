@@ -12,14 +12,13 @@ use crate::store::Raw;
 /// A collision event's two sides, named by the body they belong to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Side {
-    /// The event's body (`+0xa0`), material ids at `+0xac`.
+    /// The event's body, with its material ids.
     Body,
-    /// The event's partner (`+0x98`), material ids at `+0x80`.
+    /// The event's partner, with its material ids.
     Partner,
 }
 
-/// A tree node's flag word (`+0x18`: the face count in bits 0 to 20, the table index from bit 22) and its link
-/// (`+0x1c`: the children, or the first face).
+/// A tree node's flag word (the face count and the table index) and its link (the children, or the first face).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TreeNode {
     pub word: u32,
@@ -60,7 +59,7 @@ pub struct RayHit {
     pub v: f32,
 }
 
-/// An event's id words: the first pair (`+0x8c`, `+0x90`) and the second (`+0xa4`, `+0xa8`).
+/// An event's id words: the first pair and the second.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EventIds {
     pub first: [u32; 2],
@@ -75,13 +74,13 @@ pub struct EventPlane {
     pub point: Vec3,
 }
 
-/// The solver (`CCollisionSolver`), its event list, contact rows and offset rows, and the bodies and events they
-/// name. `solver`, `event`, `body`, `rows` and `row` are object addresses.
+/// The solver, its event list, contact rows and offset rows, and the bodies and events they name. `solver`,
+/// `event`, `body`, `rows` and `row` are object addresses.
 pub trait CollisionStore: Raw {
-    /// A 16-byte vector at `at` (the caller's frame or an out pointer), and its store.
+    /// A vector at `at`, and its store.
     fn vec4(&self, at: u32) -> Vec4;
     fn store_vec4(&mut self, at: u32, value: Vec4);
-    /// The function at `object`'s vtable byte offset `slot`.
+    /// The function at `object`'s virtual slot `slot`.
     fn vtable_slot(&self, object: u32, slot: u32) -> u32;
 
     // The solver's event list.
@@ -89,13 +88,13 @@ pub trait CollisionStore: Raw {
     fn event_list_len(&self, solver: u32) -> u32;
     fn event_count(&self, solver: u32) -> u32;
     fn next_event(&self, event: u32) -> u32;
-    /// Whether the event's slot 0x1c is `CCollisionEvent::Vf1Cx`, which the release and drain ports assume.
+    /// Whether the event releases to the pool, which the release and drain assume.
     fn event_releases_to_pool(&self, event: u32) -> bool;
-    /// `list::drain` of the solver's event list with the pool flag.
+    /// Drains the solver's event list with the pool flag.
     fn drain_event_list(&mut self, solver: u32);
-    /// `list::release`: counts the event off the solver's list and unlinks it when it is on it.
+    /// Releases the event: counts it off the solver's list and unlinks it when it is on it.
     fn release_event(&mut self, solver: u32, event: u32);
-    /// `event_pool::vf1cx` with the pool flag: the event goes back to the free list.
+    /// Returns the event to the free list with the pool flag.
     fn pool_event(&mut self, event: u32);
 
     // An event's fields.
@@ -104,10 +103,10 @@ pub trait CollisionStore: Raw {
     fn event_flags(&self, event: u32) -> u32;
     fn store_event_flags(&mut self, event: u32, flags: u32);
     fn event_suppressed(&self, event: u32) -> bool;
-    /// `CCollisionEvent::Get94`.
+    /// The event's time.
     fn event_time(&self, event: u32) -> f32;
     fn event_plane(&self, event: u32) -> EventPlane;
-    /// The event's plane vector alone (`+0x70`).
+    /// The event's plane vector.
     fn event_normal(&self, event: u32) -> Vec4;
     /// The event's material refresh from its bodies' grid tags.
     fn refresh_event_materials(&mut self, event: u32);
@@ -121,7 +120,7 @@ pub trait CollisionStore: Raw {
     fn event_other_point(&self, event: u32, side: u32) -> u32;
 
     // A body.
-    /// Whether the body takes part in the solve (flag byte `+0x60`, bit 2).
+    /// Whether the body takes part in the solve.
     fn body_active(&self, body: u32) -> bool;
     fn body_progress(&self, body: u32) -> f32;
     fn body_position(&self, body: u32) -> Vec4;
@@ -130,7 +129,7 @@ pub trait CollisionStore: Raw {
     fn set_body_contact_rows(&mut self, body: u32, rows: u32);
     fn body_offset_row(&self, body: u32) -> u32;
     fn set_body_offset_row(&mut self, body: u32, row: u32);
-    /// The root frame `ComposeA` is called on.
+    /// The root frame the body's transforms compose on.
     fn frame_root(&self) -> u32;
 
     // The solver's contact rows.
@@ -161,10 +160,10 @@ pub trait CollisionStore: Raw {
 
     /// The body's bounds: the lower and upper vectors.
     fn body_bounds(&self, body: u32) -> (Vec4, Vec4);
-    /// Whether the grid is active (its byte `+0x68b`).
+    /// Whether the grid is active.
     fn grid_active(&self, grid: u32) -> u8;
 
-    // The body contact walks (`CBody::VfD0`, `VfDC`): the other entity, the world flags and the grids.
+    // The body contact walks: the other entity, the world flags and the grids.
     fn entity_flags(&self, entity: u32) -> u8;
     /// The world settings' contact flags (bit 2 point contacts, bit 3 edge contacts).
     fn world_flags(&self) -> u32;
@@ -176,9 +175,9 @@ pub trait CollisionStore: Raw {
     fn grid_edge(&self, grid: u32, index: u32) -> u32;
     /// The six bytes of the grid's edge record `index`: the two vertices and the sample indices.
     fn grid_pair(&self, grid: u32, index: u32) -> [u8; 6];
-    /// The body's grid flag bytes (`+0x688`, `+0x689`), read and cleared.
+    /// The body's grid flag bytes, read and cleared.
     fn take_body_grid_flags(&mut self, body: u32) -> (u32, u32);
-    /// The addresses of the event's two sample words, which `SampleA` and `SampleB` write.
+    /// The addresses of the event's two sample words.
     fn event_sample_slots(&self, event: u32) -> (u32, u32);
     fn store_event_samples(&mut self, event: u32, first: u32, second: u32);
 
@@ -197,20 +196,20 @@ pub trait CollisionStore: Raw {
     fn collector_leaf(&self, collector: u32, index: u32) -> u32;
     fn wall_latch(&self, wall: u32) -> u32;
     fn set_wall_latch(&mut self, wall: u32, value: u32);
-    /// The collector `QueryBox` fills (the wall's leaf list).
+    /// The collector the box query fills (the wall's leaf list).
     fn wall_leaves(&self, wall: u32) -> u32;
     fn wall_mesh(&self, wall: u32) -> u32;
-    /// The four vertices of segment record `index`, at the 8-byte stride.
+    /// The four vertices of segment record `index`.
     fn wall_segment(&self, mesh: u32, index: u32) -> [[f32; 2]; 4];
     /// A leaf's segment count, and the index word of its segment `j`.
     fn leaf_count(&self, leaf: u32) -> u32;
     fn leaf_word(&self, leaf: u32, j: u32) -> u32;
     /// The penetration signal's emit object.
     fn penetration_emitter(&self) -> u32;
-    /// What `Raycast` writes to its record: the normal, penetration, signed distance and flags.
+    /// The probe record at `out`: the normal, penetration, signed distance and flags.
     fn store_wall_probe(&mut self, out: u32, hit: &SegmentHit, flags: u32);
     fn store_wall_flags(&mut self, out: u32, flags: u32);
-    /// What `VfE8` writes to its record on a crossing.
+    /// The crossing record at `out`: the point, the normal, the offset, the parameter and the wall.
     fn store_wall_crossing(&mut self, out: u32, wall: u32, hit: &EdgeCross);
 
     // The collision mesh: the node tree, the face lists and the hit records.
@@ -231,7 +230,7 @@ pub trait CollisionStore: Raw {
     /// The face record at `at`.
     fn face_bytes(&self, at: u32) -> [u8; 0x12];
     fn mesh_flags(&self, object: u32) -> u32;
-    /// A mesh's vertex block, vertex `index` of it (16-byte vertices) and its tags.
+    /// A mesh's vertex block and its tags.
     fn mesh_block(&self, object: u32) -> u32;
     fn mesh_point(&self, block: u32, index: u32) -> Vec3;
     fn mesh_tag(&self, object: u32, index: u32) -> u32;
@@ -248,10 +247,10 @@ pub trait CollisionStore: Raw {
     fn set_ray_hit_t(&mut self, hit: u32, t: f32);
     fn store_ray_hit_normal(&mut self, hit: u32, normal: Vec3);
 
-    // The collision grid's face and edge-pair tables (`E37GridOps`).
+    // The collision grid's face and edge-pair tables.
     fn grid_bounds(&self, grid: u32) -> Bounds;
     fn grid_face_count(&self, grid: u32) -> u32;
-    /// Whether the material byte of face `index` is not the skipped `0xff`.
+    /// Whether the face's material is sampled (not the skipped value).
     fn grid_face_is_valid(&self, grid: u32, index: u32) -> bool;
     fn grid_face(&self, grid: u32, index: u32) -> Face;
     fn grid_face_samples(&self, grid: u32, index: u32) -> [u8; 3];
@@ -263,7 +262,7 @@ pub trait CollisionStore: Raw {
     fn grid_sample_dimensions(&self, grid: u32) -> Option<(u16, u16)>;
     fn grid_vertex_samples(&self, grid: u32, indices: [u8; 3]) -> [[u8; 2]; 3];
     fn grid_sample_bytes(&self, grid: u32, first: i32, second: i32) -> [u8; 2];
-    /// The grid's sample result bytes (`+0x688`, `+0x689`).
+    /// The grid's sample result bytes.
     fn store_grid_sample_bytes(&mut self, grid: u32, bytes: [u8; 2]);
     /// The vertex in slot `slot` of the grid's vertex table.
     fn grid_vertex(&self, grid: u32, slot: u8) -> Vec3;
@@ -275,7 +274,7 @@ pub trait CollisionStore: Raw {
     fn copy_grid(&mut self, grid: u32, src: u32);
     /// The addresses of the grid's two point blocks.
     fn grid_blocks(&self, grid: u32) -> (u32, u32);
-    /// The scale word the half extent takes (the w lane of the half vector).
+    /// The scale the half extent takes.
     fn grid_half_scale(&self, grid: u32) -> f32;
     /// The grid's bounds: low, high, centre and half extent.
     fn store_grid_bounds(&mut self, grid: u32, low: Vec4, high: Vec4, centre: Vec4, half: Vec4);
@@ -284,16 +283,16 @@ pub trait CollisionStore: Raw {
     /// A three-lane vector at `at`, and its store (the fourth lane is not written).
     fn vec3(&self, at: u32) -> Vec3;
     fn store_vec3(&mut self, at: u32, value: Vec3);
-    /// The address of the event's contact point (`+0x60`), the vector its bodies' calls take.
+    /// The address of the event's contact point, the vector its bodies' calls take.
     fn event_point(&self, event: u32) -> u32;
     /// The address of the event's material ids on `side`.
     fn event_materials_at(&self, event: u32, side: Side) -> u32;
     fn event_ids(&self, event: u32) -> EventIds;
-    /// Where `InitFull` has the body's transforms write the event's two contact points.
+    /// Where the full initialization has the body's transforms write the event's two contact points.
     fn event_contact_outputs(&self, event: u32) -> (u32, u32);
-    /// `InitFull`'s field writes, in the original's order, before its calls: the links cleared, the handle on the root
-    /// identity, the base vtable, the vectors and ids cleared, the tag, the 16 payload words at `payload`, the body and
-    /// the kind in the flags.
+    /// The full initialization's field writes, in order, before its calls: the links cleared, the handle on the root
+    /// identity, the base table, the vectors and ids cleared, the tag, the 16 payload words at `payload`, the body
+    /// and the kind in the flags.
     fn init_event(&mut self, event: u32, kind: u32, body: u32, tag: u32, payload: u32);
     /// The global event count, one more.
     fn count_event(&mut self);
@@ -307,7 +306,7 @@ pub trait CollisionStore: Raw {
     /// Sets all three of the event's body-side material words to `tag` (the last cleared).
     fn store_event_tag(&mut self, event: u32, tag: u32);
 
-    // E36's collision entry (`object`): an OBB frame and four contact records, filled from the bodies in the cells.
+    // The collision entry (`object`): a box frame and four contact records, filled from the bodies in the cells.
     fn obb_frame(&self, object: u32) -> ObbFrame;
     /// The sphere query at `at`: its centre and radius.
     fn sphere_input(&self, at: u32) -> (Vec4, f32);
@@ -326,7 +325,7 @@ pub trait CollisionStore: Raw {
     fn entry_centre(&self, object: u32) -> [f32; 3];
     /// The address the entry's contact records are listed at.
     fn contact_list(&self, object: u32) -> u32;
-    /// The matrix address `E36Collect` composes with.
+    /// The matrix address the entry composes with.
     fn collide_matrix(&self) -> u32;
     /// A body's collision entry: its active shape, whether that shape is a sphere, and its tag.
     fn collision_shape(&self, collision: u32) -> u32;
@@ -341,7 +340,7 @@ pub trait CollisionStore: Raw {
     fn node_owner(&self, node: u32) -> u32;
 }
 
-/// The addresses of an E36 entry's frame: the point and axes the bodies' transforms read (`*_in`) and the places they
+/// The addresses of a collision entry's frame: the point and axes the bodies' transforms read (`*_in`) and the places they
 /// write (`*_out`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct EntryFrame {

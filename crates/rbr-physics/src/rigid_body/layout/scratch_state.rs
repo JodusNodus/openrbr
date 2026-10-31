@@ -2,7 +2,6 @@
 //! quaternion words.
 
 use super::solid_ctor::SOLID_SCRATCH;
-use crate::math::quat::Quat;
 use crate::mem::Mem;
 use crate::rigid_body::host::{HostUnavailable, Vf20Host, Vf54Host};
 
@@ -54,17 +53,6 @@ pub fn scratch_reset_after_entity(mem: &mut Mem, this: u32, host: &mut impl Vf54
     host.entity_scratch_tail()?;
     store_scratch_reset(mem, this + SOLID_SCRATCH);
     Ok(())
-}
-
-pub(super) fn load_quat(mem: &Mem, at: u32) -> Quat {
-    Quat { x: mem.f32(at), y: mem.f32(at + 0x4), z: mem.f32(at + 0x8), w: mem.f32(at + 0xc) }
-}
-
-pub(super) fn store_quat(mem: &mut Mem, at: u32, q: Quat) {
-    mem.set_f32(at, q.x);
-    mem.set_f32(at + 0x4, q.y);
-    mem.set_f32(at + 0x8, q.z);
-    mem.set_f32(at + 0xc, q.w);
 }
 
 /// `CSolid::E43Vf20` (0x529200), the slot-8 entry: a bare jump to the entity walk `CEntity::E43Vf20` (0x51a3a0) with

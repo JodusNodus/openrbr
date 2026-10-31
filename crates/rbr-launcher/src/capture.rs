@@ -218,7 +218,7 @@ mod tests {
 
     #[test]
     fn a_capture_makes_its_folder() {
-        let root = std::env::temp_dir().join(format!("rbr-launcher-capture-{}", std::process::id()));
+        let root = crate::test_dir("capture-folder");
         let path = root.join("new").join("page.png");
         write_png(&path, &vec![0; (4 * SIZE.0 * SIZE.1) as usize]).unwrap();
         assert!(path.is_file());

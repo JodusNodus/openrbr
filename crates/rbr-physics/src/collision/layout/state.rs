@@ -10,7 +10,6 @@ pub const BODY_STATE_TABLE: u32 = 0x8eb798;
 pub const BODY_STATE_VTABLE: u32 = 0x737c34;
 pub const BODY_SCRATCH_VTABLE: u32 = 0x737c8c;
 pub const CDEF_SIZE: usize = 0x20;
-pub const CSTATE_SIZE: usize = 0x44;
 pub const CSTATE_OWNER_OFFSET: u32 = 0x30;
 pub const CSTATE_REAL_OFFSET: u32 = 0x34;
 

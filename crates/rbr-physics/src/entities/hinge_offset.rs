@@ -16,7 +16,7 @@ pub struct OffsetInput {
     pub car: u32,
     /// The second row of the hinge rotation: the vector the definition's matrix is applied to.
     pub rotation_row: [f32; 3],
-    /// The axes built from `vecHingeAxis_RF` and `vecZeroAxis_RF`, row-major.
+    /// The axes built from the hinge axis and the zero axis in the reference frame, row-major.
     pub axes_rf: [[f32; 3]; 3],
     /// The body's offset vector (named by use: its meaning is not known), which the carried vector is added to.
     pub offset: [f32; 3],

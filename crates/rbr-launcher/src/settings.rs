@@ -1,6 +1,7 @@
 //! The settings file, `launcher-settings.ini` in the player's folder (`home`): the form read from it and written to it.
 
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 use rbr_formats::data::Data;
 use rbr_formats::ini;
@@ -26,7 +27,7 @@ use crate::ghosts::GhostChoice;
 use crate::graphics_page::{
     Graphics, HudChoice, WetRoads, DEFAULT_GRAPHICS, MAX_GROUP_VOLUME, MAX_VOLUME, RENDER_SCALES,
 };
-use crate::pages::Page;
+use crate::pages::{Choice, Page};
 use crate::rally_page::RallyPage;
 use crate::setup_page::SetupPage;
 use crate::{install, preview, Form, Paths, Start};
@@ -86,31 +87,8 @@ pub enum Fog {
 }
 
 impl Fog {
-    pub fn name(self) -> &'static str {
-        match self {
-            Fog::Off => "off",
-            Fog::Light => "light",
-            Fog::Heavy => "heavy",
-        }
-    }
-
-    /// The Drive page's word for the fog.
-    pub fn label(self) -> &'static str {
-        match self {
-            Fog::Off => "Off",
-            Fog::Light => "Light",
-            Fog::Heavy => "Heavy",
-        }
-    }
-
-    pub fn parse(text: &str) -> Option<Fog> {
-        match text {
-            "off" => Some(Fog::Off),
-            "light" => Some(Fog::Light),
-            "heavy" => Some(Fog::Heavy),
-            _ => None,
-        }
-    }
+    /// The fogs offered, in the dropdown's order.
+    pub const ALL: [Fog; 3] = [Fog::Off, Fog::Light, Fog::Heavy];
 }
 
 /// Our cloud cover over the stage (`viewer --clouds`), not the game's.
@@ -124,19 +102,6 @@ pub enum Clouds {
 
 impl Clouds {
     pub const ALL: [Clouds; 4] = [Clouds::Clear, Clouds::Partly, Clouds::Light, Clouds::Heavy];
-
-    pub fn name(self) -> &'static str {
-        ["clear", "partly", "light", "heavy"][self as usize]
-    }
-
-    /// The Drive page's word for the cover.
-    pub fn label(self) -> &'static str {
-        ["Clear", "Partly cloudy", "Light clouds", "Overcast"][self as usize]
-    }
-
-    pub fn parse(text: &str) -> Option<Clouds> {
-        Clouds::ALL.into_iter().find(|clouds| clouds.name() == text)
-    }
 }
 
 /// Our rain or snow over the stage (`viewer --precipitation`), not the game's; the road's wetness stays separate.
@@ -151,18 +116,43 @@ pub enum Precipitation {
 impl Precipitation {
     pub const ALL: [Precipitation; 4] =
         [Precipitation::None, Precipitation::Light, Precipitation::Moderate, Precipitation::Heavy];
+}
 
-    pub fn name(self) -> &'static str {
+impl Choice for Fog {
+    const ALL: &[Self] = &Fog::ALL;
+    fn name(self) -> &'static str {
+        match self {
+            Fog::Off => "off",
+            Fog::Light => "light",
+            Fog::Heavy => "heavy",
+        }
+    }
+    fn label(self) -> &'static str {
+        match self {
+            Fog::Off => "Off",
+            Fog::Light => "Light",
+            Fog::Heavy => "Heavy",
+        }
+    }
+}
+
+impl Choice for Clouds {
+    const ALL: &[Self] = &Clouds::ALL;
+    fn name(self) -> &'static str {
+        ["clear", "partly", "light", "heavy"][self as usize]
+    }
+    fn label(self) -> &'static str {
+        ["Clear", "Partly cloudy", "Light clouds", "Overcast"][self as usize]
+    }
+}
+
+impl Choice for Precipitation {
+    const ALL: &[Self] = &Precipitation::ALL;
+    fn name(self) -> &'static str {
         ["none", "light", "moderate", "heavy"][self as usize]
     }
-
-    /// The Drive page's word for the amount.
-    pub fn label(self) -> &'static str {
+    fn label(self) -> &'static str {
         ["None", "Light", "Moderate", "Heavy"][self as usize]
-    }
-
-    pub fn parse(text: &str) -> Option<Precipitation> {
-        Precipitation::ALL.into_iter().find(|rain| rain.name() == text)
     }
 }
 
@@ -428,102 +418,164 @@ fn on_off_text(value: Option<bool>) -> Option<String> {
     value.map(|v| if v { "on" } else { "off" }.to_owned())
 }
 
+/// A [`Choice`]'s settings word.
+fn choice<T: Choice>(value: Option<T>) -> Option<String> {
+    value.map(|c| c.name().to_owned())
+}
+
+/// A `|` list of names, when any.
+fn joined_names(names: &[String]) -> Option<String> {
+    (!names.is_empty()).then(|| names.join("|"))
+}
+
+/// A `,` list of ids, when any.
+fn joined_ids(ids: &[u32]) -> Option<String> {
+    (!ids.is_empty()).then(|| ids.iter().map(u32::to_string).collect::<Vec<_>>().join(","))
+}
+
+/// The `[launcher]` section's values, read once per key.
+struct Launcher<'a> {
+    section: Option<&'a ini::Section>,
+}
+
+impl Launcher<'_> {
+    /// The key's text, when the section sets it.
+    fn get(&self, key: &str) -> Option<String> {
+        self.section.and_then(|s| s.get(key)).map(str::to_owned)
+    }
+
+    /// An `on`/`off` switch.
+    fn on_off(&self, key: &str) -> Option<bool> {
+        on_off(self.get(key))
+    }
+
+    /// A [`Choice`] by its settings word.
+    fn choice<T: Choice>(&self, key: &str) -> Option<T> {
+        self.get(key).as_deref().and_then(T::parse)
+    }
+
+    /// A value parsed from its text.
+    fn parsed<T>(&self, key: &str, parse: impl Fn(&str) -> Option<T>) -> Option<T> {
+        self.get(key).as_deref().and_then(parse)
+    }
+
+    /// A number as written.
+    fn number<T: FromStr>(&self, key: &str) -> Option<T> {
+        self.get(key).and_then(|v| v.parse().ok())
+    }
+
+    /// A number within `range`.
+    fn ranged<T: FromStr + PartialOrd>(&self, key: &str, range: std::ops::RangeInclusive<T>) -> Option<T> {
+        self.number(key).filter(|v| range.contains(v))
+    }
+
+    /// A word that must not be empty.
+    fn word(&self, key: &str) -> Option<String> {
+        self.get(key).filter(|v| !v.is_empty())
+    }
+
+    /// A `|` list of names, in file order.
+    fn names(&self, key: &str) -> Vec<String> {
+        self.get(key)
+            .map(|v| v.split('|').map(str::trim).filter(|c| !c.is_empty()).map(str::to_owned).collect())
+            .unwrap_or_default()
+    }
+
+    /// A `,` list of ids, in file order.
+    fn ids(&self, key: &str) -> Vec<u32> {
+        self.get(key).map(|v| v.split(',').filter_map(|m| m.trim().parse().ok()).collect()).unwrap_or_default()
+    }
+}
+
 impl Settings {
     pub fn parse(text: &str) -> Settings {
         let sections = ini::parse(text).unwrap_or_default();
-        let launcher = sections.iter().find(|s| s.name == "launcher");
-        let get = |key: &str| launcher.and_then(|s| s.get(key)).map(str::to_owned);
-        let group = |key: &str| get(key).and_then(|v| v.parse().ok()).filter(|v| (0.0..=MAX_GROUP_VOLUME).contains(v));
+        let launcher = Launcher { section: sections.iter().find(|s| s.name == "launcher") };
         Settings {
-            car: get("car"),
-            map: get("map").and_then(|v| v.parse().ok()),
-            recent_cars: get("recent_cars")
-                .map(|v| v.split('|').map(str::trim).filter(|c| !c.is_empty()).map(str::to_owned).collect())
-                .unwrap_or_default(),
-            recent_maps: get("recent_maps")
-                .map(|v| v.split(',').filter_map(|m| m.trim().parse().ok()).collect())
-                .unwrap_or_default(),
-            favourite_cars: get("favourite_cars")
-                .map(|v| v.split('|').map(str::trim).filter(|c| !c.is_empty()).map(str::to_owned).collect())
-                .unwrap_or_default(),
-            favourite_maps: get("favourite_maps")
-                .map(|v| v.split(',').filter_map(|m| m.trim().parse().ok()).collect())
-                .unwrap_or_default(),
-            weather: get("weather").as_deref().and_then(WeatherChoice::parse),
-            wetness: get("wetness").as_deref().and_then(parse_wetness),
-            fog: get("fog").as_deref().and_then(Fog::parse),
-            clouds: get("clouds").as_deref().and_then(Clouds::parse),
-            precipitation: get("precipitation").as_deref().and_then(Precipitation::parse),
-            wear: get("wear").and_then(|v| WEARS.iter().position(|wear| *wear == v.as_str())).map(|wear| wear as u32),
-            tyre: get("tyre").and_then(|v| {
+            car: launcher.get("car"),
+            map: launcher.number("map"),
+            recent_cars: launcher.names("recent_cars"),
+            recent_maps: launcher.ids("recent_maps"),
+            favourite_cars: launcher.names("favourite_cars"),
+            favourite_maps: launcher.ids("favourite_maps"),
+            weather: launcher.parsed("weather", WeatherChoice::parse),
+            wetness: launcher.parsed("wetness", parse_wetness),
+            fog: launcher.choice("fog"),
+            clouds: launcher.choice("clouds"),
+            precipitation: launcher.choice("precipitation"),
+            wear: launcher
+                .get("wear")
+                .and_then(|v| WEARS.iter().position(|wear| *wear == v.as_str()))
+                .map(|wear| wear as u32),
+            tyre: launcher.get("tyre").and_then(|v| {
                 if v == "auto" {
                     Some(TyreChoice::Auto)
                 } else {
                     v.parse::<u32>().ok().filter(|n| *n <= 6).map(TyreChoice::Fixed)
                 }
             }),
-            size: get("size").as_deref().and_then(parse_size),
-            fov: get("fov").and_then(|v| v.parse().ok()).filter(|v| coords::FOV_RANGE_DEGREES.contains(v)),
-            volume: get("volume").and_then(|v| v.parse().ok()).filter(|v| (0.0..=MAX_VOLUME).contains(v)),
-            engine_volume: group("engine_volume"),
-            codriver_volume: group("codriver_volume"),
-            effects_volume: group("effects_volume"),
-            tyres_volume: group("tyres_volume"),
-            codriver: on_off(get("codriver")),
-            codriver_voice: get("codriver_voice").filter(|v| !v.is_empty()),
-            codriver_style: get("codriver_style").filter(|v| !v.is_empty()),
-            codriver_ranges: get("codriver_ranges").filter(|v| !v.is_empty()),
-            codriver_pack: get("codriver_pack").filter(|v| !v.is_empty()),
-            notes_pack: get("notes_pack").filter(|v| !v.is_empty()),
-            notes_set: get("notes_set"),
-            my_pacenotes: on_off(get("my_pacenotes")),
-            hud: on_off(get("hud")),
-            mph: get("units").and_then(|v| match v.as_str() {
+            size: launcher.parsed("size", parse_size),
+            fov: launcher.ranged("fov", coords::FOV_RANGE_DEGREES),
+            volume: launcher.ranged("volume", 0.0..=MAX_VOLUME),
+            engine_volume: launcher.ranged("engine_volume", 0.0..=MAX_GROUP_VOLUME),
+            codriver_volume: launcher.ranged("codriver_volume", 0.0..=MAX_GROUP_VOLUME),
+            effects_volume: launcher.ranged("effects_volume", 0.0..=MAX_GROUP_VOLUME),
+            tyres_volume: launcher.ranged("tyres_volume", 0.0..=MAX_GROUP_VOLUME),
+            codriver: launcher.on_off("codriver"),
+            codriver_voice: launcher.word("codriver_voice"),
+            codriver_style: launcher.word("codriver_style"),
+            codriver_ranges: launcher.word("codriver_ranges"),
+            codriver_pack: launcher.word("codriver_pack"),
+            notes_pack: launcher.word("notes_pack"),
+            notes_set: launcher.get("notes_set"),
+            my_pacenotes: launcher.on_off("my_pacenotes"),
+            hud: launcher.on_off("hud"),
+            mph: launcher.get("units").and_then(|v| match v.as_str() {
                 "mph" => Some(true),
                 "kmh" => Some(false),
                 _ => None,
             }),
-            fps: on_off(get("fps")),
-            pace_stack: get("pace_stack").and_then(|v| v.parse().ok()).filter(|n| *n <= 4),
-            dials: on_off(get("dials")),
-            hide_wheel: on_off(get("hide_wheel")),
-            hud_hide: get("hud_hide").and_then(|v| Parts::hiding(&v).ok()),
-            wipers: get("wipers").as_deref().and_then(Switch::parse),
-            lighting: on_off(get("lighting")),
-            particles: on_off(get("particles")),
-            surfaces: on_off(get("surfaces")),
-            cabin: on_off(get("cabin")),
-            contact: on_off(get("contact")),
-            grass: on_off(get("grass")),
-            windscreen: on_off(get("windscreen")),
-            marks: on_off(get("marks")),
-            render_scale: get("render_scale").and_then(|v| v.parse().ok()).filter(|v| RENDER_SCALES.contains(v)),
-            anti_aliasing: get("anti_aliasing").as_deref().and_then(AntiAliasing::parse),
-            wet_roads: get("wet_roads").as_deref().and_then(WetRoads::parse),
-            detail: get("detail").as_deref().and_then(Detail::parse),
-            upscale_textures: on_off(get("upscale_textures")),
-            present: get("present").as_deref().and_then(Present::parse),
-            mirrors: get("mirrors").as_deref().and_then(Rate::parse),
-            fullscreen: on_off(get("fullscreen")),
-            perf_log: on_off(get("perf_log")),
-            start_time: get("start_time").as_deref().and_then(parse_clock),
-            callout_distance: get("callout_distance").and_then(|v| v.parse().ok()),
-            marker_threshold: get("marker_threshold").and_then(|v| v.parse().ok()),
-            setup: get("setup").filter(|v| !v.is_empty()),
-            damage: get("damage").as_deref().and_then(DamageLevel::from_name),
-            auto_gears: on_off(get("auto_gears")),
-            gear_guard: on_off(get("gear_guard")),
-            neutral_lock: on_off(get("neutral_lock")),
-            clutch_help: on_off(get("clutch_help")),
-            ghost: get("ghost").map(|v| GhostChoice::parse(&v)),
-            championship_skill: get("championship_skill").as_deref().and_then(Skill::from_name),
-            championship_damage: get("championship_damage").as_deref().and_then(DamageLevel::from_name),
-            championship_team: get("championship_team").and_then(|v| v.parse().ok()).filter(|&t: &u32| t < 7),
-            install_folder: get("install_folder").filter(|v| !v.is_empty()),
-            ngp_physics: get("ngp_physics").filter(|v| !v.is_empty()),
-            ngp_dll: get("ngp_dll"),
-            rsf_root: get("rsf_root").filter(|v| !v.is_empty()),
-            head_gasket: get("head_gasket").and_then(|v| v.parse().ok()).filter(|v| *v >= 1),
+            fps: launcher.on_off("fps"),
+            pace_stack: launcher.number("pace_stack").filter(|n| *n <= 4),
+            dials: launcher.on_off("dials"),
+            hide_wheel: launcher.on_off("hide_wheel"),
+            hud_hide: launcher.get("hud_hide").and_then(|v| Parts::hiding(&v).ok()),
+            wipers: launcher.parsed("wipers", Switch::parse),
+            lighting: launcher.on_off("lighting"),
+            particles: launcher.on_off("particles"),
+            surfaces: launcher.on_off("surfaces"),
+            cabin: launcher.on_off("cabin"),
+            contact: launcher.on_off("contact"),
+            grass: launcher.on_off("grass"),
+            windscreen: launcher.on_off("windscreen"),
+            marks: launcher.on_off("marks"),
+            render_scale: launcher.number("render_scale").filter(|v| RENDER_SCALES.contains(v)),
+            anti_aliasing: launcher.choice("anti_aliasing"),
+            wet_roads: launcher.choice("wet_roads"),
+            detail: launcher.choice("detail"),
+            upscale_textures: launcher.on_off("upscale_textures"),
+            present: launcher.parsed("present", Present::parse),
+            mirrors: launcher.parsed("mirrors", Rate::parse),
+            fullscreen: launcher.on_off("fullscreen"),
+            perf_log: launcher.on_off("perf_log"),
+            start_time: launcher.parsed("start_time", parse_clock),
+            callout_distance: launcher.number("callout_distance"),
+            marker_threshold: launcher.number("marker_threshold"),
+            setup: launcher.word("setup"),
+            damage: launcher.choice("damage"),
+            auto_gears: launcher.on_off("auto_gears"),
+            gear_guard: launcher.on_off("gear_guard"),
+            neutral_lock: launcher.on_off("neutral_lock"),
+            clutch_help: launcher.on_off("clutch_help"),
+            ghost: launcher.get("ghost").map(|v| GhostChoice::parse(&v)),
+            championship_skill: launcher.choice("championship_skill"),
+            championship_damage: launcher.choice("championship_damage"),
+            championship_team: launcher.number("championship_team").filter(|t| *t < 7),
+            install_folder: launcher.word("install_folder"),
+            ngp_physics: launcher.word("ngp_physics"),
+            ngp_dll: launcher.get("ngp_dll"),
+            rsf_root: launcher.word("rsf_root"),
+            head_gasket: launcher.number("head_gasket").filter(|v| *v >= 1),
             bindings: Bindings::parse(text),
             ffb: ffb::Options::parse(text),
             camera: CameraPrefs::parse(text),
@@ -537,23 +589,15 @@ impl Settings {
         for (key, value) in [
             ("car", self.car.clone()),
             ("map", self.map.map(|v| v.to_string())),
-            ("recent_cars", (!self.recent_cars.is_empty()).then(|| self.recent_cars.join("|"))),
-            (
-                "recent_maps",
-                (!self.recent_maps.is_empty())
-                    .then(|| self.recent_maps.iter().map(u32::to_string).collect::<Vec<_>>().join(",")),
-            ),
-            ("favourite_cars", (!self.favourite_cars.is_empty()).then(|| self.favourite_cars.join("|"))),
-            (
-                "favourite_maps",
-                (!self.favourite_maps.is_empty())
-                    .then(|| self.favourite_maps.iter().map(u32::to_string).collect::<Vec<_>>().join(",")),
-            ),
+            ("recent_cars", joined_names(&self.recent_cars)),
+            ("recent_maps", joined_ids(&self.recent_maps)),
+            ("favourite_cars", joined_names(&self.favourite_cars)),
+            ("favourite_maps", joined_ids(&self.favourite_maps)),
             ("weather", self.weather.as_ref().map(WeatherChoice::to_text)),
             ("wetness", self.wetness.map(wetness_name).map(str::to_owned)),
-            ("fog", self.fog.map(Fog::name).map(str::to_owned)),
-            ("clouds", self.clouds.map(Clouds::name).map(str::to_owned)),
-            ("precipitation", self.precipitation.map(Precipitation::name).map(str::to_owned)),
+            ("fog", choice(self.fog)),
+            ("clouds", choice(self.clouds)),
+            ("precipitation", choice(self.precipitation)),
             ("wear", self.wear.map(|v| WEARS[v.min(2) as usize].to_owned())),
             (
                 "tyre",
@@ -588,14 +632,14 @@ impl Settings {
             ("callout_distance", self.callout_distance.map(|v| v.to_string())),
             ("marker_threshold", self.marker_threshold.map(|v| v.to_string())),
             ("setup", self.setup.clone()),
-            ("damage", self.damage.map(|v| v.name().to_owned())),
+            ("damage", choice(self.damage)),
             ("auto_gears", on_off_text(self.auto_gears)),
             ("gear_guard", on_off_text(self.gear_guard)),
             ("neutral_lock", on_off_text(self.neutral_lock)),
             ("clutch_help", on_off_text(self.clutch_help)),
             ("ghost", self.ghost.as_ref().map(GhostChoice::to_text)),
-            ("championship_skill", self.championship_skill.map(|v| v.name().to_owned())),
-            ("championship_damage", self.championship_damage.map(|v| v.name().to_owned())),
+            ("championship_skill", choice(self.championship_skill)),
+            ("championship_damage", choice(self.championship_damage)),
             ("championship_team", self.championship_team.map(|v| v.to_string())),
             ("install_folder", self.install_folder.clone()),
             ("ngp_physics", self.ngp_physics.clone()),
@@ -603,9 +647,9 @@ impl Settings {
             ("rsf_root", self.rsf_root.clone()),
             ("head_gasket", self.head_gasket.map(|v| v.to_string())),
             ("render_scale", self.render_scale.map(|v| v.to_string())),
-            ("anti_aliasing", self.anti_aliasing.map(|v| v.name().to_owned())),
-            ("wet_roads", self.wet_roads.map(|v| v.name().to_owned())),
-            ("detail", self.detail.map(|v| v.name().to_owned())),
+            ("anti_aliasing", choice(self.anti_aliasing)),
+            ("wet_roads", choice(self.wet_roads)),
+            ("detail", choice(self.detail)),
             ("upscale_textures", on_off_text(self.upscale_textures)),
             ("present", self.present.map(|v| v.name().to_owned())),
             ("mirrors", self.mirrors.map(Rate::name)),
@@ -700,10 +744,7 @@ impl Form {
         let car = pick_car(&catalog.cars, settings.car.iter().chain(&settings.recent_cars));
         let season_pick = pick_car(&catalog.cars, settings.season_cars.last.iter().chain(&settings.car));
         let default_map = catalog.maps.iter().position(|map| catalog.availability(&season, map).is_ok()).unwrap_or(0);
-        let map = settings
-            .map
-            .and_then(|number| catalog.maps.iter().position(|map| map.number == number))
-            .unwrap_or(default_map);
+        let map = settings.map.and_then(|number| catalog.map_index(number)).unwrap_or(default_map);
         let aids = DriverAids::default();
         // A specific row launches like Random with that row; a section that is not this map's falls back to Good.
         let (mut preset, mut weather_row) =
@@ -986,9 +1027,9 @@ mod tests {
         assert_eq!(Settings::default().ngp_dll, None);
     }
 
-    #[test]
-    fn settings_round_trip() {
-        let settings = Settings {
+    /// Every field set: `to_text` then `parse` is the identity, and `full_settings_golden` pins the text.
+    fn full_settings() -> Settings {
+        Settings {
             car: Some("COROLLA".into()),
             map: Some(54),
             recent_cars: vec!["COROLLA".into(), "Mitsubishi Lancer Evo IX N4".into()],
@@ -1026,13 +1067,13 @@ mod tests {
             hud_hide: Some(Parts::hiding("progress,car").unwrap()),
             wipers: Some(Switch::Intermittent),
             lighting: Some(false),
-            particles: None,
+            particles: Some(false),
             surfaces: Some(true),
             cabin: Some(false),
             contact: Some(false),
             grass: Some(true),
-            windscreen: None,
-            marks: None,
+            windscreen: Some(false),
+            marks: Some(true),
             render_scale: Some(75),
             anti_aliasing: Some(AntiAliasing::Off),
             wet_roads: Some(WetRoads::Low),
@@ -1060,7 +1101,7 @@ mod tests {
             ngp_dll: Some("/games/ngp/Plugins/NGP.dll".into()),
             rsf_root: Some("/games/rsf".into()),
             head_gasket: Some(10),
-            bindings: Bindings::default(),
+            bindings: Bindings { input_rate: 500, ..Default::default() },
             ffb: ffb::Options { rate: 500, ..Default::default() },
             camera: CameraPrefs::parse("[camera]\nview = bonnet\nrsf-24 chase = 0 0.5 -1\n"),
             season_cars: SeasonCars {
@@ -1074,7 +1115,12 @@ mod tests {
                 "Ford Escort Mk II".into(),
                 CarBox { engagement: Engagement::Dog, sequential: false },
             )]),
-        };
+        }
+    }
+
+    #[test]
+    fn settings_round_trip() {
+        let settings = full_settings();
         let text = settings.to_text();
         assert!(
             text.ends_with(
@@ -1128,7 +1174,7 @@ mod tests {
             "{text}"
         );
         assert!(
-            text.contains("perf_log = on\nlighting = off\nsurfaces = on\ncabin = off\ncontact = off\ngrass = on\n"),
+            text.contains("perf_log = on\nlighting = off\nparticles = off\nsurfaces = on\ncabin = off\ncontact = off\ngrass = on\nwindscreen = off\nmarks = on\n"),
             "{text}"
         );
         assert!(text.contains("start_time = 16:30\nperf_log = on\n"), "{text}");
@@ -1187,5 +1233,260 @@ mod tests {
         assert!(text.contains("championship_skill = champion\nchampionship_damage = reduced\nchampionship_team = 5\n"));
         assert_eq!(Settings::parse("[launcher]\nchampionship_skill = legend\n"), Settings::default());
         assert_eq!(Settings::parse("[launcher]\nchampionship_team = 7\n"), Settings::default());
+    }
+
+    #[test]
+    fn full_settings_golden() {
+        // Every key in file order, every section: any move, rename or reword fails here.
+        let text = full_settings().to_text();
+        assert_eq!(
+            text,
+            concat!(
+                "[launcher]\n",
+                "car = COROLLA\n",
+                "map = 54\n",
+                "recent_cars = COROLLA|Mitsubishi Lancer Evo IX N4\n",
+                "recent_maps = 54,129\n",
+                "favourite_cars = XSARA|Mitsubishi Lancer Evo IX N4\n",
+                "favourite_maps = 129,54,300\n",
+                "weather = bad\n",
+                "wetness = wet\n",
+                "fog = heavy\n",
+                "clouds = partly\n",
+                "precipitation = moderate\n",
+                "wear = worn\n",
+                "tyre = 5\n",
+                "size = 1920x1080\n",
+                "fov = 72.5\n",
+                "volume = 0.75\n",
+                "engine_volume = 0.5\n",
+                "codriver_volume = 1.5\n",
+                "effects_volume = 0\n",
+                "tyres_volume = 2\n",
+                "codriver = off\n",
+                "codriver_voice = Janne Laahanen EnNu A\n",
+                "codriver_style = Numeric.ini\n",
+                "codriver_ranges = Rbr.ini\n",
+                "codriver_pack = luppis\n",
+                "notes_pack = tanner-notes\n",
+                "notes_set = \n",
+                "my_pacenotes = off\n",
+                "hud = off\n",
+                "units = mph\n",
+                "fps = on\n",
+                "pace_stack = 2\n",
+                "wipers = intermittent\n",
+                "dials = off\n",
+                "hide_wheel = on\n",
+                "hud_hide = progress,car\n",
+                "callout_distance = 0.5\n",
+                "marker_threshold = 12.5\n",
+                "setup = gravel fast\n",
+                "damage = realistic\n",
+                "auto_gears = on\n",
+                "gear_guard = off\n",
+                "neutral_lock = on\n",
+                "clutch_help = off\n",
+                "ghost = me_54.ghc\n",
+                "championship_skill = champion\n",
+                "championship_damage = reduced\n",
+                "championship_team = 5\n",
+                "install_folder = /games/Richard Burns Rally\n",
+                "ngp_physics = /games/rbr-ngp/physics.rbz\n",
+                "ngp_dll = /games/ngp/Plugins/NGP.dll\n",
+                "rsf_root = /games/rsf\n",
+                "head_gasket = 10\n",
+                "render_scale = 75\n",
+                "anti_aliasing = off\n",
+                "wet_roads = low\n",
+                "detail = ultra\n",
+                "upscale_textures = on\n",
+                "present = immediate\n",
+                "mirrors = 3\n",
+                "fullscreen = off\n",
+                "start_time = 16:30\n",
+                "perf_log = on\n",
+                "lighting = off\n",
+                "particles = off\n",
+                "surfaces = on\n",
+                "cabin = off\n",
+                "contact = off\n",
+                "grass = on\n",
+                "windscreen = off\n",
+                "marks = on\n",
+                "\n",
+                "[controls]\n",
+                "h-shifter = normal\n",
+                "clutch threshold = 0.35\n",
+                "invert axes = \n",
+                "input rate = 500\n",
+                "throttle = ArrowUp\n",
+                "throttle pad = \n",
+                "brake = ArrowDown\n",
+                "brake pad = \n",
+                "steer left = ArrowLeft\n",
+                "steer left pad = \n",
+                "steer right = ArrowRight\n",
+                "steer right pad = \n",
+                "handbrake = Space\n",
+                "handbrake pad = \n",
+                "clutch = \n",
+                "clutch pad = \n",
+                "gear up = KeyA\n",
+                "gear up pad = \n",
+                "gear down = KeyZ\n",
+                "gear down pad = \n",
+                "restart = KeyR\n",
+                "restart pad = \n",
+                "call for help = KeyH\n",
+                "call for help pad = \n",
+                "wipers = KeyI\n",
+                "wipers pad = \n",
+                "headlights = KeyL\n",
+                "headlights pad = \n",
+                "ignition = KeyE\n",
+                "ignition pad = \n",
+                "reverse = \n",
+                "reverse pad = \n",
+                "neutral = \n",
+                "neutral pad = \n",
+                "gear 1 = \n",
+                "gear 1 pad = \n",
+                "gear 2 = \n",
+                "gear 2 pad = \n",
+                "gear 3 = \n",
+                "gear 3 pad = \n",
+                "gear 4 = \n",
+                "gear 4 pad = \n",
+                "gear 5 = \n",
+                "gear 5 pad = \n",
+                "gear 6 = \n",
+                "gear 6 pad = \n",
+                "look back = KeyB\n",
+                "look back pad = \n",
+                "camera = KeyC\n",
+                "camera pad = \n",
+                "pause = Escape\n",
+                "pause pad = \n",
+                "gauge mode = End\n",
+                "gauge mode pad = \n",
+                "\n",
+                "[ffb]\n",
+                "enabled = 1\n",
+                "strength = 1\n",
+                "inverse = 0\n",
+                "dead_zone = 0\n",
+                "dead_zone_threshold = 0\n",
+                "rate = 500\n",
+                "device = \n",
+                "sensitivity_gravel = 100\n",
+                "sensitivity_tarmac = 100\n",
+                "sensitivity_snow = 100\n",
+                "rotation = \n",
+                "rotation_per_car = 0\n",
+                "\n",
+                "[camera]\n",
+                "view = bonnet\n",
+                "rsf-24 chase = 0 0.5 -1\n",
+                "\n",
+                "[season]\n",
+                "last = Skoda Fabia R5\n",
+                "profile player = Mitsubishi Lancer Evo IX N4\n",
+                "profile me = Skoda Fabia R5\n",
+                "\n",
+                "[gearbox]\n",
+                "Ford Escort Mk II = dog\n"
+            )
+        );
+    }
+
+    #[test]
+    fn settings_parse_edges() {
+        // Out-of-range numbers keep the default; the edges parse.
+        assert_eq!(Settings::parse("[launcher]\nfov = 121\n").fov, None);
+        assert_eq!(Settings::parse("[launcher]\nfov = 29.9\n").fov, None);
+        assert_eq!(Settings::parse("[launcher]\nfov = 30\n").fov, Some(30.0));
+        assert_eq!(Settings::parse("[launcher]\nfov = 120\n").fov, Some(120.0));
+        assert_eq!(Settings::parse("[launcher]\nfov = wide\n").fov, None);
+        assert_eq!(Settings::parse("[launcher]\nvolume = 5\n").volume, None);
+        assert_eq!(Settings::parse("[launcher]\nvolume = -0.1\n").volume, None);
+        assert_eq!(Settings::parse("[launcher]\nvolume = 4\n").volume, Some(4.0));
+        assert_eq!(Settings::parse("[launcher]\nengine_volume = 2\n").engine_volume, Some(2.0));
+        assert_eq!(Settings::parse("[launcher]\nengine_volume = 2.1\n").engine_volume, None);
+        assert_eq!(Settings::parse("[launcher]\npace_stack = 4\n").pace_stack, Some(4));
+        assert_eq!(Settings::parse("[launcher]\npace_stack = 5\n").pace_stack, None);
+        assert_eq!(Settings::parse("[launcher]\nrender_scale = 50\n").render_scale, Some(50));
+        assert_eq!(Settings::parse("[launcher]\nrender_scale = 80\n").render_scale, None);
+        assert_eq!(Settings::parse("[launcher]\nchampionship_team = 6\n").championship_team, Some(6));
+        assert_eq!(Settings::parse("[launcher]\nchampionship_team = 7\n").championship_team, None);
+        assert_eq!(Settings::parse("[launcher]\nhead_gasket = 0\n").head_gasket, None);
+        assert_eq!(Settings::parse("[launcher]\nhead_gasket = -2\n").head_gasket, None);
+        assert_eq!(Settings::parse("[launcher]\nhead_gasket = 1\n").head_gasket, Some(1));
+        assert_eq!(Settings::parse("[launcher]\ntyre = 6\n").tyre, Some(TyreChoice::Fixed(6)));
+        assert_eq!(Settings::parse("[launcher]\ntyre = 7\n").tyre, None);
+        assert_eq!(Settings::parse("[launcher]\nmap = abc\n").map, None);
+        assert_eq!(Settings::parse("[launcher]\ncallout_distance = -1.5\n").callout_distance, Some(-1.5));
+        // Unknown choice words keep the default.
+        assert_eq!(Settings::parse("[launcher]\nfog = mist\n").fog, None);
+        assert_eq!(Settings::parse("[launcher]\nclouds = storm\n").clouds, None);
+        assert_eq!(Settings::parse("[launcher]\nprecipitation = hail\n").precipitation, None);
+        assert_eq!(Settings::parse("[launcher]\nwetness = soaked\n").wetness, None);
+        assert_eq!(Settings::parse("[launcher]\ndamage = hard\n").damage, None);
+        assert_eq!(Settings::parse("[launcher]\ndetail = max\n").detail, None);
+        assert_eq!(Settings::parse("[launcher]\nwet_roads = on\n").wet_roads, None);
+        assert_eq!(Settings::parse("[launcher]\nanti_aliasing = 2x\n").anti_aliasing, None);
+        assert_eq!(Settings::parse("[launcher]\nmirrors = 4\n").mirrors, None);
+        assert_eq!(Settings::parse("[launcher]\nwipers = fast\n").wipers, None);
+        // The wipers, the presentation and the mirrors parse case-insensitively.
+        assert_eq!(Settings::parse("[launcher]\nwipers = INTERMITTENT\n").wipers, Some(Switch::Intermittent));
+        assert_eq!(Settings::parse("[launcher]\npresent = FIFO\n").present, Some(Present::Fifo));
+        assert_eq!(Settings::parse("[launcher]\nmirrors = off\n").mirrors, Some(Rate::Off));
+        // Missing keys keep the default; an empty file is the default settings.
+        assert_eq!(Settings::parse(""), Settings::default());
+        assert_eq!(Settings::parse("[launcher]\n"), Settings::default());
+        assert_eq!(Settings::parse("[launcher]\ncar = \n").car, Some(String::new()));
+        // The units word is `mph`/`kmh`, not the field's name.
+        assert_eq!(Settings::parse("[launcher]\nunits = mph\n").mph, Some(true));
+        assert_eq!(Settings::parse("[launcher]\nunits = kmh\n").mph, Some(false));
+        assert_eq!(Settings::parse("[launcher]\nunits = kph\n").mph, None);
+        // Any ghost word parses: empty and `off` are none, anything else a file.
+        assert_eq!(Settings::parse("[launcher]\n").ghost, None);
+        assert_eq!(Settings::parse("[launcher]\nghost = \n").ghost, Some(GhostChoice::Off));
+        assert_eq!(Settings::parse("[launcher]\nghost = off\n").ghost, Some(GhostChoice::Off));
+        assert_eq!(
+            Settings::parse("[launcher]\nghost = me_54.ghc\n").ghost,
+            Some(GhostChoice::File("me_54.ghc".into()))
+        );
+        // Empty strings are dropped, but the notes set and the NGP DLL keep an empty choice.
+        assert_eq!(Settings::parse("[launcher]\ncodriver_voice = \n").codriver_voice, None);
+        assert_eq!(Settings::parse("[launcher]\nsetup = \n").setup, None);
+        assert_eq!(Settings::parse("[launcher]\ninstall_folder = \n").install_folder, None);
+        assert_eq!(Settings::parse("[launcher]\nnotes_set = \n").notes_set, Some(String::new()));
+        // Empty lists are empty; blanks and words that do not parse are skipped.
+        assert_eq!(Settings::parse("[launcher]\nrecent_cars = \n").recent_cars, Vec::<String>::new());
+        assert_eq!(
+            Settings::parse("[launcher]\nrecent_cars = A|| B |\n").recent_cars,
+            ["A".to_owned(), "B".to_owned()]
+        );
+        assert_eq!(Settings::parse("[launcher]\nrecent_maps = \n").recent_maps, Vec::<u32>::new());
+        assert_eq!(Settings::parse("[launcher]\nrecent_maps = 54,,abc,129\n").recent_maps, [54, 129]);
+        // An empty hidden list reads as all shown, which the writer omits.
+        assert_eq!(Settings::parse("[launcher]\nhud_hide = \n").hud_hide, Some(Parts::default()));
+        assert!(!Settings::parse("[launcher]\nhud_hide = \n").to_text().contains("hud_hide"));
+        // The wear and the size: unknown words keep the default, and the writer clamps the wear.
+        assert_eq!(Settings::parse("[launcher]\nwear = worn\n").wear, Some(2));
+        assert_eq!(Settings::parse("[launcher]\nwear = old\n").wear, None);
+        assert!(Settings { wear: Some(9), ..Default::default() }.to_text().contains("wear = worn\n"));
+        assert_eq!(Settings::parse("[launcher]\nsize = 1920x1080\n").size, Some((1920, 1080)));
+        assert_eq!(Settings::parse("[launcher]\nsize = 1920\n").size, None);
+        // The weather: empty keeps the default, any other unknown word is a season row.
+        assert_eq!(Settings::parse("[launcher]\nweather = \n").weather, None);
+        assert_eq!(Settings::parse("[launcher]\nweather = dry\n").weather, Some(WeatherChoice::Row("dry".into())));
+        // The clock pads the hour; midnight and the last minute parse.
+        assert_eq!(Settings::parse("[launcher]\nstart_time = 0:00\n").start_time, Some(0));
+        assert_eq!(Settings::parse("[launcher]\nstart_time = 23:59\n").start_time, Some(23 * 60 + 59));
+        assert!(Settings { start_time: Some(5 * 60 + 5), ..Default::default() }
+            .to_text()
+            .contains("start_time = 05:05\n"));
     }
 }

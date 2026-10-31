@@ -1,5 +1,5 @@
-//! The brake walls (`E34WallVf`, `CBrakeWall`, `CBrakeWallManager`): the quadtree queries and the wall probes, generic
-//! over the store. The geometry is `brake_wall`; the hosts are in `layout/wall_tree.rs`.
+//! The brake walls: the quadtree queries and the wall probes, generic over the store. The geometry is
+//! `brake_wall`; the hosts are in `layout/wall_tree.rs`.
 
 use super::brake_wall::{self, segment_hit, SegmentHit};
 use super::layout::wall_tree::{RaycastCalls, VfE8Host, WallVfCcHost};
@@ -54,20 +54,19 @@ fn child_hit<S: CollisionStore>(store: &S, shape: Shape, child: u32) -> bool {
     }
 }
 
-/// CBrakeWall::QueryPoint (0x4e3dc0): collect leaf nodes containing a point.
+/// Collects the leaf nodes containing a point.
 pub fn query_point<S: CollisionStore>(store: &mut S, wall: u32, point: u32, collector: u32) -> u32 {
     let shape = Shape::Point([store.f32(point), store.f32(point + 4)]);
     query(store, wall, shape, collector)
 }
 
-/// CBrakeWall::QueryBox (0x4e3f10): collect leaf nodes overlapping a box.
+/// Collects the leaf nodes overlapping a box.
 pub fn query_box<S: CollisionStore>(store: &mut S, wall: u32, bounds: u32, collector: u32) -> u32 {
     let shape = Shape::Box(store.f32s(bounds));
     query(store, wall, shape, collector)
 }
 
-/// CBrakeWall::Vf15C (0x4e4070) (name ours): query the wall with a ten-unit box centered
-/// at the point's X/Y coordinates.
+/// Whether the wall has a leaf under the ten-unit box around the point's x/y.
 pub fn query_xy_box<S: CollisionStore>(store: &S, wall: u32, point: u32) -> u32 {
     let shape = Shape::Box([store.f32(point), store.f32(point + 4), 10.0, 10.0]);
     let mut stack = [0u32; 257];
@@ -103,10 +102,9 @@ pub fn query_xy_box<S: CollisionStore>(store: &S, wall: u32, point: u32) -> u32 
     u32::from(found)
 }
 
-/// `E34WallVf::VfCC(a, b)` (0x4e42f0) on the wall at `this`; `entry` is its entry esp. Each corner is fetched through
-/// the wall's frame into the frame's +0x20 (the original's `and esp, -0x10` frame); the box of their `x` and `y` goes
-/// to +0x10 and, when it is not too wide, is queried against the wall's leaves into the collector at +0x7c. Returns 1
-/// when the query found any (eax).
+/// Queries the wall with the corners' x/y box: each corner is fetched through the host frame, and the box of
+/// their `x` and `y` is queried against the wall's leaves unless it is too wide. Returns 1 when the query found
+/// any.
 pub fn wall_vf_cc<S: CollisionStore>(
     host: &mut impl WallVfCcHost,
     store: &mut S,
@@ -149,10 +147,9 @@ fn first_hit<S: CollisionStore>(store: &S, wall: u32, point: u32, hits: u32) -> 
     })
 }
 
-/// `E34WallVf::Raycast(point, out)` (0x4e4570, thiscall on the wall, `ret 8`): the query's leaves under the point are
-/// in the frame's `hits` list. The first segment the point is inside of answers: `out` gets its normal, perpendicular
-/// distance and penetration, and the flags word (the index's bit 15, bit 1 for the latch, bit 2 when the index's bit 14
-/// emits). Bit 14 emits the penetration signal and answers 0; otherwise the answer is 1.
+/// The first wall segment the point is inside of answers: `out` gets its normal, perpendicular distance and
+/// penetration, and the flags word (the index's bit 15, bit 1 for the latch, bit 2 when the index's bit 14 emits).
+/// Bit 14 emits the penetration signal and answers 0; otherwise the answer is 1.
 pub fn wall_raycast<S: CollisionStore>(
     calls: &mut impl RaycastCalls,
     store: &mut S,
@@ -182,12 +179,10 @@ pub fn wall_raycast<S: CollisionStore>(
     0
 }
 
-/// `CBrakeWall::VfE8(a, b, c, out, flag)` (0x4e3a10, thiscall on the wall, `ret 0x14`); `entry` is its entry esp. With
-/// `out` and `flag` both set, the two end matrices `a` and `b` are fetched (`FetchX`, host) into the original's
-/// `and esp, -0x10` frame (+0x60 and +0x70), and the segment between them is tested against each edge of the wall's
-/// leaf segments, in order, until one hits. A crossing within an edge sets the latch (+0x214); unless the index word's
-/// bit 14 is set it is the hit: `out` gets the point, the normal (`z` = 0), the offset, `t` (+0x34) and the wall
-/// (+0x38). Returns 1 on a hit, else 0 (eax).
+/// With `out` and `flag` both set, fetches the two end matrices `a` and `b` and tests the segment between them
+/// against each edge of the wall's leaf segments, in order, until one hits. A crossing within an edge sets the
+/// latch; unless the index word's bit 14 is set it is the hit: `out` gets the point, the normal (`z` = 0), the offset,
+/// `t` and the wall. Returns 1 on a hit, else 0.
 pub fn brake_wall_vf_e8<S: CollisionStore>(
     host: &mut impl VfE8Host,
     store: &mut S,
@@ -227,9 +222,8 @@ pub fn brake_wall_vf_e8<S: CollisionStore>(
     0
 }
 
-/// `CBrakeWallManager::RaycastEntry(point, out)` (0x4e4960, thiscall, `ret 8`): copies the point's x and y to the
-/// 8-byte buffer at `tmp` (the original's frame), then runs the manager's wall (+4) through `wall_raycast`; 0 without a
-/// wall. The raycast's frame is the one the original calls it from: its leaf list is 0x1a0 bytes below `tmp`.
+/// Copies the point's x and y to the 8-byte buffer at `tmp`, then raycasts the manager's wall through it; 0 without
+/// a wall. The raycast's leaf list lives below `tmp` in the caller's frame.
 pub fn wall_probe<S: CollisionStore>(
     calls: &mut impl RaycastCalls,
     store: &mut S,

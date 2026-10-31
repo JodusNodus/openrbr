@@ -30,7 +30,7 @@ use rbr_recording::{Frame, CONTROL_BYTES};
 
 use crate::args::Args;
 use crate::boot;
-use crate::physics::{boot_playback, chain, load_substeps, on_big_stack, sample, why, Pure, DT};
+use crate::physics::{boot_playback, chain, load_substeps, run_guarded, sample, why, Pure, DT};
 use crate::stage::StageData;
 use crate::twin::{self, Twin};
 
@@ -304,7 +304,7 @@ pub fn run(
     // stops at a trailing all-zero run instead of emitting them.
     let controls_end = frames.iter().rposition(|f| f.control != [0; CONTROL_BYTES]).map_or(frames.len(), |k| k + 1);
     let dt = image_dt.unwrap_or(DT);
-    let values = stage.track.iter().map(|r| r.value).collect();
+    let values = stage.track_values.clone();
     let mut game = Game::new(
         Stage::quick_race(stage.number, stage.car).load_ready_with(load_substeps(&playback.pure.mem)),
         Grid::from_settings(&Ini::parse("")),
@@ -588,7 +588,7 @@ pub fn run_all(args: &Args, data: &Data, stage: &StageData, race: Option<&boot::
             Some(race) => Source::Boot(data, &args.stage, race, args.dump_image.as_deref()),
             None => Source::Snapshot(path),
         };
-        let r = on_big_stack(|| {
+        let r = run_guarded("the run", || {
             let extra = match &args.extra_payloads {
                 Some(path) => trace::read_extra(path)?,
                 None => Default::default(),
@@ -612,8 +612,7 @@ pub fn run_all(args: &Args, data: &Data, stage: &StageData, race: Option<&boot::
                 args.twin,
                 hooks,
             )
-        })
-        .unwrap_or_else(|e| Err(format!("the run panicked outside a step: {}", why(&*e))));
+        });
         match r {
             Ok(r) => ok &= report(path, &r, args, &mask, stage),
             Err(e) => {

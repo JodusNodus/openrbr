@@ -5,33 +5,9 @@
 
 use rbr_formats::markers::{self, MAX_SPLITS};
 use rbr_formats::trk::{self, ChunkPayload};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-fn maps_dir() -> Option<PathBuf> {
-    let data_dir = std::env::var("RBR_DATA").ok()?;
-    let dir = Path::new(&data_dir).join("Maps");
-    if dir.is_dir() {
-        Some(dir)
-    } else {
-        eprintln!("skipping: {} not found", dir.display());
-        None
-    }
-}
-
-fn collect_ext(dir: &Path, ext: &str) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return out;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_file() && path.extension().is_some_and(|e| e.eq_ignore_ascii_case(ext)) {
-            out.push(path);
-        }
-    }
-    out.sort();
-    out
-}
+mod common;
 
 /// First and last driveline `value` of a stage's `.trk` kind-`0x14` chunk.
 fn driveline_range(trk_path: &Path) -> (f32, f32) {
@@ -52,11 +28,10 @@ fn driveline_range(trk_path: &Path) -> (f32, f32) {
 /// keys are ordered between start and finish.
 #[test]
 fn all_retail_stage_markers_parse() {
-    let Some(dir) = maps_dir() else {
-        eprintln!("skipping: RBR_DATA not set");
+    let Some(dir) = common::maps_dir() else {
         return;
     };
-    let files = collect_ext(&dir, "dls");
+    let files = common::collect_ext(&dir, "dls");
     assert_eq!(files.len(), 86, "retail ships 86 .dls files");
     let mut with_start = 0;
     let mut with_splits = 0;
@@ -108,9 +83,9 @@ fn all_retail_stage_markers_parse() {
 /// set pieces name `start_animation2`, and its object is no `Driveline` trigger's: only the HUD's countdown fires it.
 #[test]
 fn all_retail_named_triggers_resolve() {
-    let Some(dir) = maps_dir() else { return };
+    let Some(dir) = common::maps_dir() else { return };
     let mut with_start = 0;
-    for path in collect_ext(&dir, "dls") {
+    for path in common::collect_ext(&dir, "dls") {
         let bytes = std::fs::read(&path).unwrap();
         let file = rbr_formats::dls::parse(&bytes).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         let named = markers::named_triggers(&file);

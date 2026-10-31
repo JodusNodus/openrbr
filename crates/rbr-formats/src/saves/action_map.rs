@@ -108,8 +108,8 @@ impl ActionMap {
                 Ok(Record { devices, bindings })
             })
             .collect::<Result<_, Error>>()?;
-        if r.at() != bytes.len() {
-            return Err(Error::TooLarge { len: bytes.len(), size: r.at() });
+        if r.pos() != bytes.len() {
+            return Err(Error::TooLarge { len: bytes.len(), size: r.pos() });
         }
         Ok(Self { records })
     }
@@ -143,6 +143,22 @@ mod tests {
         assert_eq!(b(0x0210).object(), Object::Pov(2));
         assert_eq!(Binding { action: 11, ..b(0) }.action_key(), Some("CLUTCH"));
         assert_eq!(Binding { action: 21, ..b(0) }.action_key(), None);
+    }
+
+    #[test]
+    fn truncation_points_end_where_they_stop() {
+        let map = ActionMap {
+            records: vec![Record {
+                devices: vec![SYS_KEYBOARD],
+                bindings: vec![Binding { device: 0, object: 0xcb04, action: 1 }],
+            }],
+        };
+        let bytes = map.write();
+        // Tag, version, count, the two counts, one GUID, one binding.
+        assert_eq!(bytes.len(), 12 + 8 + 16 + 12);
+        for (cut, at) in [(0, 0), (2, 0), (10, 8), (25, 20), (47, 44)] {
+            assert_eq!(ActionMap::read(&bytes[..cut]), Err(Error::Eof { at }), "cut at {cut}");
+        }
     }
 
     #[test]

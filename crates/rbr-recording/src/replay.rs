@@ -14,11 +14,12 @@
 //! The viewer writes the header (`viewer --save-replay`), the stepping process appends the log
 //! (`rbr-standalone --replay-out`), and `rbr-standalone --replay` runs the frames of the last start.
 
-use crate::realtime::{Logged, LOGGED_BYTES, LOG_MAGIC};
 use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 
+use crate::realtime::{Logged, LOGGED_BYTES, LOG_MAGIC};
 use crate::splits::{Splits, SPL1};
+use crate::{invalid, word_at};
 
 /// The first bytes of a replay.
 pub const MAGIC: [u8; 4] = *b"RRP1";
@@ -37,11 +38,8 @@ pub fn save_result(replay: &Path, result: &Splits) -> std::io::Result<()> {
 pub fn read_result(replay: &Path) -> std::io::Result<Splits> {
     let mut bytes = Vec::new();
     std::fs::File::open(result_path(replay))?.take(512).read_to_end(&mut bytes)?;
-    if bytes.len() < 8
-        || bytes[..4] != SPL1
-        || u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as usize != bytes.len() - 8
-    {
-        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid replay result"));
+    if bytes.len() < 8 || bytes[..4] != SPL1 || word_at(&bytes, 4) as usize != bytes.len() - 8 {
+        return Err(invalid("invalid replay result"));
     }
     Splits::from_payload(&bytes[8..])
 }

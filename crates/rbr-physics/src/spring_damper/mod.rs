@@ -1,6 +1,6 @@
-//! Spring damper physics (exe E48). The functions here use typed values only;
+//! Spring damper physics. The functions here use typed values only;
 //! layout is the edge that translates those values to the game's memory.
-//! The original asm decides operation order and unordered-comparison behavior.
+//! The operation order and unordered-comparison behavior are fixed.
 
 pub mod layout;
 pub mod store;
@@ -10,14 +10,14 @@ use crate::fpu::{round24, round_x87};
 use crate::math::le_or_unordered;
 use std::cmp::Ordering;
 
-const ONE: f32 = f32::from_bits(0x3f80_0000); // 0x795e14
-const MERGE_THRESHOLD: f32 = f32::from_bits(0x3586_37bd); // 0x795e70
-const RELAX_FLOOR: f32 = f32::from_bits(0x3727_c5ac); // 0x795e8c
+const ONE: f32 = f32::from_bits(0x3f80_0000);
+const MERGE_THRESHOLD: f32 = f32::from_bits(0x3586_37bd);
+const RELAX_FLOOR: f32 = f32::from_bits(0x3727_c5ac);
 /// Kelvin offset of the Celsius scale: 273.15 K.
-const KELVIN_OFFSET: f32 = f32::from_bits(0x4388_9333); // 0x73a128
-const OUTPUT_SCALE: f32 = f32::from_bits(0x47c3_5000); // 0x73c9f4
-const CURVE_LINEAR: f32 = f32::from_bits(0x3fa4_9249); // 0x740264
-const CURVE_RECIPROCAL: f32 = f32::from_bits(0x3e92_4925); // 0x740268
+const KELVIN_OFFSET: f32 = f32::from_bits(0x4388_9333);
+const OUTPUT_SCALE: f32 = f32::from_bits(0x47c3_5000);
+const CURVE_LINEAR: f32 = f32::from_bits(0x3fa4_9249);
+const CURVE_RECIPROCAL: f32 = f32::from_bits(0x3e92_4925);
 const MIN_BUMP_DAMPING: f32 = 400.0;
 
 /// A named CReal value plus its two bookkeeping words. layout owns the offsets.
@@ -53,7 +53,7 @@ pub struct Definition {
 
 impl Definition {
     /// Sets the droop-stop rate to 600000; the edge layer writes the
-    /// base and CReal constructor headers as well.
+    /// base and real-value constructor headers as well.
     pub fn new() -> Self {
         Self { droop_stop_rate: RealValue { dirty: 1, value: 600_000.0, ..RealValue::default() }, ..Self::default() }
     }
@@ -311,12 +311,12 @@ pub fn solve_numerator(terms: &mut UpdateTerms, gas_constant: f32) {
     };
 }
 
-/// Multiplies by the output scale on the x87, returned in st0.
+/// Multiplies by the output scale on the x87, returned as a double.
 pub fn scale(value: f32) -> f64 {
     round_x87(value as f64 * OUTPUT_SCALE as f64)
 }
 
-/// Applies two square roots on the x87 (the fourth root), returned in st0.
+/// Applies two square roots on the x87 (the fourth root), returned as a double.
 /// Non-positive input gives 0.
 pub fn sqrt4(value: f32) -> f64 {
     if value <= 0.0 {
@@ -326,7 +326,7 @@ pub fn sqrt4(value: f32) -> f64 {
     round_x87(first.sqrt())
 }
 
-/// Shapes a value on the x87, taking the reciprocal branch for unordered input; returned in st0.
+/// Shapes a value on the x87, taking the reciprocal branch for unordered input; returned as a double.
 pub fn curve(value: f32) -> f64 {
     let x87 = round_x87;
     let value64 = value as f64;
@@ -449,8 +449,8 @@ pub fn update_forces(fade: FadeState, definition: &Definition, state: &mut State
     state.hs_damp_bump_eff = (ONE - amount * 0.8) * definition.hs_damp_bump.value;
 }
 
-/// NGP 7.4.778's edits to `Step` (`notes/ngp.md`): the fade's threshold and scale are NGP's per-car words
-/// (0x10172ca8 and 0x10172cac in place of 1.02's 27000 at 0x74025c and 0x740258, set by `ngp::layout::car_init`).
+/// NGP 7.4.778's edits to the step (`notes/ngp.md`): the fade's threshold and scale are NGP's per-car words
+/// (set by `ngp::layout::car_init`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct NgpStep {
     pub fade_threshold: f32,

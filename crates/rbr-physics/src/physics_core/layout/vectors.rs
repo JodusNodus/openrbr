@@ -3,7 +3,7 @@
 
 use crate::math::table::TableIndex;
 use crate::mem::Mem;
-use crate::physics_core::math::{Mat, Vec3, Vec4, Vec4Rows};
+use crate::physics_core::math::{Mat, Vec3, Vec4};
 
 /// The calls `E46_Accum250` (`CSolid::E43Vf60`) makes: the hook `S00` (vtable 0, when the log flag 0x4000 is set), the
 /// base `CEntity::E43Vf60`, the point `S30` (vtable 0x30, given the out pointer the original pushes), the walk
@@ -99,7 +99,9 @@ pub fn cache_1ec(mem: &Mem, body: u32) -> u32 {
 pub fn vec_add(mem: &mut Mem, this: u32, dst: u32, n: u32) {
     let v = Vec4::load(mem, this);
     let mut rows = vec4s(mem, dst, n as usize);
-    v.add_each(&mut rows);
+    for row in &mut rows {
+        *row = *row + v;
+    }
     set_vec4s(mem, dst, &rows);
 }
 

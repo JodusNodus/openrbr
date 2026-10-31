@@ -17,16 +17,16 @@ use super::walk::Node;
 use crate::math::vec::Vec3;
 use crate::store::Raw;
 
-/// What `SimF950` reads of the body before it advances the hinge.
+/// What the hinge advance reads of the body before it advances the hinge.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AdvanceInput {
-    /// The solve's angular acceleration (`SimEAD0`'s value).
+    /// The solve's angular acceleration.
     pub solved: f32,
     pub rate: f32,
     pub angle: f32,
 }
 
-/// The state payload `SimF950` emits: the body's key, orientation and position.
+/// The state payload the hinge advance emits: the body's key, orientation and position.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StatePayload {
     pub key: u32,
@@ -37,20 +37,20 @@ pub struct StatePayload {
 /// What the material table's indexed lookup finds at `index` (`sample_indexed` samples the slot).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SlotLookup {
-    /// The table's own address (+0x800) is 0.
+    /// No table.
     NoTable,
     OutOfRange,
     /// The slot's address.
     At(u32),
 }
 
-/// The hinged body's words (`CHingedRigidBody`).
+/// The hinged body.
 pub trait HingeStore: Raw {
     // The hinged body (`CHingedRigidBody`), at `this`.
     /// The link pointer and the definition pointer.
     fn hinge_link(&self, this: u32) -> u32;
     fn hinge_definition(&self, this: u32) -> u32;
-    /// Whether `*link != 0` (`SimEAD0` returns at once), and whether the body has an owner car.
+    /// Whether the link is set (the solve returns at once then), and whether the body has an owner car.
     fn hinge_linked(&self, this: u32) -> bool;
     fn hinge_owned(&self, this: u32) -> bool;
 
@@ -69,11 +69,11 @@ pub trait HingeStore: Raw {
     fn store_rotation_block(&mut self, this: u32, block: &RotationBlock);
 
     fn slip_input(&self, this: u32) -> SlipInput;
-    /// The car state's word that `SimCFF0` reads (`state` is the state object, from `slip_input`).
+    /// The car state's word the slip term reads (`state` is the state object, from `slip_input`).
     fn car_state_c00(&self, state: u32) -> f32;
     fn pivot_input(&self, this: u32) -> PivotInput;
     fn store_pivot(&mut self, this: u32, pivot: &Pivot);
-    /// `SimE1D0`'s eax: the definition's settle vector when its gate address is nonzero, else 0.
+    /// The definition's settle vector when its gate is set, else 0.
     fn settle_axis(&self, this: u32) -> u32;
     fn signal_input(&self, this: u32) -> SignalInput;
     fn solve_entry_terms(&self, this: u32) -> EntryTerms;
@@ -93,16 +93,16 @@ pub trait HingeStore: Raw {
     fn store_limit_window(&mut self, this: u32, window: [u32; 3]);
     fn store_limit_rate(&mut self, this: u32, rate: f32);
 
-    /// `SimF950`'s reads and stores.
+    /// The hinge advance's inputs and stores.
     fn advance_input(&self, this: u32) -> AdvanceInput;
     fn store_rate(&mut self, this: u32, rate: f32);
     fn store_angle(&mut self, this: u32, angle: f32);
     /// The definition's axis vector, which the rate scales.
     fn rate_axis(&self, this: u32) -> u32;
-    /// `E09Vec4::Clear` on the body's linear velocity.
+    /// Clears the body's linear velocity.
     fn clear_linear_velocity(&mut self, this: u32);
     fn state_payload(&self, this: u32) -> StatePayload;
-    /// Writes the payload into the emit's slot `sig`: the key, then the orientation, then the position (which overwrites
+    /// Writes the payload at `sig`: the key, then the orientation, then the position (which overwrites
     /// the orientation's first lane).
     fn store_state_payload(&mut self, sig: u32, payload: &StatePayload);
     /// The state signal the body emits on.
@@ -112,20 +112,20 @@ pub trait HingeStore: Raw {
 /// The entity layer: the walker marks, the ground probe's record, nodes, frames, transforms, the dummy object, the
 /// exclusion sets and the car's body slots.
 pub trait EntityStore: HingeStore {
-    /// The root identity object (`g_7cbb00`) and its walker count (+8).
+    /// The root identity object and its walker count.
     fn identity(&self) -> u32;
     fn walker_count(&self, walker: u32) -> u32;
-    /// `CEntity::E43_InitBD0`'s stores into walker mark `mark` (0 or 1): the walker, then its serial.
+    /// The walker's stores into walker mark `mark` (0 or 1): the walker, then its serial.
     fn store_walker(&mut self, this: u32, mark: u32, walker: u32);
     fn store_serial(&mut self, this: u32, mark: u32, serial: u32);
-    /// `CSolid::E43ClearAcc`: the force and then the torque accumulator cleared. Returns the torque accumulator's address.
+    /// Clears the force and then the torque accumulator. Returns the torque accumulator's address.
     fn clear_accumulators(&mut self, this: u32) -> u32;
 
     /// The collision systems of the ground probe and of the entity collisions.
     fn probe_host(&self) -> u32;
     /// The host's 13 floats at `at`.
     fn probe_output(&self, at: u32) -> [f32; 13];
-    /// The record `CGround::VfE8` fills on a hit, after the vector copy: the second vector, the point, two cleared words,
+    /// The record the ground probe fills on a hit, after the vector copy: the second vector, the point, two cleared words,
     /// the depth and the owner.
     fn store_probe_contact(&mut self, record: u32, contact: &Contact);
     /// The first pass's edge count of the contact grid.
@@ -135,11 +135,11 @@ pub trait EntityStore: HingeStore {
     fn store_pair(&mut self, node: u32, first: u32, second: u32) -> u32;
     fn load_entity_frame(&self, at: u32) -> EntityFrame;
     fn load_transform(&self, at: u32) -> Transform;
-    /// The slot `CEntity::Vf120` jumps to.
+    /// The entity's query slot target.
     fn vf120_target(&self, entity: u32) -> u32;
     fn material_slot(&self, table: u32, index: u8) -> SlotLookup;
 
-    /// The flags object and its flag byte, as `CEntity::E43VfD4` reads them.
+    /// The flags object and its flag byte.
     fn entity_flags(&self) -> (u32, u8);
     /// The dummy's box centre and half extents.
     fn dummy_extents(&self, this: u32) -> (Vec3, Vec3);
@@ -162,7 +162,7 @@ pub trait EntityStore: HingeStore {
     fn exclusion_member(&self, set: u32, index: u32) -> u32;
     fn store_exclusion_member(&mut self, set: u32, index: u32, member: u32);
 
-    /// The car's body slot `index` (`CCar::Clear480`'s four tags) and its store.
+    /// The car's body slot `index` (four tags) and its store.
     fn car_body_slot(&self, car: u32, index: u32) -> u32;
     fn store_car_body_slot(&mut self, car: u32, index: u32, body: u32);
 }
