@@ -19,7 +19,7 @@ use crate::coords::physics_to_stage;
 use crate::damage::{self, Cracks, MeshDamage, Zones};
 use crate::damage_parts::Detach;
 use crate::game_camera::Follow;
-use crate::lights::{self, Flare, Inputs, Lamps};
+use crate::lights::{self, Inputs, LampPoint, Lamps};
 use crate::renderer::{mesh_bounds, Renderer};
 use crate::stage::{Mesh, Stage, Vertex};
 use crate::stage_probe::StageProbe;
@@ -173,8 +173,8 @@ pub struct Playback {
     zones: Zones,
     /// The window cracks the car has taken ([`Playback::on_damage`]).
     cracks: Cracks,
-    /// The lamps' flares, each with its stage mesh ([`Playback::add_flares`]).
-    flares: Vec<FlareSlot>,
+    /// The lamps' records and points ([`Playback::set_lamp_points`]).
+    lamp_points: Vec<LampPoint>,
     /// The gear is reverse. The live mode sets it from the HUD; a recording has no gear, so it stays off there.
     pub reverse: bool,
     /// The game's lamps by the frame they changed at ([`Playback::set_lamps`]); empty for a recording.
@@ -198,13 +198,6 @@ pub struct Playback {
     shadow: Option<rbr_formats::tga::Image>,
     /// The cockpit's mirrors' glass ([`Playback::set_mirrors`]).
     mirrors: Vec<crate::mirrors::Glass>,
-}
-
-/// A lamp's flare and the stage mesh it is drawn as.
-#[derive(Debug, Clone, PartialEq)]
-struct FlareSlot {
-    stage: usize,
-    flare: Flare,
 }
 
 impl Playback {
@@ -247,7 +240,7 @@ impl Playback {
             interior: false,
             zones: [0.0; damage::ZONES],
             cracks: Cracks::default(),
-            flares: Vec::new(),
+            lamp_points: Vec::new(),
             reverse: false,
             lamps: Default::default(),
             headlights: lights::Headlights::Main,
@@ -297,14 +290,9 @@ impl Playback {
             crate::taa::Wheel::new(node, steering.flat_map(|part| part.rest.iter().map(|v| Vec3::from(v.position))));
     }
 
-    /// Adds the car's flares (`car::Car::flares`, whose meshes are in `stage`), drawn as the lamps switch.
-    pub fn add_flares(&mut self, stage: &Stage, flares: &[Flare]) -> Result<(), String> {
-        for flare in flares {
-            let stage_index =
-                stage.meshes.iter().position(|m| *m == flare.mesh).ok_or("a flare is not in the stage")?;
-            self.flares.push(FlareSlot { stage: stage_index, flare: flare.clone() });
-        }
-        Ok(())
+    /// Sets the car's lamps (`car::Car::lamp_points`), which light the stage as they switch.
+    pub fn set_lamp_points(&mut self, points: Vec<LampPoint>) {
+        self.lamp_points = points;
     }
 
     /// The lamps' inputs in frame `index`: its brake pedal value, the gear, and the game's lamps from the live process.
@@ -597,9 +585,8 @@ impl Playback {
 
     /// Moves every car mesh to the current frame's pose in `renderer`, and hides the set not shown
     /// ([`Playback::interior`]), the crack overlays not projected and the lamp parts not in their lamp's state. The
-    /// hidden set moves too, so the car's bounds stay the car's whichever set is drawn. The flares are drawn as seen
-    /// through `lens` (the camera of the frame).
-    pub fn apply(&self, renderer: &mut Renderer, lens: &Lens) {
+    /// hidden set moves too, so the car's bounds stay the car's whichever set is drawn.
+    pub fn apply(&self, renderer: &mut Renderer) {
         let sample = self.sample();
         let body = self.body();
         let index = self.index();
@@ -641,31 +628,24 @@ impl Playback {
             let vertices = part.placed(matrix);
             renderer.set_vertices(part.stage, &vertices, mesh_bounds(&vertices));
         }
-        let mut lamps = Vec::new();
-        for slot in &self.flares {
-            let light = &slot.flare.light;
-            let on_at = |i| light.fixed.unwrap_or_else(|| lights::lit(light.kind, light.lamp, self.inputs(i)));
-            let on = on_at(index);
-            // A second past the longest fade, so that a lamp steady for a while reads as settled (`since_switch`).
-            let horizon = f64::from(light.fade_in.max(light.fade_out)) + 1.0;
-            let since = lights::since_switch(self.time(), index, |i| self.start_of(i), on_at, horizon);
-            let sprite = lights::fade(light, on, since).and_then(|fade| {
-                let position = body.transform_point3(slot.flare.position);
-                let normal = body.transform_vector3(slot.flare.normal);
-                let (forward, up) = (body.transform_vector3(Vec3::NEG_Z), body.transform_vector3(Vec3::Y));
-                let outward = normal.normalize_or_zero();
-                let main = self.headlights == lights::Headlights::Main;
-                lamps.push(lights::lamp(light, position, outward, forward.normalize(), up.normalize(), fade, main));
-                lights::sprite(light, position, normal, lens, fade)
-            });
-            match sprite {
-                Some(vertices) => {
-                    renderer.set_vertices(slot.stage, &vertices, None);
-                    renderer.set_visible(slot.stage, true);
-                }
-                None => renderer.set_visible(slot.stage, false),
-            }
-        }
+        let (forward, up) =
+            (body.transform_vector3(Vec3::NEG_Z).normalize(), body.transform_vector3(Vec3::Y).normalize());
+        let main = self.headlights == lights::Headlights::Main;
+        let lamps: Vec<_> = self
+            .lamp_points
+            .iter()
+            .filter_map(|point| {
+                let light = &point.light;
+                let on_at = |i| light.fixed.unwrap_or_else(|| lights::lit(light.kind, light.lamp, self.inputs(i)));
+                // A second past the longest fade, so that a lamp steady for a while reads as settled (`since_switch`).
+                let horizon = f64::from(light.fade_in.max(light.fade_out)) + 1.0;
+                let since = lights::since_switch(self.time(), index, |i| self.start_of(i), on_at, horizon);
+                let fade = lights::fade(light, on_at(index), since)?;
+                let position = body.transform_point3(point.position);
+                let outward = body.transform_vector3(point.normal).normalize_or_zero();
+                Some(lights::lamp(light, position, outward, forward, up, fade, main))
+            })
+            .collect();
         renderer.set_lamps(&lamps);
         renderer.set_car_body(body);
         renderer.set_car_wheel(self.wheel.zip(self.turn).filter(|_| self.interior && !self.hide_wheel));

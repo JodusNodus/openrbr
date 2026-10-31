@@ -48,7 +48,7 @@ pub fn draw_car(scene: &mut Scene, renderer: &mut Renderer, shown: Shown, look: 
     let lens = shown.lens(playback, mounts, scripted_camera(scene.characters.as_ref()).2, look, fov);
     playback.interior = view.interior();
     renderer.set_outside_view(!view.interior());
-    playback.apply(renderer, &lens);
+    playback.apply(renderer);
     Some(lens)
 }
 

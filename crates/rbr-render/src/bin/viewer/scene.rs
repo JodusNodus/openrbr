@@ -284,7 +284,8 @@ fn load_scene<'scope, 'env>(
                             car.add_inner_glass();
                         }
                         let (model, damage) = (car.meshes.clone(), car.damage.clone());
-                        let (flares, (lo, hi)) = (car.flares.clone(), car.bounds().ok_or("the car has no geometry")?);
+                        let (lamp_points, (lo, hi)) =
+                            (car.lamp_points.clone(), car.bounds().ok_or("the car has no geometry")?);
                         report_car(&car.add_to_stage(&mut stage));
                         // Both sets are in the stage before the playback looks up their meshes: adding sorts it.
                         let cabin = args.enhance.cabin.then_some(model.as_slice());
@@ -337,7 +338,7 @@ fn load_scene<'scope, 'env>(
                             loaded.hide_wheel = wheel.is_some();
                         }
                         loaded.set_mirrors(mirrors.unwrap_or_default());
-                        loaded.add_flares(&stage, &flares)?;
+                        loaded.set_lamp_points(lamp_points);
                         if let Some(zones) = &args.damage {
                             loaded.set_damage(zones);
                         }

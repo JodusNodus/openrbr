@@ -27,7 +27,7 @@
 
 use crate::coords;
 use crate::damage::{self, Cracks, Dents, MeshDamage, Zones};
-use crate::lights::{self, Flare};
+use crate::lights::{self, LampPoint};
 use crate::parallel::in_parallel;
 use crate::stage::{Draw, Mesh, Pose, Selection, Shade, Stage, StageTexture, TextureRef, TextureSet, Vertex};
 use glam::{Mat4, Vec3};
@@ -224,9 +224,9 @@ pub struct Car {
     pub meshes: Vec<Mesh>,
     /// Per mesh, what damage does to it.
     pub damage: Vec<MeshDamage>,
-    /// The lamps' flares (the exterior set only). Their meshes are added to the stage with the car's; the playback
-    /// draws them ([`lights`]).
-    pub flares: Vec<Flare>,
+    /// The lamps' records and points (the exterior set only), which the playback switches and lights the stage by
+    /// ([`lights`]).
+    pub lamp_points: Vec<LampPoint>,
     pub textures: BTreeMap<TextureRef, StageTexture>,
     pub report: CarReport,
 }
@@ -398,14 +398,14 @@ fn load_set(
         }
     }
     let (meshes, damage) = in_draw_order(groups).into_iter().unzip();
-    let flares = if exterior {
+    let lamp_points = if exterior {
         let settings_file = entry.ini_file.replace(".ini", "_settings.ini");
         let settings = read_ini(data, &settings_file)?;
         let on = model_path.parent().and_then(rbr_formats::rsf::headlights_on);
         let on_ini = |file: &str| on.as_deref().and_then(|on| option_ini(on, file)).unwrap_or_default();
         let beam = lights::headlight_colour(&on_ini(&settings_file));
         let parts = lights::with_headlight_points(&parts, &on_ini(&entry.ini_file));
-        lights::flares(&settings, &parts, beam, |file| textures.key(&format!("{}{file}", entry.texture_path)))
+        lights::lamp_points(&settings, &parts, beam)
     } else {
         Vec::new()
     };
@@ -421,7 +421,7 @@ fn load_set(
         report.shader_files.insert(class.clone(), files);
     }
 
-    Ok(Car { name: name.to_owned(), meshes, damage, flares, textures: textures.finish(&mut report), report })
+    Ok(Car { name: name.to_owned(), meshes, damage, lamp_points, textures: textures.finish(&mut report), report })
 }
 
 impl Car {
@@ -537,7 +537,7 @@ impl Car {
     }
 
     /// The car at the stage start: its lamp parts in their start state (front and tail lights on, brake and reverse lights
-    /// off), and no flares, which only the playback draws.
+    /// off).
     pub fn at_rest(mut self) -> Car {
         let rest = lights::Inputs::default();
         let (meshes, damage) = std::mem::take(&mut self.meshes)
@@ -547,14 +547,12 @@ impl Car {
             .unzip();
         self.meshes = meshes;
         self.damage = damage;
-        self.flares.clear();
         self
     }
 
-    /// Adds the car's meshes, and its flares' meshes, and textures to `stage`, keeping the meshes sorted by layer.
+    /// Adds the car's meshes and textures to `stage`, keeping the meshes sorted by layer.
     pub fn add_to_stage(self, stage: &mut Stage) -> CarReport {
         stage.meshes.extend(self.meshes);
-        stage.meshes.extend(self.flares.into_iter().map(|flare| flare.mesh));
         stage.meshes.sort_by_key(|mesh| mesh.layer);
         stage.textures.extend(self.textures);
         self.report

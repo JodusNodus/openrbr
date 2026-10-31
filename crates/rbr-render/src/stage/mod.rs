@@ -626,7 +626,6 @@ fn global_clouds(
                 mip_bias: false,
                 cull_back: false,
                 blend: true,
-                additive: false,
                 depth_test: false,
                 depth_write: false,
                 shade: None,

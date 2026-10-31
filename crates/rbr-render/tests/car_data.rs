@@ -85,7 +85,7 @@ fn xsara_sits_at_the_track_10_o_start() {
     let from_start = Vec3::new(centre.x - start.position.x, 0.0, centre.z - start.position.z);
     assert!(from_start.length() < 6.0, "car centre {from_start:?} from the start");
 
-    let car_meshes = car.meshes.len() + car.flares.len();
+    let car_meshes = car.meshes.len();
     car.add_to_stage(&mut stage);
     assert_eq!(stage.meshes.len(), meshes + car_meshes);
     assert!(stage.textures.len() > textures, "car textures added");

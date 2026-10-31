@@ -1019,9 +1019,13 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     } else {
         // Paint reflects less and a little blurred (`PAINT_GLOSS`).
         var shine = reflected(reflect(-view, n), PAINT_GLOSS.y) * f * PAINT_GLOSS.x * alpha * clean;
-        // The cabin's paint reflects only what it sees out of the windows (`cabin_open`).
+        // In the cabin only paint open to the sky (the bonnet seen through the glass, as `cabin_light` takes it) keeps
+        // its reflection, of what it sees out of the windows (`cabin_open`); the rest reflects as the cabin's plastics
+        // (`cabin_sheen`), whatever its class's Fresnel (the Clio Rally3's dash, `Kf` 1 from 0, read as glass).
         if (cabin_face) {
-            shine = shine * cabin_open(cabin_seen(v), 1.0 - v.specular.z, reflect(-view, n));
+            let paint = select(0.0, smoothstep(CABIN_OUT.x, CABIN_OUT.y, 1.0 - v.specular.z), mode.fresnel.z != 0.0);
+            let open = shine * cabin_open(cabin_seen(v), 1.0 - v.specular.z, reflect(-view, n));
+            shine = mix(cabin_sheen(v, n, view), open, paint);
         }
         colour = shaded + shine;
         // With the day's light the clear coat (`COAT_ROUGHNESS`).
@@ -1074,8 +1078,6 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         let blended = mix(tint, alpha, printed);
         colour = colour * printed * alpha / max(blended, 1e-4);
         alpha = blended;
-    } else if (cabin_face && mode.fresnel.z == 0.0) {
-        colour = colour + cabin_sheen(v, n, view);
     }
     colour = colour + glint;
     // A lit lamp's part (`stage::Shade::glow`) glows (ours): by day `mode.lamp.w` of it, by night and at dusk, as the

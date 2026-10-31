@@ -67,7 +67,6 @@ pub(super) fn draw_state(
         mip_bias: texture.is_some(),
         cull_back: !matches!(pass, Pass::Plastic | Pass::InteriorGlass),
         blend,
-        additive: false,
         depth_test: true,
         depth_write: matches!(pass, Pass::Opaque | Pass::Plastic),
         shade,

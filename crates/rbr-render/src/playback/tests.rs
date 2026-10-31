@@ -52,7 +52,7 @@ fn playback(frames: &[Vec<u8>]) -> Playback {
         interior: false,
         zones: [0.0; damage::ZONES],
         cracks: Cracks::default(),
-        flares: Vec::new(),
+        lamp_points: Vec::new(),
         reverse: false,
         lamps: Default::default(),
         headlights: lights::Headlights::Main,
