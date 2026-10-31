@@ -194,52 +194,31 @@ fn store_quat(mem: &mut Mem, at: u32, q: Quat) {
 #[test]
 fn quat_mul_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, M83DD0) else {
-        eprintln!("skipping M83DD0: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        let (p, q) = (load_quat(&mem, call.args[0]), load_quat(&mem, call.args[1]));
-        store_quat(&mut mem, call.args[2], mul(p, q));
+    common::replay(VAR, M83DD0, "M83DD0", |call, mem| {
+        let (p, q) = (load_quat(mem, call.args[0]), load_quat(mem, call.args[1]));
+        store_quat(&mut *mem, call.args[2], mul(p, q));
         assert_eq!(call.eax, call.args[2], "M83DD0 call {} returns out", call.index);
-        check_windows(call, &mem, "M83DD0");
-    }
-    eprintln!("M83DD0: {} calls match", calls.len());
+    });
 }
 
 #[test]
 fn normalize_in_place_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, E18_NORMALIZE) else {
-        eprintln!("skipping E18_QuatNormalize: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        let q = load_quat(&mem, call.args[0]);
-        store_quat(&mut mem, call.args[0], normalize(q));
+    common::replay(VAR, E18_NORMALIZE, "E18_QuatNormalize", |call, mem| {
+        let q = load_quat(mem, call.args[0]);
+        store_quat(&mut *mem, call.args[0], normalize(q));
         assert_eq!(call.eax, call.args[0], "E18_QuatNormalize call {} returns q", call.index);
-        check_windows(call, &mem, "E18_QuatNormalize");
-    }
-    eprintln!("E18_QuatNormalize: {} calls match", calls.len());
+    });
 }
 
 #[test]
 fn normalize_to_output_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, E34_NORM) else {
-        eprintln!("skipping E34Quat::Norm: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        let v = load_quat(&mem, call.args[0]);
-        store_quat(&mut mem, call.args[1], normalize(v));
+    common::replay(VAR, E34_NORM, "E34Quat::Norm", |call, mem| {
+        let v = load_quat(mem, call.args[0]);
+        store_quat(&mut *mem, call.args[1], normalize(v));
         assert_eq!(call.eax, call.args[1], "E34Quat::Norm call {} returns out", call.index);
-        check_windows(call, &mem, "E34Quat::Norm");
-    }
-    eprintln!("E34Quat::Norm: {} calls match", calls.len());
+    });
 }
 
 /// Replays a call's recorded callees, in order, as the pose step's host. Each host call must be the next record, with
@@ -1213,17 +1192,10 @@ fn step77_matches_original_calls() {
 #[test]
 fn step76_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, STEP76) else {
-        eprintln!("skipping Step76: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
+    common::replay(VAR, STEP76, "Step76", |call, mem| {
         let (this, point, out) = (call.args[0], call.args[1], call.args[2]);
-        point_velocity(&mut mem, this, point, out);
-        check_windows(call, &mem, "Step76");
-    }
-    eprintln!("Step76: {} calls match", calls.len());
+        point_velocity(&mut *mem, this, point, out);
+    });
 }
 
 /// CSolid::Vf85 (direct records): the answer is the definition's word at +0x1ec being nonzero, and the call writes nothing.
@@ -1688,215 +1660,117 @@ fn accumulate_force_matches_original_calls() {
 #[test]
 fn reset_block_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, SCRATCH_VF04) else {
-        eprintln!("skipping E47SolidScratch::Vf04: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        store_scratch_reset(&mut mem, call.args[0]);
-        check_windows(call, &mem, "E47SolidScratch::Vf04");
-    }
-    eprintln!("E47SolidScratch::Vf04: {} calls match", calls.len());
+    common::replay(VAR, SCRATCH_VF04, "E47SolidScratch::Vf04", |call, mem| {
+        store_scratch_reset(&mut *mem, call.args[0]);
+    });
 }
 
 #[test]
 fn scratch_base_init_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, SCRATCH_BASE_INIT) else {
-        eprintln!("skipping E47_ScratchBaseInit: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        store_scratch_base_init(&mut mem, call.args[0]);
-        check_windows(call, &mem, "E47_ScratchBaseInit");
-    }
-    eprintln!("E47_ScratchBaseInit: {} calls match", calls.len());
+    common::replay(VAR, SCRATCH_BASE_INIT, "E47_ScratchBaseInit", |call, mem| {
+        store_scratch_base_init(&mut *mem, call.args[0]);
+    });
 }
 
 #[test]
 fn set_from_quat_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, SET_FROM_QUAT) else {
-        eprintln!("skipping E01Mat3::SetFromQuat: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
+    common::replay(VAR, SET_FROM_QUAT, "E01Mat3::SetFromQuat", |call, mem| {
         let q = vec4_of(window_pre(call, 1));
         let m = from_quat(Quat { x: q.x, y: q.y, z: q.z, w: q.w });
         for (k, v) in m.iter().flatten().enumerate() {
             mem.set_f32(call.args[0] + 4 * k as u32, *v);
         }
-        check_windows(call, &mem, "E01Mat3::SetFromQuat");
-    }
-    eprintln!("E01Mat3::SetFromQuat: {} calls match", calls.len());
+    });
 }
 
 #[test]
 fn transform_rows_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, E43_VFAC) else {
-        eprintln!("skipping E43VfAC: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        transform_body_rows(&mut mem, call.args[0], call.args[1], call.args[2]);
-        check_windows(call, &mem, "CSolid::E43VfAC");
-    }
-    eprintln!("CSolid::E43VfAC: {} calls match", calls.len());
+    common::replay(VAR, E43_VFAC, "CSolid::E43VfAC", |call, mem| {
+        transform_body_rows(&mut *mem, call.args[0], call.args[1], call.args[2]);
+    });
 }
 
 #[test]
 fn transform_rows3_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, E43_VFB0) else {
-        eprintln!("skipping E43VfB0: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        transform_body_rows3(&mut mem, call.args[0], call.args[1], call.args[2]);
-        check_windows(call, &mem, "CSolid::E43VfB0");
-    }
-    eprintln!("CSolid::E43VfB0: {} calls match", calls.len());
+    common::replay(VAR, E43_VFB0, "CSolid::E43VfB0", |call, mem| {
+        transform_body_rows3(&mut *mem, call.args[0], call.args[1], call.args[2]);
+    });
 }
 
 #[test]
 fn subtract_origin_and_transform_rows_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, E43_VFA0) else {
-        eprintln!("skipping E43VfA0: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        solid_e43vfa0(&mut mem, call.args[0], call.args[1], call.args[2]);
-        check_windows(call, &mem, "CSolid::E43VfA0");
-    }
-    eprintln!("CSolid::E43VfA0: {} calls match", calls.len());
+    common::replay(VAR, E43_VFA0, "CSolid::E43VfA0", |call, mem| {
+        solid_e43vfa0(&mut *mem, call.args[0], call.args[1], call.args[2]);
+    });
 }
 
 #[test]
 fn fold_rows_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, E43_VFBC) else {
-        eprintln!("skipping E43VfBC: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        fold_body_rows(&mut mem, call.args[0], call.args[1], call.args[2]);
-        check_windows(call, &mem, "CSolid::E43VfBC");
-    }
-    eprintln!("CSolid::E43VfBC: {} calls match", calls.len());
+    common::replay(VAR, E43_VFBC, "CSolid::E43VfBC", |call, mem| {
+        fold_body_rows(&mut *mem, call.args[0], call.args[1], call.args[2]);
+    });
 }
 
 #[test]
 fn fold_rows_reordered_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, E43_VFC0) else {
-        eprintln!("skipping E43VfC0: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        fold_body_rows_reordered(&mut mem, call.args[0], call.args[1], call.args[2]);
-        check_windows(call, &mem, "CSolid::E43VfC0");
-    }
-    eprintln!("CSolid::E43VfC0: {} calls match", calls.len());
+    common::replay(VAR, E43_VFC0, "CSolid::E43VfC0", |call, mem| {
+        fold_body_rows_reordered(&mut *mem, call.args[0], call.args[1], call.args[2]);
+    });
 }
 
 #[test]
 fn quat_plus_rows_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, E43_VFA4) else {
-        eprintln!("skipping E43VfA4: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        quat_plus_body_rows(&mut mem, call.args[0], call.args[1], call.args[2]);
-        check_windows(call, &mem, "CSolid::E43VfA4");
-    }
-    eprintln!("CSolid::E43VfA4: {} calls match", calls.len());
+    common::replay(VAR, E43_VFA4, "CSolid::E43VfA4", |call, mem| {
+        quat_plus_body_rows(&mut *mem, call.args[0], call.args[1], call.args[2]);
+    });
 }
 
 #[test]
 fn quat_diff_rows_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, E43_VFA8) else {
-        eprintln!("skipping E43VfA8: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        quat_diff_body_rows(&mut mem, call.args[0], call.args[1], call.args[2]);
-        check_windows(call, &mem, "CSolid::E43VfA8");
-    }
-    eprintln!("CSolid::E43VfA8: {} calls match", calls.len());
+    common::replay(VAR, E43_VFA8, "CSolid::E43VfA8", |call, mem| {
+        quat_diff_body_rows(&mut *mem, call.args[0], call.args[1], call.args[2]);
+    });
 }
 
 #[test]
 fn quat_transform_rows_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, E43_VFB4) else {
-        eprintln!("skipping E43VfB4: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        quat_transform_body_rows(&mut mem, call.args[0], call.args[1], call.args[2]);
-        check_windows(call, &mem, "CSolid::E43VfB4");
-    }
-    eprintln!("CSolid::E43VfB4: {} calls match", calls.len());
+    common::replay(VAR, E43_VFB4, "CSolid::E43VfB4", |call, mem| {
+        quat_transform_body_rows(&mut *mem, call.args[0], call.args[1], call.args[2]);
+    });
 }
 
 #[test]
 fn quat_rows_b8_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, E43_VFB8) else {
-        eprintln!("skipping E43VfB8: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        quat_body_rows_b8(&mut mem, call.args[0], call.args[1], call.args[2]);
-        check_windows(call, &mem, "CSolid::E43VfB8");
-    }
-    eprintln!("CSolid::E43VfB8: {} calls match", calls.len());
+    common::replay(VAR, E43_VFB8, "CSolid::E43VfB8", |call, mem| {
+        quat_body_rows_b8(&mut *mem, call.args[0], call.args[1], call.args[2]);
+    });
 }
 
 #[test]
 fn quat_fold_rows_c4_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, E43_VFC4) else {
-        eprintln!("skipping E43VfC4: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        fold_quat_body_rows_c4(&mut mem, call.args[0], call.args[1], call.args[2]);
-        check_windows(call, &mem, "CSolid::E43VfC4");
-    }
-    eprintln!("CSolid::E43VfC4: {} calls match", calls.len());
+    common::replay(VAR, E43_VFC4, "CSolid::E43VfC4", |call, mem| {
+        fold_quat_body_rows_c4(&mut *mem, call.args[0], call.args[1], call.args[2]);
+    });
 }
 
 #[test]
 fn quat_fold_rows_c8_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, E43_VFC8) else {
-        eprintln!("skipping E43VfC8: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        fold_quat_body_rows_c8(&mut mem, call.args[0], call.args[1], call.args[2]);
-        check_windows(call, &mem, "CSolid::E43VfC8");
-    }
-    eprintln!("CSolid::E43VfC8: {} calls match", calls.len());
+    common::replay(VAR, E43_VFC8, "CSolid::E43VfC8", |call, mem| {
+        fold_quat_body_rows_c8(&mut *mem, call.args[0], call.args[1], call.args[2]);
+    });
 }
 
 /// One recorded `E46Mat::Mul` (the child of `Vf17x`): its inputs and its output.
@@ -1970,19 +1844,12 @@ impl Vf54Host for EntityCount {
 #[test]
 fn vf54_helper_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, VF54_HELPER) else {
-        eprintln!("skipping E47_Vf54Helper: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
+    common::replay(VAR, VF54_HELPER, "E47_Vf54Helper", |call, mem| {
         let mut host = EntityCount::default();
-        scratch_reset_after_entity(&mut mem, call.args[0], &mut host)
+        scratch_reset_after_entity(&mut *mem, call.args[0], &mut host)
             .expect("E47_Vf54Helper: the entity host is not called");
         assert_eq!(host.0, 1, "E47_Vf54Helper call {}: one entity call", call.index);
-        check_windows(call, &mem, "E47_Vf54Helper");
-    }
-    eprintln!("E47_Vf54Helper: {} calls match", calls.len());
+    });
 }
 
 /// Writes the recorded windows of one physics-core call into `mem`, after checking the bytes before the call.
@@ -1996,17 +1863,10 @@ fn replay_windows(mem: &mut Mem, windows: &[Window], name: &str) {
 #[test]
 fn scale_add_rows_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, VF39X) else {
-        eprintln!("skipping E47Solid::Vf39x: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        let ret = scale_add_rows(&mut mem, call.args[0], call.args[1], call.args[2]);
+    common::replay(VAR, VF39X, "E47Solid::Vf39x", |call, mem| {
+        let ret = scale_add_rows(&mut *mem, call.args[0], call.args[1], call.args[2]);
         assert_eq!(ret, call.eax, "E47Solid::Vf39x call {}: returns dst", call.index);
-        check_windows(call, &mem, "E47Solid::Vf39x");
-    }
-    eprintln!("E47Solid::Vf39x: {} calls match", calls.len());
+    });
 }
 
 /// The calls one `Vf16Helper` call makes outside the port: the product calls of its two `Vf17x` calls (in order), the
@@ -2215,14 +2075,7 @@ fn e47_state_ctor_matches_original_calls() {
 #[test]
 fn cdef_ctor_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VAR, CDEF_CTOR) else {
-        eprintln!("skipping CSolid::CDef::CDef: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        solid_def_ctor(&mut mem, call.args[0], call.args[1]);
-        check_windows(call, &mem, "CSolid::CDef::CDef");
-    }
-    eprintln!("CSolid::CDef::CDef: {} calls match", calls.len());
+    common::replay(VAR, CDEF_CTOR, "CSolid::CDef::CDef", |call, mem| {
+        solid_def_ctor(&mut *mem, call.args[0], call.args[1]);
+    });
 }

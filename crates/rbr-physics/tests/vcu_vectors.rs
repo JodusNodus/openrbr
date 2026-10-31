@@ -51,17 +51,8 @@ fn load(addr: u32) -> Option<Vec<Call>> {
 /// Replays every recorded call of `addr` through `port`, which gets the call's windows mapped and its
 /// arguments, and returns st0. Checks st0 bit for bit and every window after the call.
 fn replay(addr: u32, name: &str, port: impl Fn(&Mem, &[u32]) -> f64) {
-    let Some(calls) = load(addr) else {
-        eprintln!("skipping {name}: RBR_VCU_VECTORS not set");
-        return;
-    };
-    let mut branches = std::collections::BTreeMap::<String, usize>::new();
-    for call in &calls {
-        let mut mem = Mem::new();
-        for Window { index: _, at, len: _, before: pre, after: _ } in &call.windows {
-            mem.map(*at, pre);
-        }
-        let st0 = port(&mem, &call.args);
+    common::replay_branches("RBR_VCU_VECTORS", addr, name, |call, mem| {
+        let st0 = port(mem, &call.args);
         assert_eq!(
             st0.to_bits(),
             f64::from_bits(call.st0_bits).to_bits(),
@@ -70,12 +61,7 @@ fn replay(addr: u32, name: &str, port: impl Fn(&Mem, &[u32]) -> f64) {
             call.branch,
             f64::from_bits(call.st0_bits)
         );
-        for Window { index: k, at, len, before: _, after: post } in &call.windows {
-            assert_eq!(mem.read(*at, *len), *post, "{name} call {} window {k}", call.index);
-        }
-        *branches.entry(call.branch.clone()).or_default() += 1;
-    }
-    eprintln!("{name}: {} calls match, by branch: {branches:?}", calls.len());
+    });
 }
 
 #[test]
@@ -122,16 +108,7 @@ fn lock_max_matches_original_calls() {
 #[test]
 fn diff_locks_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(DIFF_LOCKS) else {
-        eprintln!("skipping diff_locks: RBR_VCU_VECTORS not set");
-        return;
-    };
-    let mut branches = std::collections::BTreeMap::<String, usize>::new();
-    for call in &calls {
-        let mut mem = Mem::new();
-        for Window { index: _, at, len: _, before: pre, after: _ } in &call.windows {
-            mem.map(*at, pre);
-        }
+    common::replay_branches("RBR_VCU_VECTORS", DIFF_LOCKS, "diff_locks", |call, mem| {
         let speeds: Vec<&Inner> = call.inner.iter().filter(|f| f.addr == GET_4540).collect();
         let [speed] = speeds[..] else {
             panic!("call {}: {} CDrive::Get4540 calls", call.index, speeds.len());
@@ -147,12 +124,7 @@ fn diff_locks_matches_original_calls() {
             assert_eq!(*index, channel as u32, "call {}: Set4570 order", call.index);
             assert_eq!(locks[channel].to_bits(), *bits, "call {} ({}) channel {channel}", call.index, call.branch);
         }
-        for Window { index: k, at, len, before: _, after: post } in &call.windows {
-            assert_eq!(mem.read(*at, *len), *post, "call {} window {k}", call.index);
-        }
-        *branches.entry(call.branch.clone()).or_default() += 1;
-    }
-    eprintln!("diff_locks: {} calls match, by branch: {branches:?}", calls.len());
+    });
 }
 
 /// The one inner call of `addr` made by `call` (the original calls each accessor once here).
@@ -380,21 +352,9 @@ fn flag_dispatch_matches_original_calls() {
 #[test]
 fn copy_def_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(COPY_DEF) else {
-        eprintln!("skipping copy_def: RBR_VCU_VECTORS not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = Mem::new();
-        for Window { index: _, at, len: _, before: pre, after: _ } in &call.windows {
-            mem.map(*at, pre);
-        }
-        vcu::layout::copy_def(&mut mem, call.args[0], call.args[1]);
-        for Window { index: k, at, len, before: _, after: post } in &call.windows {
-            assert_eq!(mem.read(*at, *len), *post, "call {} window {k}", call.index);
-        }
-    }
-    eprintln!("copy_def: {} calls match", calls.len());
+    common::replay("RBR_VCU_VECTORS", COPY_DEF, "copy_def", |call, mem| {
+        vcu::layout::copy_def(mem, call.args[0], call.args[1]);
+    });
 }
 
 /// CScratchSim::ReadPacket (CopyFrom): its own record never comes out, since it tail-jumps into FlagDispatch.

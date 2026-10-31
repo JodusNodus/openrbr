@@ -60,23 +60,12 @@ impl Owner for Answers<'_> {
 /// `replay`, for ports that make external calls: `port(mem, args, answers)` returns eax, which must match the
 /// original's, and every external call the original recorded must be made.
 fn replay_calls(addr: u32, name: &str, port: impl Fn(&mut Mem, &[u32], &mut Answers<'_>) -> u32) {
-    let Some(calls) = load(VAR, addr) else {
-        eprintln!("skipping {name}: {VAR} not set");
-        return;
-    };
-    if calls.is_empty() {
-        eprintln!("{name}: no calls in the vector files");
-        return;
-    }
-    for call in &calls {
-        let mut mem = map_windows(call);
+    common::replay(VAR, addr, name, |call, mem| {
         let mut answers = Answers { inner: &call.inner, next: 0 };
-        let eax = port(&mut mem, &call.args, &mut answers);
+        let eax = port(mem, &call.args, &mut answers);
         assert_eq!(eax, call.eax, "{name} call {}: eax", call.index);
         assert_eq!(answers.next, call.inner.len(), "{name} call {}: external calls", call.index);
-        check_windows(call, &mem, name);
-    }
-    eprintln!("{name}: {} calls match", calls.len());
+    });
 }
 
 #[test]
@@ -659,22 +648,11 @@ impl NameWalk for Walks<'_> {
 /// Replays each recorded call of a child walk: `run` makes the port's calls on `walks` and returns nothing (eax is
 /// the walk's own return only for ported walks that return one; these return void).
 fn replay_walk(addr: u32, name: &str, run: impl Fn(&mut Walks<'_>, &[u32]) -> u32) {
-    let Some(calls) = load(VAR, addr) else {
-        eprintln!("skipping {name}: {VAR} not set");
-        return;
-    };
-    if calls.is_empty() {
-        eprintln!("{name}: no calls in the vector files");
-        return;
-    }
-    for call in &calls {
-        let mem = map_windows(call);
-        let mut walks = Walks { mem: &mem, inner: &call.inner, next: 0 };
+    common::replay(VAR, addr, name, |call, mem| {
+        let mut walks = Walks { mem, inner: &call.inner, next: 0 };
         run(&mut walks, &call.args);
         assert_eq!(walks.next, call.inner.len(), "{name} call {}: inner calls", call.index);
-        check_windows(call, &mem, name);
-    }
-    eprintln!("{name}: {} calls match", calls.len());
+    });
 }
 
 #[test]
@@ -776,18 +754,11 @@ fn expect_inner(name: &str, call: &Call, expected: &[(u32, Vec<u32>)]) {
 #[test]
 fn entity_def_ctor_matches_original_calls() {
     let name = "E43EntityDef::E43EntityDef";
-    let Some(calls) = load(VAR, 0x51A530) else {
-        eprintln!("skipping {name}: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        let eax = layout::construct_entity_def(&mut mem, call.args[0], call.args[1]);
+    common::replay(VAR, 0x51A530, name, |call, mem| {
+        let eax = layout::construct_entity_def(mem, call.args[0], call.args[1]);
         assert_eq!(eax, call.eax, "{name} call {}: eax", call.index);
         expect_inner(name, call, &[(0x52F090, vec![call.args[0], call.args[1]])]);
-        check_windows(call, &mem, name);
-    }
-    eprintln!("{name}: {} calls match", calls.len());
+    });
 }
 
 #[test]
@@ -824,46 +795,32 @@ fn replay_calls_with(addr: u32, name: &str, port: impl Fn(&mut Mem, &[u32], &mut
 #[test]
 fn fetch_x_matches_original_calls() {
     let name = "E33Mat34::FetchX";
-    let Some(calls) = load(VAR, 0x51B6C0) else {
-        eprintln!("skipping {name}: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
+    common::replay(VAR, 0x51B6C0, name, |call, mem| {
         let t = mem.load_transform(call.args[0]);
         let (eax, next) = {
-            let mut answers = WalkAnswers { mem: &mut mem, inner: &call.inner, next: 0, copy_expected: None };
+            let mut answers = WalkAnswers { mem, inner: &call.inner, next: 0, copy_expected: None };
             let eax = transform::transform_one_two(&mut answers, t, call.args[1], call.args[2]);
             (eax, answers.next)
         };
         assert_eq!(eax, call.eax, "{name} call {}: eax", call.index);
         assert_eq!(next, call.inner.len(), "{name} call {}: walks", call.index);
-        check_windows(call, &mem, name);
-    }
-    eprintln!("{name}: {} calls match", calls.len());
+    });
 }
 
 #[test]
 fn compose_b_matches_original_calls() {
     let name = "E33Mat34::ComposeB";
-    let Some(calls) = load(VAR, 0x51B600) else {
-        eprintln!("skipping {name}: {VAR} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
+    common::replay(VAR, 0x51B600, name, |call, mem| {
         let [worker, matrix, o2, out] = call.args[..] else { panic!("{name} call {}: args", call.index) };
         let t = transform::Transform { matrix, node: worker };
         let (eax, next) = {
-            let mut answers = WalkAnswers { mem: &mut mem, inner: &call.inner, next: 0, copy_expected: None };
+            let mut answers = WalkAnswers { mem, inner: &call.inner, next: 0, copy_expected: None };
             let eax = transform::transform_five_six(&mut answers, t, out, o2);
             (eax, answers.next)
         };
         assert_eq!(eax, call.eax, "{name} call {}: eax", call.index);
         assert_eq!(next, call.inner.len(), "{name} call {}: walks", call.index);
-        check_windows(call, &mem, name);
-    }
-    eprintln!("{name}: {} calls match", calls.len());
+    });
 }
 
 /// `FetchY`'s grid walk, answered from its record (its writes to `out` are its window).

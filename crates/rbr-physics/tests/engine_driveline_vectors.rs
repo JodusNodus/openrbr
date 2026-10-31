@@ -37,12 +37,7 @@ const GET_4540: u32 = 0x504540;
 #[test]
 fn table_lerp_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VARIABLE, TABLE_LERP) else {
-        eprintln!("skipping table_lerp: {VARIABLE} not set");
-        return;
-    };
-    for call in &calls {
-        let mem = map_windows(call);
+    common::replay(VARIABLE, TABLE_LERP, "E41_TableLerp", |call, mem| {
         let table = mem.f32_table(call.args[0], call.args[4] as i32 as usize);
         let st0 = sim::table_lerp(
             &table,
@@ -51,81 +46,51 @@ fn table_lerp_matches_original_calls() {
             f32::from_bits(call.args[3]),
         );
         check_st0_nan_tolerant(call, st0, "E41_TableLerp");
-        check_windows(call, &mem, "E41_TableLerp");
-    }
-    eprintln!("E41_TableLerp: {} calls match", calls.len());
+    });
 }
 
 #[test]
 fn unk_d6f0_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VARIABLE, UNK_D6F0) else {
-        eprintln!("skipping split_unit_fraction: {VARIABLE} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
+    common::replay(VARIABLE, UNK_D6F0, "E41_UnkD6F0", |call, mem| {
         let split = sim::split_unit_fraction(f32::from_bits(call.args[0]));
-        split.store(&mut mem, call.args[1]);
-        check_windows(call, &mem, "E41_UnkD6F0");
-    }
-    eprintln!("E41_UnkD6F0: {} calls match", calls.len());
+        split.store(mem, call.args[1]);
+    });
 }
 
 #[test]
 fn curve_eta_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VARIABLE, CURVE_ETA) else {
-        eprintln!("skipping curve_eta: {VARIABLE} not set");
-        return;
-    };
-    for call in &calls {
-        let mem = map_windows(call);
+    common::replay(VARIABLE, CURVE_ETA, "E41_CurveEta", |call, mem| {
         let curve = mem.curve_knots(call.args[0], call.args[2] as i32 as usize);
         let st0 = sim::curve_eta(&curve, f32::from_bits(call.args[1]));
         check_st0_nan_tolerant(call, st0, "E41_CurveEta");
-        check_windows(call, &mem, "E41_CurveEta");
-    }
-    eprintln!("E41_CurveEta: {} calls match", calls.len());
+    });
 }
 
 #[test]
 fn blend_w_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VARIABLE, BLEND_W) else {
-        eprintln!("skipping find_bracket: {VARIABLE} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
+    common::replay(VARIABLE, BLEND_W, "E41_BlendW", |call, mem| {
         let keys = mem.bracket_keys(call.args[0]);
         let b = sim::find_bracket(&keys, f32::from_bits(call.args[1]));
         mem.store_bracket(&b, [call.args[2], call.args[3], call.args[4], call.args[5]]);
-        check_windows(call, &mem, "E41_BlendW");
-    }
-    eprintln!("E41_BlendW: {} calls match", calls.len());
+    });
 }
 
 #[test]
 fn sim410_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VARIABLE, SIM_410) else {
-        eprintln!("skipping abs_rpm_term: {VARIABLE} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
+    common::replay(VARIABLE, SIM_410, "CEngine::Sim410", |call, mem| {
         let engine = call.args[0];
-        let objects = layout::EngineObjects::at(&mem, engine);
-        let def = layout::EngineDef::load(&mem, objects.def);
-        let mut state = layout::EngineState::load(&mem, objects.state);
-        let options = layout::EngineOptions::load(&mem, objects.options);
+        let objects = layout::EngineObjects::at(mem, engine);
+        let def = layout::EngineDef::load(mem, objects.def);
+        let mut state = layout::EngineState::load(mem, objects.state);
+        let options = layout::EngineOptions::load(mem, objects.options);
         let st0 = sim::abs_rpm_term(&def, &mut state, &options);
-        state.store(&mut mem, objects.state);
+        state.store(mem, objects.state);
         check_st0_nan_tolerant(call, st0, "CEngine::Sim410");
-        check_windows(call, &mem, "CEngine::Sim410");
-    }
-    eprintln!("CEngine::Sim410: {} calls match", calls.len());
+    });
 }
 
 /// `check_windows`, with one allowance: a NaN word matches any NaN. The sign of the default NaN differs between x86 and
@@ -170,7 +135,7 @@ fn each_call_with(
 }
 
 fn each_call(addr: u32, name: &str, port: impl Fn(&mut rbr_physics::mem::Mem, &Call)) {
-    each_call_with(addr, name, check_windows, port);
+    common::replay(VARIABLE, addr, name, |call, mem| port(mem, call));
 }
 
 #[test]
@@ -237,17 +202,10 @@ fn drive_getters_match_original_calls() {
         }
         eprintln!("{name}: {} calls match", calls.len());
     }
-    let Some(calls) = load(VARIABLE, GET_4530) else {
-        eprintln!("skipping CDrive::Get4530: {VARIABLE} not set");
-        return;
-    };
-    for call in &calls {
-        let mem = map_windows(call);
-        let state = layout::DriveState::load(&mem, layout::DriveObjects::at(&mem, call.args[0]).state);
+    common::replay(VARIABLE, GET_4530, "CDrive::Get4530", |call, mem| {
+        let state = layout::DriveState::load(mem, layout::DriveObjects::at(mem, call.args[0]).state);
         assert_eq!(drive::gear(&state) as u32, call.eax, "CDrive::Get4530 call {}", call.index);
-        check_windows(call, &mem, "CDrive::Get4530");
-    }
-    eprintln!("CDrive::Get4530: {} calls match", calls.len());
+    });
 }
 
 const SET_SCRATCH08: u32 = 0x50eb90;
@@ -292,22 +250,15 @@ fn sim_e370_matches_original_calls() {
 #[test]
 fn sim_e470_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VARIABLE, SIM_E470) else {
-        eprintln!("skipping rev_gate: {VARIABLE} not set");
-        return;
-    };
-    for call in &calls {
-        let mem = map_windows(call);
-        let objects = layout::EngineObjects::at(&mem, call.args[0]);
-        let this = layout::EngineThis::load(&mem, call.args[0]);
-        let state = layout::EngineState::load(&mem, objects.state);
-        let options = layout::EngineOptions::load(&mem, objects.options);
+    common::replay(VARIABLE, SIM_E470, "CEngine::SimE470", |call, mem| {
+        let objects = layout::EngineObjects::at(mem, call.args[0]);
+        let this = layout::EngineThis::load(mem, call.args[0]);
+        let state = layout::EngineState::load(mem, objects.state);
+        let options = layout::EngineOptions::load(mem, objects.options);
         let st0 =
             engine::rev_gate(state.speed, this.pedal.value, options.rev_gate, layout::EngineTuning::STOCK.rev_gate);
         check_st0_nan_tolerant(call, st0, "CEngine::SimE470");
-        check_windows(call, &mem, "CEngine::SimE470");
-    }
-    eprintln!("CEngine::SimE470: {} calls match", calls.len());
+    });
 }
 
 #[test]
@@ -326,40 +277,26 @@ fn sim_e9f0_matches_original_calls() {
 #[test]
 fn sim_ec40_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VARIABLE, SIM_EC40) else {
-        eprintln!("skipping exhaust_blend: {VARIABLE} not set");
-        return;
-    };
-    for call in &calls {
-        let mem = map_windows(call);
-        let objects = layout::EngineObjects::at(&mem, call.args[0]);
+    common::replay(VARIABLE, SIM_EC40, "CEngine::SimEC40", |call, mem| {
+        let objects = layout::EngineObjects::at(mem, call.args[0]);
         let row = mem.exhaust_row(objects.def, call.args[1]);
         let q = call.args[2];
         let s: [f32; 12] = std::array::from_fn(|k| mem.f32(q + 4 * k as u32));
         let st0 = engine::exhaust_blend(&row, &s);
         check_st0_nan_tolerant(call, st0, "CEngine::SimEC40");
-        check_windows(call, &mem, "CEngine::SimEC40");
-    }
-    eprintln!("CEngine::SimEC40: {} calls match", calls.len());
+    });
 }
 
 #[test]
 fn sim_ecf0_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VARIABLE, SIM_ECF0) else {
-        eprintln!("skipping stall_guard: {VARIABLE} not set");
-        return;
-    };
-    for call in &calls {
-        let mem = map_windows(call);
-        let objects = layout::EngineObjects::at(&mem, call.args[0]);
-        let state = layout::EngineState::load(&mem, objects.state);
-        let options = layout::EngineOptions::load(&mem, objects.options);
+    common::replay(VARIABLE, SIM_ECF0, "CEngine::SimECF0", |call, mem| {
+        let objects = layout::EngineObjects::at(mem, call.args[0]);
+        let state = layout::EngineState::load(mem, objects.state);
+        let options = layout::EngineOptions::load(mem, objects.options);
         let answer = engine::stall_guard(state.speed, &options, layout::EngineTuning::STOCK.stall_speed) as u32;
         assert_eq!(answer, call.eax, "CEngine::SimECF0 call {}", call.index);
-        check_windows(call, &mem, "CEngine::SimECF0");
-    }
-    eprintln!("CEngine::SimECF0: {} calls match", calls.len());
+    });
 }
 
 #[test]
@@ -400,37 +337,25 @@ fn sim_e520_matches_original_calls() {
 #[test]
 fn sim_e660_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VARIABLE, SIM_E660) else {
-        eprintln!("skipping engine_torque: {VARIABLE} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        let objects = layout::EngineObjects::at(&mem, call.args[0]);
-        let def = layout::LoadDef::load(&mem, objects.def);
-        let options = layout::EngineOptions::load(&mem, objects.options);
-        let mut state = layout::EngineState::load(&mem, objects.state);
+    common::replay(VARIABLE, SIM_E660, "CEngine::SimE660", |call, mem| {
+        let objects = layout::EngineObjects::at(mem, call.args[0]);
+        let def = layout::LoadDef::load(mem, objects.def);
+        let options = layout::EngineOptions::load(mem, objects.options);
+        let mut state = layout::EngineState::load(mem, objects.state);
         let st0 = engine::torque_sum(&def, &options, &mut state, f32::from_bits(call.args[1]));
-        state.store(&mut mem, objects.state);
+        state.store(mem, objects.state);
         check_st0_nan_tolerant(call, st0, "CEngine::SimE660");
-        check_windows(call, &mem, "CEngine::SimE660");
-    }
-    eprintln!("CEngine::SimE660: {} calls match", calls.len());
+    });
 }
 
 #[test]
 fn sim_d870_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VARIABLE, SIM_D870) else {
-        eprintln!("skipping slot_roll: {VARIABLE} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        let objects = layout::EngineObjects::at(&mem, call.args[0]);
+    common::replay(VARIABLE, SIM_D870, "CEngine::SimD870", |call, mem| {
+        let objects = layout::EngineObjects::at(mem, call.args[0]);
         let i = call.args[1] as usize;
-        let state = layout::EngineState::load(&mem, objects.state);
-        let mut options = layout::EngineOptions::load(&mem, objects.options);
+        let state = layout::EngineState::load(mem, objects.state);
+        let mut options = layout::EngineOptions::load(mem, objects.options);
         let seed_at = mem.u32(objects.options);
         let mut seed = mem.u32(seed_at);
         let mut option = options.stall_terms[i];
@@ -448,7 +373,7 @@ fn sim_d870_matches_original_calls() {
         mem.set_u32(seed_at, seed);
         mem.set_f32(ROLL_TABLE + 4 * i as u32, global);
         options.stall_terms[i] = option;
-        options.store_stall_terms(&mut mem, objects.options);
+        options.store_stall_terms(mem, objects.options);
         let eax = match ret {
             engine::RollOutcome::Null => 0,
             engine::RollOutcome::Quotient(q) => q,
@@ -456,9 +381,7 @@ fn sim_d870_matches_original_calls() {
             engine::RollOutcome::Options => objects.options,
         };
         assert_eq!(eax, call.eax, "CEngine::SimD870 call {}: eax", call.index);
-        check_windows(call, &mem, "CEngine::SimD870");
-    }
-    eprintln!("CEngine::SimD870: {} calls match", calls.len());
+    });
 }
 
 #[test]
@@ -534,17 +457,10 @@ const WORKER_4060: u32 = 0x504060;
 /// Runs `port` on each recorded call of `addr`, whose return is st0 (checked by `check_st0`); the windows are compared
 /// with `check_windows`.
 fn each_st0<R: Into<f64>>(addr: u32, name: &str, port: impl Fn(&mut rbr_physics::mem::Mem, &Call) -> R) {
-    let Some(calls) = load(VARIABLE, addr) else {
-        eprintln!("skipping {name}: {VARIABLE} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        let st0 = port(&mut mem, call);
+    common::replay(VARIABLE, addr, name, |call, mem| {
+        let st0 = port(mem, call);
         check_st0_nan_tolerant(call, st0, name);
-        check_windows(call, &mem, name);
-    }
-    eprintln!("{name}: {} calls match", calls.len());
+    });
 }
 
 #[test]
@@ -1064,16 +980,11 @@ fn tab_e00_matches_original_calls() {
 #[test]
 fn worker_f60_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VARIABLE, WORKER_F60) else {
-        eprintln!("skipping E39_WorkerF60: {VARIABLE} not set");
-        return;
-    };
-    for call in &calls {
-        let mut mem = map_windows(call);
-        let row = layout::CurveRow::load(&mem, call.args[1]);
-        let tables = layout::CurveTables::load(&mem, call.args[4]);
+    common::replay(VARIABLE, WORKER_F60, "E39_WorkerF60", |call, mem| {
+        let row = layout::CurveRow::load(mem, call.args[1]);
+        let tables = layout::CurveTables::load(mem, call.args[4]);
         let block_gain = mem.curve_gain(call.args[3]);
-        let mut state = layout::CurveState::load(&mem, call.args[2]);
+        let mut state = layout::CurveState::load(mem, call.args[2]);
         let ok = drive_curve::count_down(
             f32::from_bits(call.args[0]),
             &row,
@@ -1082,11 +993,9 @@ fn worker_f60_matches_original_calls() {
             block_gain,
             f32::from_bits(call.args[5]),
         );
-        state.store(&mut mem, call.args[2]);
+        state.store(mem, call.args[2]);
         assert_eq!(u32::from(ok), call.eax, "E39_WorkerF60 call {}: eax", call.index);
-        check_windows(call, &mem, "E39_WorkerF60");
-    }
-    eprintln!("E39_WorkerF60: {} calls match", calls.len());
+    });
 }
 
 #[test]
@@ -1361,17 +1270,10 @@ const SAMPLE_BIG: u32 = 0x50b300;
 #[test]
 fn sample_big_matches_original_calls() {
     let _pc24 = Precision::Pc24.scope();
-    let Some(calls) = load(VARIABLE, SAMPLE_BIG) else {
-        eprintln!("skipping CDriveLine::SampleBig: {VARIABLE} not set");
-        return;
-    };
-    for call in &calls {
-        let mem = map_windows(call);
-        let got = layout::sample_big(&mem, call.args[0], call.args[1], f32::from_bits(call.args[2]));
+    common::replay(VARIABLE, SAMPLE_BIG, "CDriveLine::SampleBig", |call, mem| {
+        let got = layout::sample_big(mem, call.args[0], call.args[1], f32::from_bits(call.args[2]));
         check_st0_nan_tolerant(call, got, "CDriveLine::SampleBig");
-        check_windows(call, &mem, "CDriveLine::SampleBig");
-    }
-    eprintln!("CDriveLine::SampleBig: {} calls match", calls.len());
+    });
 }
 
 const SIM_EBB0: u32 = 0x50ebb0;
