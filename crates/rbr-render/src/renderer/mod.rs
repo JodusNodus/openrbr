@@ -423,6 +423,7 @@ impl Renderer {
             asphalt: enhance.asphalt,
             snow: enhance.snow,
             ground: enhance.ground,
+            grass: enhance.grass,
             lighting: enhance.lighting,
             cube_shift: u32::from(ultra),
             taa,

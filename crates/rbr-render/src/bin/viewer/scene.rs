@@ -81,6 +81,8 @@ impl Scene {
         render_scale: f32,
         progress: &mut dyn FnMut(f32),
     ) -> Renderer {
+        // The stage's pipelines thatch the ground under the grass only where it grows (`GRASS` in `shader.wgsl`).
+        let enhance = Enhance { grass: self.grass.is_some(), ..enhance };
         let mut renderer = Renderer::with_progress(gpu, format, &self.stage, enhance, progress);
         renderer.set_render_scale(render_scale);
         if let Some(playback) = &self.playback {

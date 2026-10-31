@@ -85,22 +85,25 @@ const FOOT: f32 = 0.0;
 /// only its hue.
 const GRASS_MARK: f32 = 4.0;
 const BRIGHT: [f32; 2] = [0.2, 2.5];
-/// The cards' brightness against the ground's: the plants' lighting (wrapped sun, light through the blades, sunlit
-/// tips) gives them more light than the ground.
-const SHADE: f32 = 0.62;
+/// The cards' brightness against the ground's: lit as a dense field (`own_light` in `shader.wgsl`), they take less light
+/// than the ground. With the ground between them thatched darker (`thatch` there) the field keeps about the ground's
+/// brightness, the blades lighter than the gaps (RSF Helette 580, Wythop 532, Gabiria 450).
+const SHADE: f32 = 0.9;
 /// The ground's grassiness ([`green`]) where grass starts and where it is full, off the road and on the road mesh
-/// (whose shoulders take only plainly green ground: a pale gravel road is near straw).
+/// (whose shoulders take only plainly green ground: a pale gravel road is near straw). `THATCH_GRASSY` in `shader.wgsl`
+/// is the same.
 const GRASSY: [[f32; 2]; 2] = [[0.02, 0.07], [0.05, 0.11]];
 /// The texels each side the ground's texture is averaged over for the grass ([`blur`]).
 const BLUR: usize = 3;
 /// The share of the ground's baked vertex tint its colour keeps (`GROUND_HUE` in `shader.wgsl`).
 const GROUND_HUE: f32 = 0.3;
-/// How much more saturated the grass is than the ground under it: the ground's texture mixes grass with earth.
-const SATURATION: f32 = 1.15;
+/// The grass's saturation against the ground's hue under it: a little less, as its lighting (the sun through the
+/// blades, the ground's warm light from below) saturates it more than the ground's.
+const SATURATION: f32 = 0.85;
 /// The hue of lush grass (display, its largest channel 1), which the grass's hue leans towards by [`LUSH_SHARE`] away
 /// from its dry patches: the ground's texture is greyed by its earth, the grass on it is green.
 const LUSH: Vec3 = Vec3::new(0.72, 1.0, 0.42);
-const LUSH_SHARE: f32 = 0.25;
+const LUSH_SHARE: f32 = 0.15;
 /// The tint of dry grass, on the ground's hue, in the driest patches.
 const STRAW: Vec3 = Vec3::new(1.12, 1.0, 0.72);
 /// The texture's pictures: [`COLUMNS`] by [`ROWS`], each [`PICTURE`] texels (about a card's shape). The first eight
@@ -479,7 +482,8 @@ fn tile_of(p: Vec3) -> (i32, i32) {
 
 /// The density of the grass drawn with its tile middle `distance` metres from the eye: full within [`FULL_DENSE`],
 /// halving every [`HALVING`] metres past it (as before to 34 m), then thinning on to nothing at [`REACH`].
-/// Continuous in the distance, so the shrinking cards ([`Card::grow`]) glide rather than pop.
+/// Continuous in the distance, so the shrinking cards ([`Card::grow`]) glide rather than pop. `THATCH_DENSE` in
+/// `shader.wgsl` is the same.
 fn density(distance: f32) -> f32 {
     if distance <= FULL_DENSE {
         1.0
@@ -1066,10 +1070,10 @@ fn texture() -> (Vec<u8>, Vec3) {
     for picture in 0..COLUMNS * ROWS {
         let corner = ((picture % COLUMNS) * PICTURE.0, (picture / COLUMNS) * PICTURE.1);
         let (count, dry, broad, droops) = match picture {
-            0..=7 => (170, 0.06, 0.0, 0.3),
-            8..=11 => (130, 0.1, 0.25, 0.55),
-            12 | 13 => (130, 0.8, 0.0, 0.45),
-            _ => (100, 0.2, 0.0, 0.3),
+            0..=7 => (240, 0.06, 0.0, 0.3),
+            8..=11 => (180, 0.1, 0.25, 0.55),
+            12 | 13 => (180, 0.8, 0.0, 0.45),
+            _ => (140, 0.2, 0.0, 0.3),
         };
         for _ in 0..count {
             // Rooted across the card, the outer blades shorter and leaning out; many short blades under a few tall.
