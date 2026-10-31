@@ -120,19 +120,36 @@ impl Windscreen {
             let q = chart(p);
             (lo.min(q), hi.max(q))
         });
-        let mut heights = vec![None; GRID[0] * GRID[1]];
-        for (i, h) in heights.iter_mut().enumerate() {
-            let at = cell_centre([lo, hi], i);
-            *h = triangles.iter().find_map(|t| {
-                let [a, b, c] = t.map(chart);
-                let w = barycentric(at, a, b, c)?;
-                Some(t.iter().zip(w).map(|(p, w)| (*p - origin).dot(out) * w).sum())
-            });
-        }
         let faces: Vec<[Vec3; 3]> =
             triangles.iter().map(|t| t.map(|p| chart(p).extend((p - origin).dot(out)))).collect();
-        let on =
-            |p: Vec2| faces.iter().any(|t| barycentric(p, t[0].truncate(), t[1].truncate(), t[2].truncate()).is_some());
+        let on_face = |p: Vec2, t: &[Vec3; 3]| barycentric(p, t[0].truncate(), t[1].truncate(), t[2].truncate());
+        // The faces that a point in each cell of the height grid may lie on, in order: those whose box, a little wider
+        // than the barycentric test's slack, reaches into it.
+        let cell = |p: Vec2| {
+            let f = ((p - lo) / (hi - lo) * Vec2::new(GRID[0] as f32, GRID[1] as f32)).floor();
+            let (x, y) = (f.x.clamp(0.0, (GRID[0] - 1) as f32) as usize, f.y.clamp(0.0, (GRID[1] - 1) as f32) as usize);
+            y * GRID[0] + x
+        };
+        let mut near: Vec<Vec<usize>> = vec![Vec::new(); GRID[0] * GRID[1]];
+        for (k, t) in faces.iter().enumerate() {
+            let (low, high) =
+                t.iter().fold((Vec2::MAX, Vec2::MIN), |(l, h), p| (l.min(p.truncate()), h.max(p.truncate())));
+            let (first, last) = (cell(low - Vec2::splat(NEAR_SLACK)), cell(high + Vec2::splat(NEAR_SLACK)));
+            for y in first / GRID[0]..=last / GRID[0] {
+                (first % GRID[0]..=last % GRID[0]).for_each(|x| near[y * GRID[0] + x].push(k));
+            }
+        }
+        let near_faces = |p: Vec2| near[cell(p)].iter().map(|&k| &faces[k]);
+        let heights = (0..GRID[0] * GRID[1])
+            .map(|i| {
+                let at = cell_centre([lo, hi], i);
+                near_faces(at).find_map(|t| {
+                    let w = on_face(at, t)?;
+                    Some(t.iter().zip(w).map(|(p, w)| p.z * w).sum())
+                })
+            })
+            .collect();
+        let on = |p: Vec2| near_faces(p).any(|t| on_face(p, t).is_some());
         // An edge is on the outline when the glass does not go on past it.
         let outline = faces
             .iter()
@@ -235,6 +252,9 @@ fn cell_centre([lo, hi]: [Vec2; 2], i: usize) -> Vec2 {
 
 /// How far past an edge [`Windscreen::new`] looks for more glass, metres.
 const OUTLINE_PROBE: f32 = 0.001;
+/// How much wider than a face's box [`Windscreen::new`] looks for points on it, metres: far more than [`barycentric`]'s
+/// slack lets a point lie off a face (1e-4 of its size).
+const NEAR_SLACK: f32 = 0.01;
 
 /// The point of the segment `a b` nearest `p`.
 fn closest(p: Vec2, a: Vec2, b: Vec2) -> Vec2 {
