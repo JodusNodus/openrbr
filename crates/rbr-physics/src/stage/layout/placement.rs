@@ -20,14 +20,13 @@ use crate::physics_core::layout::construct::Heap;
 use crate::physics_core::layout::detect_calls::GridBuildHost;
 use crate::physics_core::layout::Filing;
 use crate::physics_core::layout::{self as physics, FilingHost, NotifyHost};
-use crate::physics_core::math::{Mat, Vec3};
 use crate::rigid_body::emit::{window_start, BodyEvent};
 use crate::rigid_body::host::{HostUnavailable, SolidCtorHost};
 use crate::rigid_body::layout::{
     cdef_new_solid, construct_solid, place_solid, scale_add_rows, solid_filing, solid_sleep, solid_wake, vf16_helper,
     Body, PlaceHost, RestHost,
 };
-use crate::rigid_body::rotation::MulHost;
+use crate::rigid_body::rotation::{self, MulHost};
 use crate::stage::Stuff;
 
 /// The cell grid object (`CCellGrid`, 0x14 bytes).
@@ -204,12 +203,7 @@ struct Deferred {
 /// extent's fourth word, which `CSolid::Vf44` sets unless the extent is (1, 1, 1).
 impl MulHost for Deferred {
     fn mul(&mut self, m: [f32; 9], b: [f32; 9]) -> Result<[f32; 9], HostUnavailable> {
-        let m = Mat { rows: std::array::from_fn(|i| [m[3 * i], m[3 * i + 1], m[3 * i + 2]]), extra: 0.0 };
-        let rows = m.mul_rows(std::array::from_fn(|k| Vec3 { x: b[3 * k], y: b[3 * k + 1], z: b[3 * k + 2] }));
-        Ok(std::array::from_fn(|i| {
-            let row = rows[i / 3];
-            [row.x, row.y, row.z][i % 3]
-        }))
+        Ok(rotation::mul_rows(m, b))
     }
 }
 
