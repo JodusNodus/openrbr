@@ -7,7 +7,7 @@
 //! The control word is `0x27f` (PC=53, `notes/ngp.md`) once the race runs: a chain's results round to f64 instead
 //! ([`round_x87`]); f64 arithmetic models that, short of the x87's wider exponent range. During the load it is still
 //! D3D's `0x7f`, so the physics then runs at PC=24. The precision is the thread's, like the CPU's control word: the host
-//! sets it ([`set_precision`], [`with_precision`]) and [`precision`] and [`round_x87`] read it.
+//! sets it ([`set_precision`], [`Precision::scope`]) and [`precision`] and [`round_x87`] read it.
 
 use std::cell::Cell;
 
@@ -49,12 +49,6 @@ impl Drop for Scope {
     fn drop(&mut self) {
         PRECISION.set(self.0);
     }
-}
-
-/// Runs `f` at `precision` on this thread, the previous one restored after (also on a panic).
-pub fn with_precision<T>(precision: Precision, f: impl FnOnce() -> T) -> T {
-    let _scope = precision.scope();
-    f()
 }
 
 /// Fraction bits of an f64 that are dropped to keep 24 significant bits.
