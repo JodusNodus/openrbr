@@ -143,7 +143,7 @@ impl Season {
         let drivers = (0..DRIVERS).map(|_| Driver::read(r)).collect::<Result<_, _>>()?;
         let teams = r.words()?;
         let w7ecc = r.words()?;
-        let blocks = r.bytes(0xf48)?.to_vec();
+        let blocks = r.take(0xf48)?.to_vec();
         let w8e4c = r.words()?;
         let globals = r.words()?;
         let snapshot = r.words()?;
@@ -239,9 +239,10 @@ pub const RETIRED: f32 = -1.0;
 
 fn list<const N: usize>(r: &mut Reader) -> Result<Vec<[u32; N]>, Error> {
     let n = r.u32()? as usize;
-    // Each item is at least four bytes: a count past the data is corrupt, not a huge allocation.
-    if n > r.bytes.len() / 4 {
-        return Err(Error::Eof { at: r.at() });
+    // Each item is at least four bytes: a count past the data is corrupt, not a huge allocation. The reader covers
+    // the whole file, so its position plus what remains is its length.
+    if n > (r.pos() + r.remaining()) / 4 {
+        return Err(Error::Eof { at: r.pos() });
     }
     (0..n).map(|_| r.words()).collect()
 }

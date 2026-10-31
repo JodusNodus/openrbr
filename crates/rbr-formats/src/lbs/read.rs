@@ -1,7 +1,7 @@
 //! The `.lbs` chunk walk and the payload readers.
 
 use super::*;
-use crate::le::Reader;
+use crate::le::{self, Reader};
 
 /// A read position inside `bytes`, valid up to `end`. Errors report the
 /// bytes left in scope, not the file length. Offsets are absolute file offsets.
@@ -154,11 +154,11 @@ fn render_chunk(rec: &[u8; RENDER_CHUNK_LEN], offset: usize) -> Result<RenderChu
 
 /// Little-endian word at a constant offset of a fixed-size record.
 fn word(rec: &[u8; RENDER_CHUNK_LEN], at: usize) -> u32 {
-    u32::from_le_bytes([rec[at], rec[at + 1], rec[at + 2], rec[at + 3]])
+    le::u32_of(&rec[at..])
 }
 
 fn float(rec: &[u8; RENDER_CHUNK_LEN], at: usize) -> f32 {
-    f32::from_bits(word(rec, at))
+    le::f32_of(&rec[at..])
 }
 
 fn objects<'a>(c: &mut Cursor<'a>) -> Result<Objects<'a>, Error> {
@@ -271,15 +271,9 @@ fn visibility(c: &mut Cursor<'_>) -> Result<Visibility, Error> {
     Ok(Visibility { entries })
 }
 
-/// `(2, 11)`: 0x40 skipped bytes (a 4x4 matrix) and two vectors.
+/// `(2, 11)`: a 4x4 matrix and two vectors.
 fn start_location(c: &mut Cursor<'_>) -> Result<StartLocation, Error> {
-    let skipped = c.take(0x40)?;
-    let mut matrix = [0.0f32; 16];
-    for (i, v) in matrix.iter_mut().enumerate() {
-        let at = i * 4;
-        *v = f32::from_bits(u32::from_le_bytes([skipped[at], skipped[at + 1], skipped[at + 2], skipped[at + 3]]));
-    }
-    Ok(StartLocation { matrix, position: c.f32s::<3>()?, rotation: c.f32s::<3>()? })
+    Ok(StartLocation { matrix: c.f32s::<16>()?, position: c.f32s::<3>()?, rotation: c.f32s::<3>()? })
 }
 
 /// `(2, 12)`: a count and that many vectors.
