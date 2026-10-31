@@ -45,12 +45,10 @@ impl Ground {
         let mut cells: HashMap<(i32, i32), Vec<u32>> = HashMap::new();
         for cell in &col.cells {
             for t in &cell.tree.triangles {
-                let Some(corners) =
-                    t.vertices.map(|v| cell.vertices.get(v as usize).copied()).into_iter().collect::<Option<Vec<_>>>()
-                else {
+                let [Some(a), Some(b), Some(c)] = t.vertices.map(|v| cell.vertices.get(v as usize).copied()) else {
                     continue;
                 };
-                let corners: [[f32; 3]; 3] = [corners[0], corners[1], corners[2]];
+                let corners = [a, b, c];
                 let (blend, _) = t.attr_a();
                 let face = Face {
                     corners,
