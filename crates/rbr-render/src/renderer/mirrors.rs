@@ -18,6 +18,9 @@ pub(super) const REACH: f32 = 300.0;
 /// samples: `glass.wgsl`).
 const LAYERS: usize = MOST_MIRRORS + 1;
 const WINDSCREEN: usize = MOST_MIRRORS;
+/// The windscreen's image is drawn every this many frames (user's call: its pass cost 1.2-1.5 ms a frame); between,
+/// the glass holds it still with the car as it does the mirrors'.
+const WINDSCREEN_RATE: Rate = Rate::Every(2);
 /// Each layer's span in `--profile`.
 const LABELS: [&str; LAYERS] = ["mirror 1", "mirror 2", "mirror 3", "mirror 4", "windscreen reflection"];
 
@@ -52,7 +55,8 @@ struct Target {
 /// The mirrors' images, their views for the glass, and what each pass needs.
 pub(super) struct Mirrors {
     rate: Rate,
-    /// Whether the windscreen's image is drawn ([`Enhance::windscreen`](super::Enhance::windscreen)), every frame.
+    /// Whether the windscreen's image is drawn ([`Enhance::windscreen`](super::Enhance::windscreen)), at
+    /// [`WINDSCREEN_RATE`].
     windscreen_on: bool,
     /// [`LAYERS`] layers of [`MOST`] (one texel without mirrors), and their view.
     images: wgpu::Texture,
@@ -115,9 +119,13 @@ impl Mirrors {
         self.placed.iter().copied().enumerate().chain(self.windscreen.map(|placed| (WINDSCREEN, placed)))
     }
 
-    /// Whether layer `k`'s image is drawn on frame `frame`: the mirrors' at their rate, the windscreen's every frame.
+    /// Whether layer `k`'s image is drawn on frame `frame`: the mirrors' at their rate, the windscreen's at
+    /// [`WINDSCREEN_RATE`].
     fn due(&self, k: usize, frame: u64) -> bool {
-        k == WINDSCREEN || self.rate.due(k, frame)
+        match k {
+            WINDSCREEN => WINDSCREEN_RATE.due(k, frame),
+            _ => self.rate.due(k, frame),
+        }
     }
 }
 
@@ -136,7 +144,7 @@ impl Renderer {
     }
 
     /// The windscreen's pane seen from inside this frame, its mean plane facing the eye (none: no pass). Drawn as the
-    /// centre mirror's is, the cabin and the stage behind it, every frame; only with
+    /// centre mirror's is, the cabin and the stage behind it, at [`WINDSCREEN_RATE`]; only with
     /// [`Enhance::windscreen`](super::Enhance::windscreen).
     pub(crate) fn set_windscreen_mirror(&mut self, placed: Option<Placed>) {
         let mirrors = &mut self.mirrors;
