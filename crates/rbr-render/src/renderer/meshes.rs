@@ -332,6 +332,7 @@ impl Renderer {
                 draw.casts_shadow = slots.contains(&slot) && draw.bind.shade.is_some() && draw.pipeline.depth_write;
             }
         }
+        self.casters = casters(&self.meshes);
     }
 
     /// Streams `field`'s grass into the stage's grass tile meshes ([`crate::grass::add`]), about the eye each frame, in
@@ -447,8 +448,21 @@ impl Renderer {
             let mesh = &mut self.meshes[*slot];
             mesh.reflected = true;
             mesh.draws.iter_mut().for_each(|draw| draw.casts_shadow = false);
+            self.casters = casters(&self.meshes);
         }
     }
+
+    /// The meshes with a draw that casts the car's shadow ([`casters`]).
+    pub(super) fn casting(&self) -> impl Iterator<Item = &GpuMesh> + Clone {
+        self.casters.iter().map(|&slot| &self.meshes[slot])
+    }
+}
+
+/// The indices of the `meshes` with a draw that casts the car's shadow, kept in [`Renderer`] so that the frame's
+/// passes need not look through every mesh's draws.
+pub(super) fn casters(meshes: &[GpuMesh]) -> Vec<usize> {
+    let casts = |mesh: &GpuMesh| mesh.draws.iter().any(|draw| draw.casts_shadow);
+    meshes.iter().enumerate().filter(|(_, mesh)| casts(mesh)).map(|(slot, _)| slot).collect()
 }
 
 /// The byte offset of a mesh's first vertex in its shared vertex buffer.

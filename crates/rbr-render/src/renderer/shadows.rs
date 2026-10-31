@@ -65,8 +65,7 @@ impl Renderer {
     /// [`Renderer::car_bounds`] when they hold everything the car's shadow maps draw (every casting mesh has bounds),
     /// else the whole stage.
     pub(super) fn car_box(&self) -> Option<(Vec3, Vec3)> {
-        let casting = self.meshes.iter().filter(|mesh| mesh.draws.iter().any(|draw| draw.casts_shadow));
-        match casting.clone().all(|mesh| mesh.bounds.is_some()) {
+        match self.casting().all(|mesh| mesh.bounds.is_some()) {
             true => self.car_bounds(),
             false => Some((Vec3::splat(f32::MIN), Vec3::splat(f32::MAX))),
         }
@@ -74,9 +73,7 @@ impl Renderer {
 
     /// The low and high corners of the meshes with a casting draw (the car), or `None` without a car.
     pub(super) fn car_bounds(&self) -> Option<(Vec3, Vec3)> {
-        self.meshes
-            .iter()
-            .filter(|mesh| mesh.draws.iter().any(|draw| draw.casts_shadow))
+        self.casting()
             .filter_map(|mesh| mesh.bounds)
             .map(|(center, half)| (center - half, center + half))
             .reduce(|(a, b), (c, d)| (a.min(c), b.max(d)))

@@ -84,6 +84,8 @@ pub struct Renderer {
     enhance: Enhance,
     frames: [FrameBinding; 3],
     meshes: Vec<GpuMesh>,
+    /// The meshes with a draw that casts the car's shadow, in order ([`meshes::casters`]).
+    casters: Vec<usize>,
     /// The meshes' shared vertex and index buffers ([`Packing`]).
     buffers: Vec<MeshBuffers>,
     /// The GPU mesh of each stage mesh, `None` for a mesh with no draws (not uploaded).
@@ -728,6 +730,7 @@ impl Renderer {
             dial_pass: None,
             buffers,
             frames,
+            casters: meshes::casters(&meshes),
             meshes,
             slots,
             interactive_slots,
