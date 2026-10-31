@@ -667,6 +667,8 @@ mod tests {
         assert_eq!(switch("e_light_rb"), None, "its lit pair is always drawn");
         assert_eq!(switch("e_light_m"), None, "no lit pair");
         assert_eq!(switch("e_light_lf_lit"), Some(Switch { kind: Kind::Front, ..tail }));
+        assert_eq!(tail.glow(), [1.0, 0.0, 0.0, TAIL_DAY], "red, dimmer by day");
+        assert_eq!(Switch { kind: Kind::Brake, named: false, ..tail }.glow(), [1.0; 4], "in its texture's colour");
     }
 
     #[test]
