@@ -158,7 +158,8 @@ fn add_grain(out: &mut [f32], half: usize, part: &eng::Part, row: usize, rate: u
         let pos = mark - 1.0 + step * (k as f64 - half as f64);
         let p = pos.floor() as i64;
         let fr = (pos - p as f64) as f32;
-        let w = (std::f32::consts::FRAC_PI_2 * k as f32 / half as f32).sin().powi(2);
+        // In f64: f32 `sin` differs in its last bit between the platforms' maths libraries.
+        let w = (std::f64::consts::FRAC_PI_2 * k as f64 / half as f64).sin().powi(2) as f32;
         *sample += cubic(at(p - 1), at(p), at(p + 1), at(p + 2), fr) * w * gain;
     }
 }
@@ -470,8 +471,8 @@ mod tests {
         engine.rpm = 3200;
         engine.load = 80;
         engine.render(&mut out[1000..]);
-        // Captured before the reuse-buffers change; a bit-exact render keeps it.
-        assert_eq!(bits_hash(&out), 0x9c78_7927_4c00_f628);
+        // The same bits on every platform (the window's `sin` in f64); a bit-exact render keeps it.
+        assert_eq!(bits_hash(&out), 0x9a71_ee15_9b58_877e);
     }
 
     #[test]

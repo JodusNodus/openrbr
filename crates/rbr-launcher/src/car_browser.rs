@@ -178,13 +178,11 @@ pub struct Filter {
     /// Words that must all be in the car's name, group, class, source or RSF number; they search every car.
     pub query: String,
     pub drive: Option<Drive>,
-    /// Hide the cars that cannot start.
-    pub startable_only: bool,
 }
 
 impl Filter {
     fn accepts(&self, row: &CarRow) -> bool {
-        self.drive.is_none_or(|d| row.drive == Some(d)) && (row.startable() || !self.startable_only)
+        self.drive.is_none_or(|d| row.drive == Some(d))
     }
 }
 
@@ -220,8 +218,9 @@ pub enum Collection {
 }
 
 /// The list of `collection` for `filter` sorted by `sort`. `favourites` and `recent` are car names, in the order
-/// starred and newest first. The cars that cannot start are last in every list. A search covers every car whatever
-/// the collection: the favourites first, then each class.
+/// starred and newest first. The library and the classes list the cars that can start; the favourites, the recent
+/// picks and a search list the others last, and [`Collection::CannotStart`] lists only them. A search covers every
+/// car whatever the collection: the favourites first, then each class.
 pub fn lines(
     rows: &[CarRow],
     collection: &Collection,
@@ -278,39 +277,34 @@ pub fn lines(
                 Collection::Class(name) => r.class == *name,
                 _ => true,
             };
-            let members = (0..rows.len()).filter(|&k| wanted(&rows[k])).filter(accepted);
-            let (ok, blocked) = split(members.collect());
-            out.extend(block(None, sorted(ok)));
-            out.extend(block(None, sorted(blocked)));
+            let members = (0..rows.len()).filter(|&k| rows[k].startable() && wanted(&rows[k])).filter(accepted);
+            out.extend(block(None, sorted(members.collect())));
         }
         Collection::CannotStart => {
-            let members = (0..rows.len()).filter(|&k| !rows[k].startable());
-            // Whatever "only cars that can start" says: this list is the cars that cannot.
-            out.extend(block(
-                None,
-                sorted(members.filter(|&k| filter.drive.is_none_or(|d| rows[k].drive == Some(d))).collect()),
-            ));
+            let members = (0..rows.len()).filter(|&k| !rows[k].startable()).filter(accepted);
+            out.extend(block(None, sorted(members.collect())));
         }
     }
     out
 }
 
-/// The sidebar: the library, then each class with its number of cars, then the cars that cannot start.
+/// The sidebar: the library, then each class with its number of cars that can start, then the cars that cannot.
 fn collections(rows: &[CarRow], favourites: &[String], recent: &[String]) -> Vec<(Collection, String, usize)> {
     let known = |names: &[String]| names.iter().filter(|n| rows.iter().any(|r| r.name == **n)).count();
+    let startable = rows.iter().filter(|r| r.startable()).count();
     let mut classes: BTreeMap<(usize, &str), usize> = BTreeMap::new();
-    for row in rows {
+    for row in rows.iter().filter(|r| r.startable()) {
         *classes.entry((row.rank, row.class.as_str())).or_default() += 1;
     }
     let mut out = vec![
         (Collection::Favourites, "Favourites".to_owned(), known(favourites)),
         (Collection::Recent, "Recent".to_owned(), known(recent)),
-        (Collection::All, "All cars".to_owned(), rows.len()),
+        (Collection::All, "All cars".to_owned(), startable),
     ];
     out.extend(classes.into_iter().map(|((_, name), n)| (Collection::Class(name.to_owned()), name.to_owned(), n)));
-    let blocked = rows.iter().filter(|r| !r.startable()).count();
+    let blocked = rows.len() - startable;
     if blocked > 0 {
-        out.push((Collection::CannotStart, "Can't start".to_owned(), blocked));
+        out.push((Collection::CannotStart, "Cannot start".to_owned(), blocked));
     }
     out
 }
@@ -387,7 +381,7 @@ impl CarBrowser {
     pub fn open_on(&mut self, target: Target, selected: usize, favourites: &[String], collection: Option<Collection>) {
         let favourite = self.rows.get(selected).is_some_and(|r| favourites.contains(&r.name));
         self.collection = Some(collection.unwrap_or(if favourite { Collection::Favourites } else { Collection::All }));
-        self.filter = Filter { startable_only: self.filter.startable_only, ..Filter::default() };
+        self.filter = Filter::default();
         self.sort = Sort::Name;
         self.target = target;
         self.nav.show(selected);
@@ -504,8 +498,6 @@ impl CarBrowser {
             for drive in Drive::ALL {
                 ui.selectable_value(&mut self.filter.drive, Some(drive), drive.label());
             }
-            ui.add_space(10.0);
-            ui.checkbox(&mut self.filter.startable_only, "only cars that can start");
         });
         let count = items(&self.lines).count();
         ui.horizontal(|ui| {
@@ -515,7 +507,7 @@ impl CarBrowser {
                     Collection::Recent => "recent".to_owned(),
                     Collection::All => "cars".to_owned(),
                     Collection::Class(name) => format!("cars in {name}"),
-                    Collection::CannotStart => "cars that can't start".to_owned(),
+                    Collection::CannotStart => "cars that cannot start".to_owned(),
                 }
             } else {
                 "found in all cars".to_owned()
@@ -564,7 +556,7 @@ impl CarBrowser {
                 let favourite = favourites.contains(&row.name);
                 draw_row(ui, rect, row, by_class, k == nav.cursor, response.hovered(), favourite);
                 let response = match row.problem.as_deref() {
-                    Some(problem) => response.on_hover_text(format!("can't start: {problem}")),
+                    Some(problem) => response.on_hover_text(format!("cannot start: {problem}")),
                     None => response,
                 };
                 if star.clicked() {
@@ -617,7 +609,7 @@ impl CarBrowser {
         });
         if let Some(reason) = row.reason() {
             ui.add_space(6.0);
-            ui.label(RichText::new(format!("Can't start: {reason}")).color(crate::pages::WARN));
+            ui.label(RichText::new(format!("Cannot start: {reason}")).color(crate::pages::WARN));
         }
         action
     }
@@ -712,11 +704,15 @@ mod tests {
     }
 
     #[test]
-    fn the_a_groups_share_a_class_and_blocked_cars_come_last() {
+    fn the_a_groups_share_a_class_of_the_cars_that_can_start() {
         let rows = rows();
         let class = Collection::Class("Group A".into());
         let found = lines(&rows, &class, &Filter::default(), Sort::Name, &[], &[]);
-        assert_eq!(names(&rows, &found), ["Gamma", "Zeta", "Alpha"]);
+        assert_eq!(names(&rows, &found), ["Gamma", "Zeta"]);
+        let blocked = lines(&rows, &Collection::CannotStart, &Filter::default(), Sort::Name, &[], &[]);
+        assert_eq!(names(&rows, &blocked), ["Alpha"]);
+        let rwd = Filter { drive: Some(Drive::Rwd), ..Filter::default() };
+        assert!(lines(&rows, &Collection::CannotStart, &rwd, Sort::Name, &[], &[]).is_empty());
     }
 
     #[test]
@@ -731,8 +727,11 @@ mod tests {
     fn the_sidebar_orders_classes_newest_first() {
         let rows = rows();
         let all = collections(&rows, &[], &[]);
-        let labels: Vec<&str> = all.iter().map(|(_, n, _)| n.as_str()).collect();
-        assert_eq!(labels, ["Favourites", "Recent", "All cars", "WRC 2.0", "Group A", "Can't start"]);
+        let labels: Vec<(&str, usize)> = all.iter().map(|(_, n, count)| (n.as_str(), *count)).collect();
+        assert_eq!(
+            labels,
+            [("Favourites", 0), ("Recent", 0), ("All cars", 3), ("WRC 2.0", 1), ("Group A", 2), ("Cannot start", 1)]
+        );
     }
 
     #[test]
