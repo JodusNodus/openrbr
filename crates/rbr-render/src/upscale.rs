@@ -1,7 +1,9 @@
 //! Upscaled textures at load (ours, not the game's): each car texture and [`stage_textures`] texture is upscaled 4x by
 //! a Real-ESRGAN ncnn binary with [`MODEL`], halved where 4x would pass [`MAX`], and re-encoded in its block format
-//! with a full mip chain. The results are kept in a cache folder by the source file's SHA-256, so a texture is
-//! upscaled once, whichever car or stage shows it, and again only when its file changes.
+//! with a full mip chain. A texture the dials draw on (`Image::Dial`, the cockpit of a car with a gauge pack) has its
+//! base upscaled from its art's size: RBRHUD's bases larger than the car's own texture are smooth resizes of it.
+//! The results are kept in a cache folder by the source file's SHA-256, so a texture is upscaled once, whichever car
+//! or stage shows it, and again only when its file changes.
 //!
 //! The upscaler's folder (the launcher's `<player folder>/Upscaler`, which its "Download upscaler…" fills) holds the
 //! binary, its `models` and the `cache`. `RBR_UPSCALER`, else `upscaler/` beside the running program, names another
@@ -73,9 +75,10 @@ impl Upscaler {
     }
 }
 
-/// Replaces each texture of the sets `sets` takes in `textures` (a `.dds` file's, its larger side at most half
-/// [`MAX`]) by its upscaled copy from `cache`, upscaling with `upscaler` the ones not there yet; `progress` is told
-/// (done, total) before each. A texture that fails keeps its own. Returns how many were replaced.
+/// Replaces each texture of the sets `sets` takes in `textures` (a `.dds` file's or a dial's base, its larger side, or
+/// its art's, at most half [`MAX`]) by its upscaled copy from `cache`, upscaling with `upscaler` the ones not there
+/// yet; `progress` is told (done, total) before each. A texture that fails keeps its own. Returns how many were
+/// replaced.
 pub fn apply(
     textures: &mut BTreeMap<TextureRef, StageTexture>,
     pick: impl Fn(TextureRef) -> bool,
@@ -85,23 +88,26 @@ pub fn apply(
 ) -> usize {
     let folder = cache.join(format!("{MODEL}-{MAX}"));
     let mut planned: Vec<(TextureRef, PathBuf)> = Vec::new();
-    let mut missing: BTreeMap<PathBuf, &[u8]> = BTreeMap::new();
-    let wanted: Vec<(TextureRef, &[u8])> = textures
-        .iter()
-        .filter_map(|(&key, texture)| match &texture.image {
-            Some(Image::Dds(bytes))
-                if pick(key) && texture.request.to_ascii_lowercase().ends_with(".dds") && scale(bytes).is_some() =>
-            {
-                Some((key, bytes.as_slice()))
-            }
-            _ => None,
-        })
-        .collect();
-    let digests = in_parallel(&wanted, |&(_, bytes)| Sha256::digest(bytes));
-    for ((key, bytes), digest) in wanted.into_iter().zip(digests) {
+    let mut missing: BTreeMap<PathBuf, (&[u8], u32)> = BTreeMap::new();
+    // Each with the larger side it is upscaled from: a dial's base its art's.
+    let wanted: Vec<_> =
+        textures
+            .iter()
+            .filter_map(|(&key, texture)| {
+                let (bytes, side) = match texture.image.as_ref()? {
+                    Image::Dds(bytes) => (bytes, larger_side(bytes)?),
+                    Image::Dial { base, art, .. } => (base, art.0.max(art.1)),
+                    _ => return None,
+                };
+                (pick(key) && texture.request.to_ascii_lowercase().ends_with(".dds") && scale(side).is_some())
+                    .then_some((key, bytes.as_slice(), side))
+            })
+            .collect();
+    let digests = in_parallel(&wanted, |&(_, bytes, _)| Sha256::digest(bytes));
+    for ((key, bytes, side), digest) in wanted.into_iter().zip(digests) {
         let path = folder.join(format!("{digest:x}.dds"));
         if !path.is_file() {
-            missing.insert(path.clone(), bytes);
+            missing.insert(path.clone(), (bytes, side));
         }
         planned.push((key, path));
     }
@@ -117,7 +123,10 @@ pub fn apply(
     for ((key, _), bytes) in planned.into_iter().zip(read) {
         let Some(bytes) = bytes else { continue };
         if let Some(texture) = textures.get_mut(&key) {
-            texture.image = Some(Image::Dds(bytes));
+            match &mut texture.image {
+                Some(Image::Dial { base, .. }) => *base = bytes,
+                image => *image = Some(Image::Dds(bytes)),
+            }
             replaced += 1;
         }
     }
@@ -144,35 +153,42 @@ pub fn stage_textures(stage: &Stage) -> BTreeSet<TextureRef> {
         .collect()
 }
 
-/// The scale a `.dds` file is upscaled by: 4, else 2 where 4 would pass [`MAX`]; none where 2 would, under [`MIN`],
-/// or where it does not read.
-fn scale(bytes: &[u8]) -> Option<u32> {
-    let dds = dds::parse(bytes).ok()?;
-    let side = dds.width.max(dds.height);
+/// A `.dds` file's larger side, `None` where it does not read.
+fn larger_side(bytes: &[u8]) -> Option<u32> {
+    dds::parse(bytes).ok().map(|dds| dds.width.max(dds.height))
+}
+
+/// The scale a texture of larger side `side` is upscaled by: 4, else 2 where 4 would pass [`MAX`]; none where 2 would
+/// or under [`MIN`].
+fn scale(side: u32) -> Option<u32> {
     [4, 2].into_iter().find(|s| side >= MIN && side * s <= MAX)
 }
 
-/// Upscales each `.dds` file of `missing` into its cache file: their top levels as PNGs into `work`, one run of the
-/// binary over them, and each file it saves halved where 4x passes [`MAX`] and encoded while it makes the next. The
-/// largest go first, so the last encodes are short. `progress` is told (done, total) before each.
+/// Upscales each `.dds` file of `missing` into its cache file: their top levels, halved down to the side each is
+/// upscaled from, as PNGs into `work`, one run of the binary over them, and each file it saves halved where 4x passes
+/// [`MAX`] and encoded while it makes the next. The largest go first, so the last encodes are short. `progress` is told
+/// (done, total) before each.
 fn make(
     upscaler: &Upscaler,
-    mut missing: Vec<(PathBuf, &[u8])>,
+    mut missing: Vec<(PathBuf, (&[u8], u32))>,
     work: &Path,
     progress: &mut dyn FnMut(usize, usize),
 ) -> Result<(), String> {
-    let texels = |bytes: &[u8]| dds::parse(bytes).map(|dds| dds.width * dds.height).unwrap_or(0);
-    missing.sort_by_key(|&(_, bytes)| std::cmp::Reverse(texels(bytes)));
+    missing.sort_by_key(|&(_, (_, side))| std::cmp::Reverse(side));
     let (input, output) = (work.join("in"), work.join("out"));
     for dir in [&input, &output] {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
     let name = |index: usize| format!("{index:04}.png");
-    for (index, (path, bytes)) in missing.iter().enumerate() {
+    for (index, (path, (bytes, side))) in missing.iter().enumerate() {
         let written = dds::parse(bytes).map_err(|e| e.to_string()).and_then(|dds| {
             let level = &dds.levels()[0];
-            let rgba = decompress(dds.format, level.data, level.width, level.height);
-            write_png(&input.join(name(index)), level.width, level.height, &rgba).map_err(|e| e.to_string())
+            let (mut width, mut height) = (level.width, level.height);
+            let mut rgba = decompress(dds.format, level.data, width, height);
+            while width.max(height) > *side {
+                (width, height, rgba) = half(width, height, &rgba);
+            }
+            write_png(&input.join(name(index)), width, height, &rgba).map_err(|e| e.to_string())
         });
         if let Err(e) = written {
             eprintln!("upscale: {}: {e}", path.display());
@@ -193,8 +209,8 @@ fn make(
     });
     let mut done = vec![false; total];
     let mut take = |index: usize, done: &mut [bool]| {
-        let (path, bytes) = &missing[index];
-        if let Err(e) = finish(bytes, &output.join(name(index)), path) {
+        let (path, (bytes, side)) = &missing[index];
+        if let Err(e) = finish(bytes, *side, &output.join(name(index)), path) {
             eprintln!("upscale: {}: {e}", path.display());
         }
         done[index] = true;
@@ -217,13 +233,13 @@ fn make(
     status.success().then_some(()).ok_or_else(|| format!("{} failed: {status}", upscaler.binary.display()))
 }
 
-/// Encodes the upscaled PNG `upscaled` of the `.dds` file `bytes` into `out`, halved where 4x passes [`MAX`]. Written
-/// whole, then renamed, so a stopped load leaves no part file in its place.
-fn finish(bytes: &[u8], upscaled: &Path, out: &Path) -> Result<(), String> {
+/// Encodes the upscaled PNG `upscaled` of the `.dds` file `bytes`, upscaled from larger side `side`, into `out`, halved
+/// where 4x passes [`MAX`]. Written whole, then renamed, so a stopped load leaves no part file in its place.
+fn finish(bytes: &[u8], side: u32, upscaled: &Path, out: &Path) -> Result<(), String> {
     let dds = dds::parse(bytes).map_err(|e| e.to_string())?;
     let (mut width, mut height, mut rgba) = read_png(upscaled).map_err(|e| e.to_string())?;
     let _ = std::fs::remove_file(upscaled);
-    if scale(bytes) == Some(2) {
+    if scale(side) == Some(2) {
         (width, height, rgba) = half(width, height, &rgba);
     }
     let part = out.with_extension("part");
@@ -374,10 +390,11 @@ mod tests {
 
     #[test]
     fn scale_fits_max() {
-        assert_eq!(scale(&file(1024)), Some(4));
-        assert_eq!(scale(&file(2048)), Some(2));
-        assert_eq!(scale(&file(4096)), None);
-        assert_eq!(scale(&file(16)), None);
+        assert_eq!(larger_side(&file(1024)), Some(1024));
+        assert_eq!(scale(1024), Some(4));
+        assert_eq!(scale(2048), Some(2));
+        assert_eq!(scale(4096), None);
+        assert_eq!(scale(16), None);
     }
 
     #[test]

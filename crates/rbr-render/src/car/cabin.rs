@@ -26,7 +26,6 @@ use crate::damage::MeshDamage;
 use crate::parallel::in_parallel;
 use crate::stage::{Draw, Image, Mesh, Stage, StageTexture, TextureRef, TextureSet, Vertex};
 use glam::{IVec3, Mat4, Vec2, Vec3};
-use rbr_formats::dds;
 use rbr_formats::rsf::gauges::{self, Atlas, Kind};
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -509,10 +508,9 @@ pub fn gauge_faces(root: &Path, car_folder: &str, stage: &Stage) -> BTreeMap<Tex
             .collect();
         for (&key, texture) in &stage.textures {
             let file = texture.request.rsplit(['\\', '/']).next().unwrap_or_default();
-            let Some(Image::Dial { base: bytes, .. }) = &texture.image else { continue };
-            let Ok(dds) = dds::parse(bytes) else { continue };
+            let Some(Image::Dial { texels, .. }) = &texture.image else { continue };
             if key.set == TextureSet::Car && file.eq_ignore_ascii_case(&config.texture) {
-                let size = Vec2::new(dds.width as f32, dds.height as f32);
+                let size = Vec2::new(texels.0 as f32, texels.1 as f32);
                 faces.entry(key).or_default().extend(needles.iter().map(|&(at, reach)| (at / size, reach / size)));
             }
         }

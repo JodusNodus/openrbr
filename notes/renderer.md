@@ -974,6 +974,13 @@ stage objects ~25 s first; the ground's atlases 8 to 14 s more. Cached, a stage 
 backdrop and the course tape showed no difference. Missing textures go through one run of the binary over a folder:
 track-41_M with ACCENT 73.6 s before, 27.0 s (2026-10-26). Tried and dropped: shrinking 2048 sources to 1024
 before the 4x (4.9 s; smears them).
+Dial textures (the cockpit of a car with an RBRHUD gauge pack, `Image::Dial`) are upscaled too (user's call,
+2026-11-01), from the car's own texture's size: RBRHUD's 13 bases larger than their car's (the Clio Rally3's 4096
+against 2048) are smooth resizes of it, their finest octave 0.45 to 0.71 of the car's detail. The needles and
+displays keep the pack's texels, scaled to the target's. Clio 4K cockpit: edges crisper, the dash's grain smoothed,
+the small switch labels garbled. Reference cockpits 0.35 to 2.86 % RMSE, upscale off byte-identical; the target
+gets the base's mip chain (+21 MB at 4096, the dials redrawn into every level: a Clio redraw 0.92 ms GPU against
+0.60, `--profile` with the dials redrawn each frame).
 Not packaged: the download takes Real-ESRGAN v0.2.5.0's release zip (macOS universal, Linux and Windows x86_64; none for ARM Linux) and the
 model's ncnn files from upscayl/custom-models at 500e6a0, each checked by SHA-256.
 
