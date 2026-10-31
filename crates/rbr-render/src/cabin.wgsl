@@ -6,7 +6,7 @@
 // forest is darker. The sun reaches it only through the glass: past the car's own shadow map (the roof, pillars and
 // dash shade each other), the stage's shadows (the sun's cascades, else the reflection cube toward the sun) and the
 // clouds, and stronger than the game's, so the patches it lights stand out; they light the rest of the cabin back
-// (`car::cabin::SunIn`). The plastics take a faint sheen of what they reflect out of the windows (`cabin_sheen`). By
+// (`car::cabin::SunIn`). The interior takes a faint sheen of what it reflects out of the windows (`cabin_sheen`). By
 // night and dusk the headlights' light off the road comes in through the glass. The dial faces keep at least the
 // game's light, so they read as before until the exposure follows the cabin. With the day's light the interior set takes
 // it instead (`cabin_day_lit`).
@@ -199,17 +199,18 @@ fn cabin_shade(seen: vec3<f32>) -> vec3<f32> {
     return vec3<f32>(mix(vec2<f32>(CABIN_SHADE), vec2<f32>(1.0), shade), mean);
 }
 
-// The sheen of the interior's faces that reflect nothing in the game's settings (`Kf` 0: plastics, cloth, dials): a
-// dielectric's Fresnel (`CABIN_F0`) of the surroundings blurred (`CABIN_SHEEN_LEVEL` of the cube), where the reflected
-// direction leaves the car (`cabin_open`): the dash reflects the sky through the windscreen, not where the roof is.
-const CABIN_F0: f32 = 0.04;
+// The sheen of the interior's faces (plastics, cloth, dials): a rough dielectric's share (`environment_reflectance` at
+// `CABIN_ROUGHNESS`, 2 to 3 % of what it sees, as a low-gloss dash plastic) of the surroundings blurred
+// (`CABIN_SHEEN_LEVEL` of the cube), where the reflected direction leaves the car (`cabin_open`): the dash reflects the
+// sky through the windscreen, not where the roof is. A smooth one's Fresnel (F0 0.04) took a dash seen at a grazing
+// angle to a third of the sky.
+const CABIN_ROUGHNESS: f32 = 0.8;
 const CABIN_SHEEN_LEVEL: f32 = 3.0;
 
 fn cabin_sheen(v: VertexOut, n: vec3<f32>, view: vec3<f32>) -> vec3<f32> {
-    let nv = clamp(dot(n, view), 0.0, 1.0);
-    let f = CABIN_F0 + (1.0 - CABIN_F0) * pow(1.0 - nv, 5.0);
+    let reflectance = environment_reflectance(clamp(dot(n, view), 1e-3, 1.0), CABIN_ROUGHNESS);
     let r = reflect(-view, n);
-    return reflected(r, CABIN_SHEEN_LEVEL) * f * cabin_open(cabin_seen(v), 1.0 - v.specular.z, r);
+    return reflected(r, CABIN_SHEEN_LEVEL) * reflectance * cabin_open(cabin_seen(v), 1.0 - v.specular.z, r);
 }
 
 // Where a baked vertex sees the sky (`car::cabin::seen`, turned with the car): the mean of its open rays' directions.

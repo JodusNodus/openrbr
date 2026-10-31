@@ -75,7 +75,7 @@ pub fn screenshot(scene: &mut Scene, args: &Args, data: &Data, path: &Path) -> R
         }
         // The game's start orbit replaces the view until the go, and the helicam while the helicopter runs.
         let camera_record = scene.live.as_ref().and_then(|live| live.hud.camera);
-        let (heli, flip, scripted) = scripted_camera(scene.characters.as_ref());
+        let (heli, flip, _) = scripted_camera(scene.characters.as_ref());
         let shown = match page {
             Some(_) => Shown::Player(view),
             None => Shown::of(view, camera_record, heli, flip),
@@ -104,16 +104,14 @@ pub fn screenshot(scene: &mut Scene, args: &Args, data: &Data, path: &Path) -> R
         if let (Some(playback), Some(crew)) = (&mut scene.playback, &mut scene.crew) {
             show_crew(crew, playback, view, None, &mut renderer);
         }
-        // The flares are seen through the car's camera (not the `--camera` one).
-        if let (Some(playback), Some(mounts)) = (&mut scene.playback, &scene.mounts) {
+        if let Some(playback) = &mut scene.playback {
             playback.interior = view.interior();
             renderer.set_outside_view(!view.interior());
             playback.reverse = scene.live.as_ref().is_some_and(|live| live.hud.gear == 0);
             if let Some(lamps) = scene.live.as_ref().and_then(|live| live.lamps) {
                 playback.set_lamps(lamps);
             }
-            let lens = shown.lens(playback, mounts, scripted, look, fov);
-            playback.apply(&mut renderer, &lens);
+            playback.apply(&mut renderer);
         }
         if let (Some(ghost), Some(playback)) = (&mut scene.ghost, &scene.playback) {
             ghost.apply(&mut renderer, playback, view_projection);

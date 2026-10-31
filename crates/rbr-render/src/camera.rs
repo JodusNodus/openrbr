@@ -142,7 +142,7 @@ impl Orbit {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Lens {
     pub eye: Vec3,
-    /// Unit: the flares (`lights::sprite`) scale and place their quads by it.
+    /// Unit.
     pub forward: Vec3,
     pub up: Vec3,
     /// Horizontal field of view, radians; the vertical one follows from the image's aspect.

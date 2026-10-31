@@ -146,7 +146,7 @@ Rally3 Evo, 1280x720: 63.9 fps render, replay 16920 of 16920 frames equal, video
 | Sky | `TrackSettings.ini` values, linear fog, cloud face | section pick, sky, haze caps, tone curve |
 | Car | parts, switch states, classes, draw lists | lighting, reflection cubes, sun and contact shadows |
 | Car shadow decal | `RenderShadows` 0x605670 | body pose as its frame |
-| Lights | switching, part predicates, flares | headlight key, night light |
+| Lights | switching, part predicates | headlight key, night light, no flares |
 | Damage | deformation, scrape, crack projection, dirt level | crack texture, glass grime, detached motion |
 | Particles | emitters, classes, handlers, rain instances | step, pools, lighting, sparks, chimney smoke |
 | Glass | wiper angles and timing, bug data | the water-on-glass model |
@@ -388,11 +388,10 @@ swaps the `Predicate = on/off` parts and restarts the flare fade.
 - Flares (`InitLights` 0x10016fd0, `RenderLights` 0x100158b0; `lights.rs`): `<car>_settings.ini` `LightN`, key
   `kind * 4 + i`; additive quad 0.2 m toward the eye, alpha `facing * fade * 114.75`. Only the first record of a key
   with a `Switch = true` part switches. Ours: the headlight key (L) steps main beam, dipped, off (with the tail
-  lights).
-- Ours: only headlight records draw a flare; the rear lamps show as their lit parts, which glow (`LAMP_GLOW`) day
-  and night, a tail lamp's by day at 0.3 of it (`lights::TAIL_DAY`, about 8 cd against a brake lamp's 100) so braking
-  shows (2026-10-31; golden Gabiria Escort chase 0.6 % RMSE, night shots byte-identical). The game's rear sprites read
-  as blobs by day.
+  lights). Ours: no flare is drawn (user, 2026-10-31: the Clio Rally3's sat over and outboard of its lamps).
+- Ours: the lamps show as their lit parts, which glow (`LAMP_GLOW`) day and night, a tail lamp's by day at 0.3 of it
+  (`lights::TAIL_DAY`, about 8 cd against a brake lamp's 100) so braking shows (2026-10-31; golden Gabiria Escort chase
+  0.6 % RMSE, night shots byte-identical). The game's rear sprites read as blobs by day.
 - Ours: a lamp's lit part the game never draws (on the `light` or `brake` box, or `Predicate = NotUsed`), named
   `e_light_lf_lit`, `e_light_lb_lit`, `e_light_brake_lb_lit` and so on, follows its lamp by name, with its unlit pair
   `e_light_lb` when that one's box does not switch it (`lights::Switch::of_part`, 2026-10-31; user: "whatever is
@@ -416,7 +415,7 @@ swaps the `Predicate = on/off` parts and restarts the flare fade.
   moonlight is physical.
 - Ours: a car with no kind 1 record that ever lights (an RSF car installed with headlights off: none, or all
   `Active = false` without their switch box, as 19 installed cars incl. the Escort Mk II, 2026-10-30) gets a beam per
-  `Point_light_lf`/`rf` for the night light, no flare, in the colour of its "on" option's headlight record
+  `Point_light_lf`/`rf` for the night light, in the colour of its "on" option's headlight record
   (`rsf::headlights_on`), else the retail 255, 255, 233. Points the car's `<car>.ini` lacks come from the "on"
   option's (`lights::with_headlight_points`, 2026-10-30): 9 of 108 installed cars had neither records nor points and lit
   nothing at night (GR Yaris Rally2, Fabia RS Rally2, Polo GTI R5, DS3 R5, Fiesta S2000 and R2, Grande Punto S2000,
@@ -874,6 +873,15 @@ outside shots byte-identical; 4 s of driving (Escort, Clio) hold the cabin withi
 that writes depth (the Clio Rally3's `CarPlastic` side windows) and the rear-view mirror count as cabin, so what is
 seen in them takes the cabin's exposure (about 1.5 stops over on the Clio); the forest shots' door cards stay dark (5
 to 7 stops under the road, which their light is).
+
+Interior sheen (2026-10-31, `cabin_sheen`): every cabin face but paint open to the sky (the bonnet through the glass,
+`CABIN_OUT`) reflects as a low-gloss plastic, `environment_reflectance` at roughness 0.8 (2 to 3 %) of the cube's
+level 3, where the reflected ray leaves the car (`cabin_open`). A class with a Fresnel kept the paint's reflection: the
+Clio Rally3's dash is `CarPaintInt` with `Kf` 1 from `FresnelMin` 0 (9 installed cars; 70 have 0.21 / 0.44) and read
+as glass; the rest took a smooth F0 0.04, a third of the sky at a grazing angle. Mlynky 135 Clio cockpit 19:30: dash
+top 108 to 85 of 255 (no sheen 86). Cockpit reference shots 1 to 2.6 % RMSE by day (Fiesta's grey dash 6.5 %), nights
+0.02 to 0.04 %, outside shots byte-identical. The dash still reads blue-grey: near-black texels under the cabin's own
+exposure and the sky through the windscreen.
 
 The car's sun shadow (2026-10-30, `car_shadow`): a penumbra by the sun's disc and the casters' mean distance (3x3
 search, PCSS as the cascades), taps a texel apart, at most 9 a side and the range's reach. The fixed 4x4 taps 4 cm

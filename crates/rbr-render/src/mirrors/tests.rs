@@ -30,7 +30,6 @@ fn mesh(triangles: &[[Vec3; 3]], normal: Vec3, glass: bool) -> Mesh {
                 mip_bias: false,
                 cull_back: false,
                 blend: false,
-                additive: false,
                 depth_test: true,
                 depth_write: true,
                 shade: glass.then(|| Shade { glass: true, ..Shade::default() }),

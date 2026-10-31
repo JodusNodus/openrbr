@@ -77,7 +77,7 @@ rbr-recomp `notes/progress/systems.md`; history up to the split: rbr-recomp `LOG
 | RSF working dials | done | oil, tyre health fixed; `Damage` unverified |
 | Particles | partial | soft edges; rates against a capture |
 | Skid marks | done | - |
-| Car lights and flares | partial | recordings without live data approximate |
+| Car lights | partial | recordings without live data approximate |
 | Deformation, cracks, detached parts, dirt | partial | door detach |
 | Interactive scenery, fences | done | - |
 | Stage characters, in-car crew, car-flip marshals | done | original run: game captures |

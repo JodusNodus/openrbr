@@ -511,7 +511,6 @@ fn slot_mesh(texture: TextureRef, capacity: usize) -> Mesh {
         mip_bias: false,
         cull_back: false,
         blend: false,
-        additive: false,
         depth_test: true,
         depth_write: true,
         shade: None,

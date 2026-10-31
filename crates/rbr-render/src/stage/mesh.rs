@@ -151,9 +151,6 @@ pub struct DrawState {
     pub cull_back: bool,
     /// Alpha blended over the frame.
     pub blend: bool,
-    /// With `blend`, the colour is added to the frame, scaled by the texel's alpha, instead of alpha blended over it
-    /// (the car's light flares, `lights`).
-    pub additive: bool,
     /// Depth test against the depth buffer.
     pub depth_test: bool,
     /// Write depth.
@@ -383,7 +380,6 @@ pub(super) fn block_mesh(block: &lbs::GeometryBlock, report: &mut LoadReport) ->
                     mip_bias: lod == Lod::Near,
                     cull_back: true,
                     blend: false,
-                    additive: false,
                     depth_test: true,
                     depth_write: true,
                     shade: None,
@@ -443,7 +439,6 @@ pub(super) fn object_mesh(item: &lbs::ObjectItem, report: &mut LoadReport) -> Me
         mip_bias: false,
         cull_back: false,
         blend: false,
-        additive: false,
         depth_test: true,
         depth_write: true,
         shade: None,
@@ -484,7 +479,6 @@ pub(super) fn interactive_mesh(object: &lbs::InteractiveObject<'_>, report: &mut
             mip_bias: false,
             cull_back: false,
             blend: false,
-            additive: false,
             depth_test: true,
             depth_write: true,
             shade: None,
@@ -520,7 +514,6 @@ pub(super) fn face_mesh(item: &lbs::SkyItem, report: &mut LoadReport) -> Mesh {
         mip_bias: false,
         cull_back: false,
         blend: false,
-        additive: false,
         depth_test: true,
         depth_write: false,
         shade: None,
@@ -602,7 +595,6 @@ pub(super) fn water_mesh(item: &lbs::SurfaceItem<'_>, report: &mut LoadReport) -
                 mip_bias: false,
                 cull_back: true,
                 blend: true,
-                additive: false,
                 depth_test: true,
                 depth_write: true,
                 shade: None,

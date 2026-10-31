@@ -25,7 +25,7 @@ scripts/launcher.sh   # live drives: the launcher runs viewer --live rbr-standal
 - `effects`, `puddles`: GPU rain, wet roads
 - `car/`: car loading, parts, cabin bake
 - `car_shadow`: shadow decal
-- `lights`: lamps and flares
+- `lights`: lamps
 - `damage`, `damage_parts`, `crack_decal`, `dirt`: damage visuals
 - `particles/`: particles
 - `glass/`: windscreen and wipers

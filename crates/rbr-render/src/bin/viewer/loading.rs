@@ -242,8 +242,8 @@ fn warm_up(
     size: (u32, u32),
 ) {
     let shown = Shown::Player(scene.cameras.start_view(args.view));
-    if let (Some(playback), Some(mounts)) = (&scene.playback, &scene.mounts) {
-        playback.apply(renderer, &shown.lens(playback, mounts, None, ChaseLook::default(), args.fov));
+    if let Some(playback) = &scene.playback {
+        playback.apply(renderer);
     }
     if let (Some(dials), Some(playback)) = (&mut scene.dials, &scene.playback) {
         dials.update(&dial_values(playback, scene.live.as_ref()), None, renderer);
