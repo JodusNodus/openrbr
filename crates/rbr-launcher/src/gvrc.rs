@@ -9,10 +9,10 @@
 //! `<Model> - Model.7z`, sound banks a `<Car> - banks.7z`; the original eight cars, which NGP's package covers, are left
 //! out).
 //!
-//! - NGP goes into the game folder (`disc_install::add_ngp`): the package is downloaded to a temp folder in it, checked
+//! - NGP goes into the game folder (`ngp_install::add_ngp`): the package is downloaded to a temp folder in it, checked
 //!   to be NGP 7.4.778, and written like NGP's own install. This is the one place the launcher writes the game folder.
 //!   A game folder with its own NGP (RallySimFans', or a version ReRBR does not read) is left as it is: only 7.4.778's
-//!   `NGP.dll` and `physics.rbz` are kept, in the player's folder (`NGP_DIR`, `disc_install::add_ngp_to`), and the
+//!   `NGP.dll` and `physics.rbz` are kept, in the player's folder (`NGP_DIR`, `ngp_install::add_ngp_to`), and the
 //!   DLL and physics.rbz fields set to them.
 //! - A car's downloads go to a temp folder in `cars/` and are added as downloaded packs are (`car_packs::add_downloads`),
 //!   each car with the model its list entry names.
@@ -27,8 +27,8 @@ use std::time::Duration;
 use egui::Color32;
 
 use crate::car_packs::{self, Added, Download, BANKS, MODEL, PHYSICS};
-use crate::disc_install;
 use crate::job::{Counter, Job, Progress, Temp};
+use crate::ngp_install;
 use crate::pages::{GOOD, WARN};
 use crate::Form;
 
@@ -217,17 +217,17 @@ pub fn download_ngp_package(
 }
 
 /// Downloads NGP's package (named by the list at `list`) and installs it into the game folder `game`
-/// (`disc_install::add_ngp`); the number of files written.
+/// (`ngp_install::add_ngp`); the number of files written.
 fn download_ngp_from(
     list: &str,
     game: &Path,
     report: &(dyn Fn(&Progress) + Sync),
     cancel: &AtomicBool,
 ) -> Result<usize, Fail> {
-    disc_install::check_game_folder(game)?;
+    ngp_install::check_game_folder(game)?;
     let temp = Temp::create(game, "downloading")?;
     let package = download_package_from(list, &temp.0, report, cancel)?;
-    disc_install::add_ngp(&package, game, report, cancel)
+    ngp_install::add_ngp(&package, game, report, cancel)
 }
 
 /// Downloads NGP and installs it into the game folder `game`; the number of files written.
@@ -239,7 +239,7 @@ pub fn download_ngp(game: &Path, report: &(dyn Fn(&Progress) + Sync), cancel: &A
 fn download_ngp_to(to: &Path, report: &(dyn Fn(&Progress) + Sync), cancel: &AtomicBool) -> Result<(), Fail> {
     let temp = Temp::create(to.parent().unwrap_or(Path::new(".")), "downloading")?;
     let package = download_package_from(LIST_URL, &temp.0, report, cancel)?;
-    disc_install::add_ngp_to(&package, to, report, cancel)
+    ngp_install::add_ngp_to(&package, to, report, cancel)
 }
 
 /// Downloads `wanted` into a temp folder in `cars_dir` and adds them there (`car_packs::add_downloads`). One car whose
@@ -398,7 +398,7 @@ impl Form {
     /// `physics.rbz` (none, or another version's), without NGP's plugin, or with a plugin ReRBR does not read.
     pub fn can_download_ngp(&self) -> bool {
         let game = self.folder.game.as_deref();
-        let there = game.is_some_and(|g| disc_install::check_game_folder(g).is_ok());
+        let there = game.is_some_and(|g| ngp_install::check_game_folder(g).is_ok());
         let wanted = self.ngp_revision != Some(778) || self.ngp_dll.problem(&self.data, &self.rsf()).is_some();
         there && wanted && self.child.is_none() && self.downloads.ngp_job.is_none()
     }

@@ -144,6 +144,7 @@ mod home;
 mod install;
 mod job;
 mod ngp_dll;
+mod ngp_install;
 mod pages;
 mod preview;
 mod rally_page;

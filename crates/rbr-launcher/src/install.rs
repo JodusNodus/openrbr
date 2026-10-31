@@ -107,7 +107,7 @@ fn physics_lsp(path: &Path) -> Option<String> {
 
 /// Whether the `physics.rbz` at `path` is NGP's.
 pub fn is_ngp_archive(path: &Path) -> bool {
-    physics_lsp(path).is_some_and(|text| text.contains("PhysicsRevision_NGP"))
+    physics_lsp(path).is_some_and(|text| crate::ngp_install::has_ngp_revision(text.as_bytes()))
 }
 
 /// The NGP revision the `physics.rbz` at `path` sets (`PhysicsRevision_NGP 778`), if it is NGP's.
