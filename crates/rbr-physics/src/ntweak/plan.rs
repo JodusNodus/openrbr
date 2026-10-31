@@ -65,7 +65,7 @@ pub(super) enum Action<'a> {
     Name(u32, String),
     /// A member's value word (address, value).
     Store(u32, u32),
-    /// A token-heap block for an inner group's item, holding what `GetQuoted` takes from the item.
+    /// A token-heap block for an inner group's item, holding what `get_quoted` takes from the item.
     Item(String),
     /// The registry index of the name, appended to the object's links when the registry has the name.
     Link(u32, String),

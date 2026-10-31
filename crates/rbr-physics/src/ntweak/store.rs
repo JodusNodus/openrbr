@@ -1,4 +1,4 @@
-//! The tweak store (`crate::store`): the words the NTweak walk and `SetDirty` read and write. `Mem` implements it in
+//! The tweak store (`crate::store`): the words the NTweak walk and the dirty-marking read and write. `Mem` implements it in
 //! `layout/mod.rs`. The tweak value bodies are [`crate::store::Real`] and its siblings.
 
 use crate::store::Raw;
