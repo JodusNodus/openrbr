@@ -1081,7 +1081,6 @@ mod tests {
                 mip_bias: false,
                 cull_back: true,
                 blend,
-                additive: false,
                 depth_test: true,
                 depth_write: !blend,
                 shade,

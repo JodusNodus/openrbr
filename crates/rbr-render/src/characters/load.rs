@@ -694,7 +694,6 @@ fn draw_state(texture: Option<TextureRef>, opacity: bool) -> DrawState {
         mip_bias: false,
         cull_back: !opacity,
         blend: false,
-        additive: false,
         depth_test: true,
         depth_write: true,
         shade: Some(SHADE),

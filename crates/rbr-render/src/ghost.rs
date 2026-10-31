@@ -483,7 +483,6 @@ impl GhostCar {
             mip_bias: false,
             cull_back: true,
             blend: true,
-            additive: false,
             depth_test: true,
             depth_write: false,
             shade: None,

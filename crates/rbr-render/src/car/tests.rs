@@ -143,7 +143,7 @@ fn a_damaged_panel_moves_by_its_placed_delta_and_scrapes() {
         name: "x".to_owned(),
         meshes,
         damage,
-        flares: Vec::new(),
+        lamp_points: Vec::new(),
         textures: BTreeMap::new(),
         report: CarReport::default(),
     };
@@ -189,7 +189,7 @@ fn the_glass_gets_an_inner_side_drawn_before_it() {
         name: "x".to_owned(),
         meshes: vec![mesh(false), mesh(true), mesh(true)],
         damage: vec![MeshDamage::default(), MeshDamage { detach: Some(3), ..MeshDamage::default() }, crack],
-        flares: Vec::new(),
+        lamp_points: Vec::new(),
         textures: BTreeMap::new(),
         report: CarReport::default(),
     };

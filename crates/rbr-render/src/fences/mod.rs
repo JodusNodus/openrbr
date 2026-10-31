@@ -271,7 +271,6 @@ fn mesh(line: &Line) -> Mesh {
             mip_bias: false,
             cull_back: false,
             blend: false,
-            additive: false,
             depth_test: true,
             depth_write: true,
             shade: None,

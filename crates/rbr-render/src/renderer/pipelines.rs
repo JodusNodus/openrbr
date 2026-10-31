@@ -22,26 +22,11 @@ pub(crate) const SHADER: &str = concat!(
     include_str!("../volume_shadow.wgsl")
 );
 
-/// The light flares' blend (`DrawState::additive`): the colour times the texel's alpha, added to the frame.
-const ADDITIVE_BLENDING: wgpu::BlendState = wgpu::BlendState {
-    color: wgpu::BlendComponent {
-        src_factor: wgpu::BlendFactor::SrcAlpha,
-        dst_factor: wgpu::BlendFactor::One,
-        operation: wgpu::BlendOperation::Add,
-    },
-    alpha: wgpu::BlendComponent {
-        src_factor: wgpu::BlendFactor::One,
-        dst_factor: wgpu::BlendFactor::One,
-        operation: wgpu::BlendOperation::Add,
-    },
-};
-
 /// The pipeline state of a draw.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(super) struct PipelineKey {
     cull_back: bool,
     pub(super) blend: bool,
-    additive: bool,
     depth_test: bool,
     pub(super) depth_write: bool,
     /// The alpha test (`ALPHA_TEST` in `shader.wgsl`); without it the shader is built with no `discard`.
@@ -105,7 +90,6 @@ impl PipelineKey {
         PipelineKey {
             cull_back: state.cull_back,
             blend: state.blend,
-            additive: state.additive,
             depth_test: state.depth_test,
             depth_write: state.depth_write,
             alpha_test: state.alpha_ref.is_some(),
@@ -352,11 +336,7 @@ impl Context<'_> {
                 targets: &[Some(wgpu::ColorTargetState {
                     // The mask's prepass draws the normals into their own, smaller target.
                     format: if self.lighting && key.pass == DrawPass::DepthPrepass { NORMALS } else { self.format },
-                    blend: key.blend.then_some(if key.additive {
-                        ADDITIVE_BLENDING
-                    } else {
-                        wgpu::BlendState::ALPHA_BLENDING
-                    }),
+                    blend: key.blend.then_some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask,
                 })],
             }),

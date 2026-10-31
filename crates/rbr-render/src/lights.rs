@@ -1,4 +1,4 @@
-//! The car's lights: which lamps are lit, the car parts that show each state, and the flares.
+//! The car's lights: which lamps are lit, the car parts that show each state, and where each lamp sits.
 //!
 //! The game's rules are in `notes/renderer.md` "Lights". `NPhysics::CCarLightSystem` switches the lamps by kind: the front and
 //! tail lights are on, the brake lights follow the brake pedal (above [`BRAKE_ON`]) and the reverse lights the gear.
@@ -8,12 +8,9 @@
 //! gear), the master word the engine's electrical damage clears, and each lamp's works and glass flags, which the
 //! damage handler clears when a lamp is hit. `lightglass_*` parts show while their lamp's glass is whole. A recorded
 //! drive has none of that: its brake lights follow the recorded brake word (the pedal swap unknown) and its reverse
-//! lights stay off (the recordings hold no gear). Ours: the flare's shape is its texture's, and its tint is the
-//! record's colour; only the headlights draw one, and every lit lamp's part glows.
+//! lights stay off (the recordings hold no gear). Ours: no sprite is drawn (user, 2026-10-31); every lit lamp's part
+//! glows, and the records place the lamps' light on the stage ([`lamp`]).
 
-use crate::camera::Lens;
-use crate::stage::{Address, Anchor, Draw, DrawState, Layer, Lod, Mesh, TextureRef, Vertex};
-use bytemuck::Zeroable;
 use glam::Vec3;
 use rbr_formats::car_parts;
 use rbr_formats::ini::Section;
@@ -26,12 +23,6 @@ const LAMP_RED: [f32; 3] = [1.0, 0.0, 0.0];
 /// 100 ([`CANDELA`]), it barely reads in sunlight, so braking shows. By night, and at dusk as the lamps light the stage,
 /// it glows as the others do (all the lamps' parts outshine the dark there).
 const TAIL_DAY: f32 = 0.3;
-/// Brightness of a flare facing the eye head on, from the game's alpha of 114.75 out of 255 (0x101b4398, 0.45).
-const PEAK: f32 = 0.45;
-/// How far a flare sits from its lamp toward the eye, metres (`CHH_Car::RenderLights`, 0x101b41e8).
-const TOWARD_EYE: f32 = 0.2;
-/// Triangles of the flare's quad: its corners in the order top left, top right, bottom left, bottom right.
-const INDICES: [u32; 6] = [0, 2, 1, 1, 2, 3];
 
 /// A lamp kind, numbered as `CCarLightSystem` numbers them. `<car>_settings.ini`'s `Id` is `number * 4 + lamp`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -276,7 +267,7 @@ pub fn shown_at_start(part: &Section) -> bool {
     }
 }
 
-/// A `Light` section of `<car>_settings.ini`: one lamp's flare. The defaults are the game's (`InitLights`).
+/// A `Light` section of `<car>_settings.ini`: one lamp. The defaults are the game's (`InitLights`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Light {
     pub kind: Kind,
@@ -289,46 +280,31 @@ pub struct Light {
     pub fade_out: f32,
     /// Red, green and blue, 0 to 1.
     pub colour: [f32; 3],
-    /// Texture file name, in the car's `Textures` folder.
-    pub texture: String,
-    /// Half the sprite's width at full facing, metres.
-    pub size: f32,
-    /// `None` when the lamp switches the flare. `Some(on)` when it never does, and the flare keeps its `Active` value:
-    /// `OnCarLight` switches only the first record with the lamp's `Id`, and only when the car has the lamp's switch
-    /// box (the extra lamps of the RSF cars' light pods share the headlights' `Id`).
+    /// `None` when the lamp switches the record. `Some(on)` when it never does, and the record keeps its `Active`
+    /// value: `OnCarLight` switches only the first record with the lamp's `Id`, and only when the car has the lamp's
+    /// switch box (the extra lamps of the RSF cars' light pods share the headlights' `Id`).
     pub fixed: Option<bool>,
-    /// Whether the record draws a flare: only the headlights' do (ours: the rear lamps' sprites read as blobs by day; their
-    /// lit parts glow instead), and not a headlight that only lights the stage at night ([`flares`]).
-    pub flare: bool,
 }
 
-/// A lamp's flare: its record, where it sits in the car's model, and the mesh it is drawn as.
+/// A lamp's record and where it sits in the car's model.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Flare {
+pub struct LampPoint {
     pub light: Light,
     /// The lamp's position and outward normal in the model (`Pos` and `Normal` of its `Point_light_*` section).
     pub position: Vec3,
     pub normal: Vec3,
-    /// The quad the flare is drawn as. The playback rewrites its vertices each frame.
-    pub mesh: Mesh,
 }
 
-/// The `Light` sections of `settings` whose lamp exists, each placed by its part in `parts`. `texture` gives the stage
-/// texture of a file name in the car's `Textures` folder. As `InitLights` reads them: `Light0`, `Light1`, ... up to the
-/// first one without an `Id` key.
+/// The `Light` sections of `settings` whose lamp exists, each placed by its part in `parts`. As `InitLights` reads
+/// them: `Light0`, `Light1`, ... up to the first one without an `Id` key.
 ///
 /// A car with no headlight record that ever lights gets one per `Point_light_lf` and `Point_light_rf` part, in colour
-/// `beam`, which lights the stage at night and draws no flare (ours). RSF cars ship that way when their top-level files
-/// are the modder's "lights off" option, with no headlight records (the Focus WRC 2006, Fiesta WRC 2019, Delta HF 4WD,
-/// Escort Cosworth, BMW M3 E30 and Lancer Evo IX samples) or with ones that are `Active = false` and have no switch box
-/// (the Escort Mk II): RSF's car-parts picker swaps in the "on" option's files, which we do not apply
-/// (`notes/formats.md` "RSF cars").
-pub fn flares(
-    settings: &[Section],
-    parts: &[Section],
-    beam: [f32; 3],
-    mut texture: impl FnMut(&str) -> TextureRef,
-) -> Vec<Flare> {
+/// `beam`, which lights the stage at night (ours). RSF cars ship that way when their top-level files are the modder's
+/// "lights off" option, with no headlight records (the Focus WRC 2006, Fiesta WRC 2019, Delta HF 4WD, Escort Cosworth,
+/// BMW M3 E30 and Lancer Evo IX samples) or with ones that are `Active = false` and have no switch box (the Escort
+/// Mk II): RSF's car-parts picker swaps in the "on" option's files, which we do not apply (`notes/formats.md` "RSF
+/// cars").
+pub fn lamp_points(settings: &[Section], parts: &[Section], beam: [f32; 3]) -> Vec<LampPoint> {
     let boxes: Vec<&str> =
         parts.iter().filter(|p| car_parts::is_switched(p)).filter_map(|p| p.get("SwitchBox")).collect();
     let records: Vec<&Section> = (0..)
@@ -355,20 +331,14 @@ pub fn flares(
             fade_in: 1.0,
             fade_out: 1.0,
             colour: beam,
-            texture: "Light.dds".to_owned(),
-            size: 1.0,
             fixed: None,
-            flare: false,
         }));
     }
     lights
         .into_iter()
         .filter_map(|light| {
             let point = car_parts::section(parts, &light.part)?;
-            let position = vector(point, "Pos")?;
-            let normal = vector(point, "Normal")?;
-            let mesh = mesh(texture(&light.texture), &quad(position, Vec3::X, Vec3::Y, light.size, [0.0; 3]));
-            Some(Flare { light, position, normal, mesh })
+            Some(LampPoint { position: vector(point, "Pos")?, normal: vector(point, "Normal")?, light })
         })
         .collect()
 }
@@ -410,10 +380,7 @@ fn light(section: &Section) -> Option<Light> {
         fade_in: number("Fade In Time", 1.0),
         fade_out: number("Fade Out Time", 1.0),
         colour: ["Red", "Green", "Blue"].map(|key| number(key, 255.0) / 255.0),
-        texture: section.get("Texture").unwrap_or("Light.dds").to_owned(),
-        size: number("Size", 1.0),
         fixed: None,
-        flare: kind == Kind::Front,
     })
 }
 
@@ -426,7 +393,7 @@ fn vector(section: &Section, key: &str) -> Option<Vec3> {
     }
 }
 
-/// The fade (0 to 1) of a flare `since` seconds after its lamp switched to `on`: it fades in while the lamp is on and out
+/// The fade (0 to 1) of a lamp's light `since` seconds after it switched to `on`: it fades in while the lamp is on and out
 /// while it is off, and `None` once an off lamp has faded out.
 pub fn fade(light: &Light, on: bool, since: f32) -> Option<f32> {
     if on {
@@ -499,70 +466,9 @@ pub fn lamp(light: &Light, position: Vec3, normal: Vec3, forward: Vec3, up: Vec3
     Lamp { position, forward, up, colour, beam, main: beam && main }
 }
 
-/// The flare's four vertices for a lamp at `position` with normal `normal` (world space), seen through `lens`, at
-/// `fade`. `None` when the record draws no flare or the lamp faces away from the eye: its normal points away from the
-/// camera's forward direction, or the camera is behind its face.
-pub fn sprite(light: &Light, position: Vec3, normal: Vec3, lens: &Lens, fade: f32) -> Option<[Vertex; 4]> {
-    let facing = -normal.dot(lens.forward);
-    if !light.flare || facing <= 0.0 || normal.dot(position - lens.eye) >= 0.0 {
-        return None;
-    }
-    let right = lens.up.cross(lens.forward).normalize();
-    let up = lens.forward.cross(right).normalize();
-    let intensity = PEAK * facing * fade;
-    let centre = position - lens.forward * TOWARD_EYE;
-    Some(quad(centre, right, up, light.size * facing, light.colour.map(|c| c * intensity)))
-}
-
-/// The four corners of a flare quad at `centre`, half-sized by `half` along `right` and `up`, tinted by `colour` (0 to 1).
-fn quad(centre: Vec3, right: Vec3, up: Vec3, half: f32, colour: [f32; 3]) -> [Vertex; 4] {
-    let tint = colour.map(|c| (c.clamp(0.0, 1.0) * 255.0).round() as u8);
-    let corner = |s: f32, t: f32, uv: [f32; 2]| Vertex {
-        position: (centre + right * (s * half) + up * (t * half)).to_array(),
-        color: [tint[0], tint[1], tint[2], 0],
-        uv0: uv,
-        ..Vertex::zeroed()
-    };
-    [
-        corner(-1.0, 1.0, [0.0, 0.0]),
-        corner(1.0, 1.0, [1.0, 0.0]),
-        corner(-1.0, -1.0, [0.0, 1.0]),
-        corner(1.0, -1.0, [1.0, 1.0]),
-    ]
-}
-
-/// The mesh of a flare: one quad, drawn additively with its texture and no bounds (always in view).
-fn mesh(texture: TextureRef, vertices: &[Vertex; 4]) -> Mesh {
-    let state = DrawState {
-        textures: [Some(texture), None],
-        shadow: None,
-        address: [Address::Clamp; 2],
-        second_texture: false,
-        alpha_ref: None,
-        mip_bias: false,
-        cull_back: false,
-        blend: true,
-        additive: true,
-        depth_test: true,
-        depth_write: false,
-        shade: None,
-        specular: None,
-    };
-    Mesh {
-        layer: Layer::Blended,
-        anchor: Anchor::World,
-        bounds: None,
-        cell: None,
-        vertices: vertices.to_vec(),
-        indices: INDICES.to_vec(),
-        draws: vec![Draw { indices: 0..INDICES.len(), state, lod: Lod::Always }],
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::stage::TextureSet;
     use rbr_formats::ini;
 
     fn sections(text: &str) -> Vec<Section> {
@@ -681,34 +587,25 @@ mod tests {
         );
         let brake = light(&settings[0]).expect("brake");
         assert_eq!((brake.kind, brake.lamp), (Kind::Brake, 0));
-        assert_eq!((brake.fade_in, brake.fade_out, brake.size), (0.025, 0.05, 0.25));
+        assert_eq!((brake.fade_in, brake.fade_out), (0.025, 0.05));
         assert_eq!(brake.colour, [1.0, 0.0, 0.0]);
         let front = light(&settings[1]).expect("front");
-        assert_eq!(
-            (front.kind, front.lamp, front.fade_in, front.fade_out, front.size),
-            (Kind::Front, 0, 1.0, 1.0, 1.0)
-        );
-        assert_eq!((front.colour, front.texture.as_str()), ([1.0; 3], "Light.dds"));
+        assert_eq!((front.kind, front.lamp, front.fade_in, front.fade_out), (Kind::Front, 0, 1.0, 1.0));
+        assert_eq!(front.colour, [1.0; 3]);
         assert!(light(&settings[2]).is_none(), "kind 2 has no lamps");
     }
 
     #[test]
-    fn flares_sit_at_their_part_and_draw_additively() {
+    fn lamps_sit_at_their_part() {
         let parts = sections("[Point_light_lf]\r\nNormal = 0 0 -1\r\nPos = 1 2 3\r\n");
         let settings = sections(
             "[Light0]\r\nId = 4\r\nCar Part = Point_light_lf\r\nActive = true\r\n\
              [Light1]\r\nId = 5\r\nCar Part = Point_light_gone\r\n",
         );
-        let flares = flares(&settings, &parts, RETAIL_HEADLIGHT, |file| TextureRef {
-            set: TextureSet::Car,
-            index: file.len() as u32,
-        });
-        let [flare] = &flares[..] else {
-            panic!("one flare");
+        let [point] = &lamp_points(&settings, &parts, RETAIL_HEADLIGHT)[..] else {
+            panic!("one lamp");
         };
-        assert_eq!((flare.position, flare.normal), (Vec3::new(1.0, 2.0, 3.0), Vec3::NEG_Z));
-        assert_eq!(flare.mesh.bounds, None);
-        assert!(flare.mesh.draws[0].state.additive && flare.mesh.draws[0].state.blend);
+        assert_eq!((point.position, point.normal), (Vec3::new(1.0, 2.0, 3.0), Vec3::NEG_Z));
     }
 
     #[test]
@@ -728,8 +625,8 @@ mod tests {
              [Light4]\r\nId = 20\r\nCar Part = Point_light_reverse_lb\r\n\
              [Light6]\r\nId = 16\r\nCar Part = Point_light_rf\r\n",
         );
-        let flares = flares(&settings, &parts, RETAIL_HEADLIGHT, |_| TextureRef { set: TextureSet::Car, index: 0 });
-        let fixed: Vec<(&str, Option<bool>)> = flares.iter().map(|f| (f.light.part.as_str(), f.light.fixed)).collect();
+        let points = lamp_points(&settings, &parts, RETAIL_HEADLIGHT);
+        let fixed: Vec<(&str, Option<bool>)> = points.iter().map(|p| (p.light.part.as_str(), p.light.fixed)).collect();
         assert_eq!(
             fixed,
             [
@@ -743,7 +640,7 @@ mod tests {
     }
 
     #[test]
-    fn a_car_without_headlight_records_gets_beams_without_flares() {
+    fn a_car_without_headlight_records_gets_beams() {
         // As the RSF Focus WRC 2006 as installed (its "lights off" option): brake records only, both headlight points.
         let parts = sections(
             "[Point_light_lf]\r\nPos = -1 0 0\r\nNormal = 0 0 -1\r\n[Point_light_rf]\r\nPos = 1 0 0\r\nNormal = 0 0 -1\r\n\
@@ -751,16 +648,11 @@ mod tests {
         );
         let settings = sections("[Light0]\r\nId = 16\r\nCar Part = Point_light_brake_lb\r\nActive = false\r\n");
         let warm = [1.0, 0.8, 0.6];
-        let flares = flares(&settings, &parts, warm, |_| TextureRef { set: TextureSet::Car, index: 0 });
-        assert_eq!(flares[1].light.colour, warm);
-        let beams: Vec<(Kind, u32, Option<bool>, bool)> =
-            flares.iter().map(|f| (f.light.kind, f.light.lamp, f.light.fixed, f.light.flare)).collect();
-        assert_eq!(
-            beams,
-            [(Kind::Brake, 0, Some(false), false), (Kind::Front, 0, None, false), (Kind::Front, 1, None, false)]
-        );
-        let lens = Lens { eye: Vec3::new(0.0, 0.0, -10.0), forward: Vec3::Z, up: Vec3::Y, fov: 1.0, near: 0.1 };
-        assert!(sprite(&flares[1].light, Vec3::ZERO, Vec3::NEG_Z, &lens, 1.0).is_none(), "no flare, facing the eye");
+        let points = lamp_points(&settings, &parts, warm);
+        assert_eq!(points[1].light.colour, warm);
+        let beams: Vec<(Kind, u32, Option<bool>)> =
+            points.iter().map(|p| (p.light.kind, p.light.lamp, p.light.fixed)).collect();
+        assert_eq!(beams, [(Kind::Brake, 0, Some(false)), (Kind::Front, 0, None), (Kind::Front, 1, None)]);
     }
 
     #[test]
@@ -772,19 +664,15 @@ mod tests {
         );
         let off = "[Light0]\r\nId = 4\r\nCar Part = Point_light_lf\r\nActive = false\r\n\
                    [Light1]\r\nId = 5\r\nCar Part = Point_light_rf\r\nActive = false\r\n";
-        let beams = |settings: &str| -> Vec<(u32, Option<bool>, bool)> {
-            flares(&sections(settings), &parts, RETAIL_HEADLIGHT, |_| TextureRef { set: TextureSet::Car, index: 0 })
+        let beams = |settings: &str| -> Vec<(u32, Option<bool>)> {
+            lamp_points(&sections(settings), &parts, RETAIL_HEADLIGHT)
                 .iter()
-                .map(|f| (f.light.lamp, f.light.fixed, f.light.flare))
+                .map(|p| (p.light.lamp, p.light.fixed))
                 .collect()
         };
-        assert_eq!(beams(off), [(0, Some(false), true), (1, Some(false), true), (0, None, false), (1, None, false)]);
+        assert_eq!(beams(off), [(0, Some(false)), (1, Some(false)), (0, None), (1, None)]);
         let on = off.replace("false", "true");
-        assert_eq!(
-            beams(&on),
-            [(0, Some(true), true), (1, Some(true), true)],
-            "the \"on\" option's lamps always light"
-        );
+        assert_eq!(beams(&on), [(0, Some(true)), (1, Some(true))], "the \"on\" option's lamps always light");
     }
 
     #[test]
@@ -796,8 +684,8 @@ mod tests {
             "[Point_light_rf]\r\nPos = 5 0 0\r\nNormal = 0 0 -1\r\n[Point_light_lf]\r\nPos = -1 0 0\r\nNormal = 0 0 -1\r\n",
         );
         let parts = with_headlight_points(&parts, &on);
-        let flares = flares(&[], &parts, RETAIL_HEADLIGHT, |_| TextureRef { set: TextureSet::Car, index: 0 });
-        let beams: Vec<(Kind, u32, Vec3)> = flares.iter().map(|f| (f.light.kind, f.light.lamp, f.position)).collect();
+        let points = lamp_points(&[], &parts, RETAIL_HEADLIGHT);
+        let beams: Vec<(Kind, u32, Vec3)> = points.iter().map(|p| (p.light.kind, p.light.lamp, p.position)).collect();
         assert_eq!(beams, [(Kind::Front, 0, Vec3::new(-1.0, 0.0, 0.0)), (Kind::Front, 1, Vec3::X)]);
         assert_eq!(with_headlight_points(&parts, &[]), parts, "nothing to take");
     }
@@ -835,18 +723,5 @@ mod tests {
         assert!((since_switch(0.5, 4, starts, lit_at, 0.1) - 0.1).abs() < 1e-6);
         // Unlit from the first frame: settled, not fading out from a light it never had.
         assert_eq!(since_switch(0.15, 1, starts, lit_at, 1.0), 1.0);
-    }
-
-    #[test]
-    fn sprites_face_the_eye_and_vanish_facing_away() {
-        let settings = sections("[Light0]\r\nId = 4\r\nCar Part = p\r\nSize = 0.5\r\n");
-        let light = light(&settings[0]).expect("light");
-        let lens = Lens { eye: Vec3::new(0.0, 0.0, -10.0), forward: Vec3::Z, up: Vec3::Y, fov: 1.0, near: 0.1 };
-        let front = sprite(&light, Vec3::ZERO, Vec3::NEG_Z, &lens, 1.0).expect("facing the eye");
-        // Facing 1: the colour is the game's 0.45 of white, 115 of 255, and the quad's top left is 0.5 m away along -x,
-        // +y and 0.2 m toward the eye.
-        assert_eq!(front[0].color[0], 115);
-        assert!((Vec3::from(front[0].position) - Vec3::new(-0.5, 0.5, -0.2)).length() < 1e-5);
-        assert!(sprite(&light, Vec3::ZERO, Vec3::Z, &lens, 1.0).is_none(), "facing away");
     }
 }
