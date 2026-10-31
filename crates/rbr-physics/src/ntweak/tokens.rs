@@ -1,17 +1,17 @@
-//! `NTweak::CTokenCursor::Tokenize` (0x52ec80) on a text's bytes, and the token heap's `E11_StackAlloc` (0x473a70)
-//! on its words. `layout` writes them into game memory.
+//! The tokenizer on a text's bytes, and the token heap's stack allocator on its words. `layout` writes them
+//! into game memory.
 
 use super::Unsupported;
 
-/// The token table's size (`operator new(0x4000)`): its words, the terminator's included.
+/// The token table's size: its words, the terminator's included.
 pub const TABLE_WORDS: usize = 0x1000;
 
-/// msvcr71's `isspace` on an ASCII byte in the C locale.
+/// ASCII whitespace in the C locale: space and 0x09-0x0D.
 fn is_space(c: u8) -> bool {
     c == b' ' || (0x09..=0x0d).contains(&c)
 }
 
-/// The cut `Tokenize` makes of a text: the offsets the tokens start at, in order, and the offsets of the bytes it sets
+/// The cut the tokenizer makes of a text: the offsets the tokens start at, in order, and the offsets of the bytes it sets
 /// to NUL.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Tokens {
@@ -32,11 +32,11 @@ enum State {
     },
 }
 
-/// `Tokenize` on `text` (up to its NUL, not empty): leading whitespace, one `(` and whitespace again are skipped, then
+/// The tokenizer on `text` (up to its NUL, not empty): leading whitespace, one `(` and whitespace again are skipped, then
 /// each token starts at its first byte. An atom runs up to whitespace, a quoted string from its `"` up to the next `"`,
 /// a group from its `(` up to the `)` that closes it (the parentheses inside strings not counted); the byte that ends
 /// a token becomes NUL. A `)` between tokens ends the cut; the end of the text ends it in any state. A byte past ASCII
-/// (`isspace` on a negative `char`) and a table past its 0x1000 words (the original traps) are [`Unsupported`].
+/// and a table past its 0x1000 words are [`Unsupported`].
 pub fn tokenize(text: &[u8]) -> Result<Tokens, Unsupported> {
     if text.iter().any(|&c| c >= 0x80) {
         return Err(Unsupported("a byte past ASCII in the text"));
@@ -93,13 +93,13 @@ pub fn tokenize(text: &[u8]) -> Result<Tokens, Unsupported> {
     Ok(out)
 }
 
-/// `CTokenCursor::IsGroup` (0x52ee60) on a token: it holds whitespace and is not a quoted string.
+/// Whether a token is a group: it holds whitespace and is not a quoted string.
 pub fn is_group(t: &[u8]) -> bool {
     t.first().is_some_and(|&c| c != b'"') && t.iter().any(|&c| is_space(c))
 }
 
-/// `CTokenCursor::GetQuoted(buf, len)` (0x52f000) on a token: after whitespace and `(`, the quoted string's bytes up to
-/// its closing `"`, cut to `len - 1`; empty when no `"` comes first. The buffer gets them and a NUL.
+/// The quoted name of a token: after whitespace and `(`, the quoted string's bytes up to its closing `"`, cut to
+/// `len - 1`; empty when no `"` comes first. The buffer gets them and a NUL.
 pub fn quoted(t: &[u8], len: u32) -> &[u8] {
     let start = t.iter().position(|&c| !is_space(c) && c != b'(').unwrap_or(t.len());
     let Some(rest) = t[start..].strip_prefix(b"\"") else {
@@ -109,9 +109,9 @@ pub fn quoted(t: &[u8], len: u32) -> &[u8] {
     &rest[..end.min(len as usize - 1)]
 }
 
-/// `E11_StackAlloc(size, heap, align)` on the heap's `used` and `cap` words: the block's offset from the heap's base
+/// The stack allocator on the heap's `used` and `cap` words: the block's offset from the heap's base
 /// and the new `used`, the offset aligned up to `align` (a power of two). A block that does not end below `cap` is
-/// logged, then the original traps: [`Unsupported`].
+/// [`Unsupported`].
 pub fn stack_alloc(used: u32, cap: u32, size: u32, align: u32) -> Result<(u32, u32), Unsupported> {
     let off = used.wrapping_add(align).wrapping_sub(1) & !align.wrapping_sub(1);
     let end = off.wrapping_add(size);

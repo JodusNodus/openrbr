@@ -38,8 +38,8 @@ pub fn dispatch_by_flags(calls: &mut impl FlagDispatch, args: [u32; 5]) -> u32 {
     calls.second_call(args)
 }
 
-/// `CEntity::E43_InitBD0` (0x519bd0) on the entity at `this`: both of its walker marks get the walker and the walker's
-/// count plus one. Returns the second serial (eax).
+/// Initialises the entity's walker marks at `this`: both get the walker and the walker's
+/// count plus one. Returns the second serial.
 pub fn init_bd0<S: EntityStore>(store: &mut S, this: u32) -> u32 {
     let mut serial = 0;
     for mark in 0..2 {
@@ -51,12 +51,12 @@ pub fn init_bd0<S: EntityStore>(store: &mut S, this: u32) -> u32 {
     serial
 }
 
-/// Calls made by `CCar::Clear480` (0x4e58f0).
+/// The calls that clear the car's bodies.
 pub trait Clear480Calls {
     fn sim_fd00(&mut self, sp: u32, body: u32) -> u32;
 }
 
-/// `CCar::Clear480` checks all four tags and clears a matching slot only when its body's SimFD00 returns nonzero.
+/// Checks all four tags and clears a matching slot only when the body's settle check returns nonzero.
 pub fn clear_car_bodies<S: EntityStore>(
     store: &mut S,
     car: u32,
@@ -71,8 +71,8 @@ pub fn clear_car_bodies<S: EntityStore>(
     }
 }
 
-/// `E44Shell::M51C8C0` (0x51c8c0), thiscall `(a, out)`: `out[i] = this[i] * a[i]` over four floats
-/// (`Vec4::mul_lanes`). Both inputs are read before `out` is written, so `out` may alias either one.
+/// The componentwise product: `out[i] = this[i] * a[i]` over four floats (`Vec4::mul_lanes`).
+/// Both inputs are read before `out` is written, so `out` may alias either one.
 pub fn componentwise_mul<S: EntityStore>(store: &mut S, this: u32, a: u32, out: u32) {
     let [x, y, z, w] = store.vec4(this);
     let [ax, ay, az, aw] = store.vec4(a);

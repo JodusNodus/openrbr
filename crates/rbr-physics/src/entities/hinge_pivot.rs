@@ -27,11 +27,11 @@ pub struct PivotInput {
     pub car_acceleration_z: f32,
     /// The car's angular acceleration vector, as a handle: the second carry's input.
     pub car_angular_acceleration: u32,
-    /// The car's angular velocity vector, as a handle (0 when its gate address is 0): the third carry's input.
+    /// The car's angular velocity vector, as a handle (0 when its gate is unset): the third carry's input.
     pub car_angular_velocity: u32,
-    /// `vecHingePoint_RF`, as a handle (0 when its gate address is 0): the pose composition's input.
+    /// The hinge point in the reference frame, as a handle (0 when its gate is unset): the pose composition's input.
     pub hinge_point_rf: u32,
-    /// `vecHingeAxis_RF`: the weights of the angular acceleration.
+    /// The hinge axis in the reference frame: the weights of the angular acceleration.
     pub hinge_axis_rf: [f32; 3],
 }
 

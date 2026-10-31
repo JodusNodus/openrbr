@@ -45,15 +45,14 @@ fn lane_overlaps(center: f32, c: f32, d: f32, half: f32) -> bool {
     round24(d as f64 + half as f64) > gap as f64
 }
 
-/// The calls `CDummyObject::VfCC` makes, each with the callee's entry stack pointer `sp`: `E33Mat34::FetchX` (0x51b6c0)
-/// on the transform `this` into `out` with `arg`, and the hit handler (0x601470, not named) on the group.
+/// The calls the span test makes, each with the callee's frame pointer `sp`: the transform fetch
+/// on `this` into `out` with `arg`, and the hit handler on the group.
 pub trait DummyCalls {
     fn fetch_x(&mut self, sp: u32, this: u32, out: u32, arg: u32);
     fn group_on_hit(&mut self, sp: u32, group: u32);
 }
 
-/// `CDummyObject::Vf11C` (0x600b20) on the dummy at `this`: the box's low and high corners, three floats each, to `lo`
-/// and `hi`.
+/// The dummy's box at `this`: the box's low and high corners, three floats each, to `lo` and `hi`.
 pub fn dummy_box<S: EntityStore>(store: &mut S, this: u32, lo: u32, hi: u32) {
     let (center, half) = store.dummy_extents(this);
     let (low, high) = box_corners(center, half);
@@ -61,10 +60,9 @@ pub fn dummy_box<S: EntityStore>(store: &mut S, this: u32, lo: u32, hi: u32) {
     store.store_vec3(hi, high);
 }
 
-/// `CDummyObject::VfCC(a, b)` (0x6009b0) on the dummy at `this`, with `frame` the base of the original's frame (the
-/// stack below its aligned entry esp, `FetchX`'s outputs at `frame + 0x1c` and `frame + 0xc`): the two origins, the span
-/// and the overlap test. On a hit the group's handler runs and both segments get the hit flag (the original stores to
-/// the post without a null check). Always returns 0 (eax).
+/// The dummy's span test at `this`, with `frame` the frame's base: the two origins, the span and the overlap
+/// test. On a hit the group's handler runs and both segments get the hit flag (it stores to the post without a
+/// null check). Always returns 0.
 pub fn dummy_span_test<S: EntityStore>(
     store: &mut S,
     this: u32,

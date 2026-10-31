@@ -61,8 +61,8 @@ pub fn alloc_exclusion(heap: &mut impl Heap, has_set: bool, n: u32) -> Option<u3
     (!has_set).then(|| heap.allocate(n * 4))
 }
 
-/// `CEntity::E43_ExclA000` at `at` (0x51a000): the set's array from `heap` (the array's pointer, then its count 0).
-/// Returns eax: 1 when it allocated, 0 when the entity had a set.
+/// Allocates the entity's exclusion set at `at` from `heap` (the array's pointer, then its count 0).
+/// Returns 1 when it allocated, 0 when the entity had a set.
 pub fn alloc_exclusion_at<S: EntityStore>(store: &mut S, at: u32, n: u32, heap: &mut impl Heap) -> u32 {
     let has_set = store.exclusion_set(at) != 0;
     match alloc_exclusion(heap, has_set, n) {
@@ -75,8 +75,7 @@ pub fn alloc_exclusion_at<S: EntityStore>(store: &mut S, at: u32, n: u32, heap: 
     }
 }
 
-/// `CEntity::E43VfEC` at `at` (0x51a040, slot 59): appends `member` to the set (it does not check the array's size).
-/// Returns eax, 1.
+/// Appends `member` to the entity's set at `at` (it does not check the array's size). Returns 1.
 pub fn add_exclusion_at<S: EntityStore>(store: &mut S, at: u32, member: u32) -> u32 {
     let set = store.exclusion_set(at);
     let count = store.exclusion_count(set);
@@ -85,7 +84,7 @@ pub fn add_exclusion_at<S: EntityStore>(store: &mut S, at: u32, member: u32) -> 
     1
 }
 
-/// `CEntity::E43_ExclA060` (0x51a060), removing the first occurrence from the inline count-and-members array.
+/// Removes the first occurrence from the inline count-and-members array.
 pub fn remove_exclusion_at<S: EntityStore>(store: &mut S, this: u32, value: u32) {
     let array = store.exclusion_set(this);
     if array == 0 {

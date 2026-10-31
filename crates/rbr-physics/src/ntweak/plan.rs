@@ -10,42 +10,40 @@ use super::{atof, atoi, get_quoted, is_float, is_integer, set_bit, Unsupported};
 
 use crate::physics_core::layout::{construct as physics, flags, material};
 
-/// The members' parse functions (vtable slot 2), by which the walk tells them apart.
+/// The members' reader entries, by which the walk tells them apart.
 pub const REAL_PARSE: u32 = 0x52f770;
 pub const UNSIGNED_PARSE: u32 = 0x52f840;
 pub const INTEGER_PARSE: u32 = 0x52fab0;
 pub const VECTOR_PARSE: u32 = 0x52fb20;
 pub const VECTOR4_PARSE: u32 = 0x52fbe0;
 pub const BIT_FIELD_PARSE: u32 = 0x52f930;
-/// `NTweak::CBase::Parse` itself: a member object with keys of its own.
+/// The base parse itself: a member object with keys of its own.
 pub const BASE_PARSE: u32 = 0x52f0c0;
-/// Under NGP, the vtable of `CDrive::CDef +0x58c` (`BrakeWearLimit_NGP`): NGP's copy of `CUnsigned`'s (0x740534) with
-/// its own reader (`0x1003c7f0`), which `0x1003c6c0` makes and puts on the unsigned (NGP's call in `E39_Ctor870`,
-/// 0x50291b). The word is the copy's address in NGP's file; NGP's memory is not mapped, so the walk tells the reader by
-/// the vtable itself.
+/// Under NGP, the brake-wear table of the drive's definition: NGP's copy of the unsigned's table with its own reader,
+/// which NGP's constructor makes and puts on the unsigned. The walk tells the reader by the table itself.
 pub const NGP_TABLE_VTABLE: u32 = 0x1017_6518;
-/// The 30 floats NGP's reader takes after the unsigned, into the words from the member's +0x10 (1.02's table at
-/// `CDrive::CDef +0x59c`, which no 1.02 key reads): three rows of ten.
+/// The 30 floats NGP's reader takes after the unsigned, into the words from the member's table start (past the 1.02
+/// keys, which no 1.02 key reads): three rows of ten.
 pub(crate) const NGP_TABLE: u32 = 0x10;
 pub(crate) const NGP_TABLE_LEN: usize = 30;
-/// The objects' slot 5 (`Unk14`), which takes the walk's inner groups: `CBase`'s skips each item; the entity
-/// definitions' (`E43PairWalk::MF8B0`) links the group's name; the definition manager's (`CDefManager::Vf14`) makes or
-/// finds the definition the item names and walks the item on it.
+/// The objects' inner-group entries, which take the walk's inner groups: the base's skips each item; the entity
+/// definitions' links the group's name; the definition manager's makes or finds the definition the item names and walks
+/// the item on it.
 pub(crate) const UNK14_SKIP: u32 = 0x52fe80;
 pub(crate) const UNK14_LINK: u32 = 0x5198b0;
 pub(crate) const UNK14_DEFINE: u32 = 0x501ef0;
-/// The token-heap block each item of an inner group is copied into (`GetQuoted(tmp, 0x20)`).
+/// The token-heap block each item of an inner group is copied into.
 pub(crate) const ITEM_BLOCK: u32 = 0x20;
 /// An entity definition's links: their count, then the registry indices.
 pub(crate) const LINK_COUNT: u32 = 0x18;
 pub(crate) const LINKS: u32 = 0x1c;
 
-/// A tweak value's payload, after its `CBase` header (vtable, name, dirty flag); a vector's is 16-byte aligned. A
+/// A tweak value's payload, after its base header (table, name, dirty flag); a vector's is 16-byte aligned. A
 /// bit-field's mask is its value.
 pub(crate) const VALUE: u32 = 0x0c;
 pub(crate) const VECTOR_VALUE: u32 = 0x10;
 
-/// The bit-field classes by vtable: their names (`GetBitName`'s table) and `GetBitCount`.
+/// The bit-field classes by table: their names and bit counts.
 pub(crate) const BIT_FIELDS: [(u32, u32, u32); 4] = [
     (physics::FLAGS_VTABLE, flags::CDEF_NAMES, flags::CDEF_BITS),
     (physics::DBG_FLAGS_VTABLE, flags::DBG_NAMES, flags::DBG_BITS),
@@ -63,7 +61,7 @@ fn atom(item: Option<&Node>) -> Option<&str> {
 /// One effect of the walk, in the original's order.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Action<'a> {
-    /// A copy of the name on the token heap; the object's `+0x04` points at it.
+    /// A copy of the name on the token heap; the object points at it.
     Name(u32, String),
     /// A member's value word (address, value).
     Store(u32, u32),
@@ -71,14 +69,14 @@ pub(super) enum Action<'a> {
     Item(String),
     /// The registry index of the name, appended to the object's links when the registry has the name.
     Link(u32, String),
-    /// The definition manager's slot 5 on an item: the factory, the definition's name and the item's group. The name's
-    /// block is the last item's.
+    /// The definition manager's inner-group entry on an item: the factory, the definition's name and the item's group.
+    /// The name's block is the last item's.
     Define(&'a str, String, &'a [Node]),
-    /// The object's slot 17.
+    /// The object's post-walk entry.
     After(u32),
 }
 
-/// The floats from item `i` on, up to `n`, as words from `at`: what a `CReal`, `CVector` or `CVector4` reader takes.
+/// The floats from item `i` on, up to `n`, as words from `at`: what a real, vector or four-vector reader takes.
 /// Returns the item after the last one taken.
 fn floats(items: &[Node], i: usize, n: usize, at: u32, out: &mut Vec<Action>) -> usize {
     let taken = (0..n)
@@ -90,7 +88,7 @@ fn floats(items: &[Node], i: usize, n: usize, at: u32, out: &mut Vec<Action>) ->
     i + out.len() - before
 }
 
-/// NGP's reader on the unsigned at `member` (`0x1003c7f0`): `CUnsigned::Parse`, whose result it ignores, then up to
+/// NGP's reader on the unsigned at `member`: the unsigned parse, whose result it ignores, then up to
 /// [`NGP_TABLE_LEN`] floats into the table, stopping at the first item that is not one. Returns the item after the last
 /// one taken.
 fn ngp_table(items: &[Node], i: usize, member: u32, out: &mut Vec<Action>) -> usize {
@@ -115,8 +113,8 @@ fn current<S: TweakStore>(store: &S, out: &[Action], at: u32) -> u32 {
         .unwrap_or_else(|| store.word(at))
 }
 
-/// `CBitField::Parse` (0x52f930) on the bit-field at `member`: the items from `i` on that start with `+` or `-`, each
-/// setting or clearing its bit in the mask. Returns the item after the last one taken.
+/// The bit-field at `member`: the items from `i` on that start with `+` or `-`, each setting or clearing its bit in
+/// the mask. Returns the item after the last one taken.
 fn bit_field<S: TweakStore>(
     store: &S,
     member: u32,
@@ -207,8 +205,8 @@ fn step<'a, S: TweakStore>(
     }))
 }
 
-/// A group inside the group, handed to the object's slot 5 (`Unk14`) once per item after its leading quoted name, each
-/// item's quoted name first copied to a token-heap block. The original takes a group token only when it holds
+/// A group inside the group, handed to the object's inner-group entry once per item after its leading quoted name, each
+/// item's quoted name first copied to a token-heap block. The walk takes a group token only when it holds
 /// whitespace; a group of one item may have none, so the walk declines it.
 fn inner_group<'a, S: TweakStore>(
     store: &S,
@@ -237,8 +235,8 @@ fn inner_group<'a, S: TweakStore>(
     Ok(())
 }
 
-/// The walk over one group: the name, the items, then slot 17. A member object's group (a `CBase` member, such as a
-/// wheel's `SpringDamper`) is walked in place, as its own `Parse` does it.
+/// The walk over one group: the name, the items, then the post-walk entry. A member object's group (a base member,
+/// such as a wheel's spring-damper) is walked in place, as its own parse does it.
 fn walk<'a, S: TweakStore>(
     store: &S,
     this: u32,
