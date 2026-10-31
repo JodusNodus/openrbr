@@ -38,6 +38,13 @@ pub const ALWAYS_ON: [&str; 3] = ["anisotropy", "decals", "water"];
 /// A new install's choices: the High preset.
 pub const DEFAULT_GRAPHICS: Graphics = Quality::High.graphics(false);
 
+impl Default for Graphics {
+    /// A new install's choices.
+    fn default() -> Self {
+        DEFAULT_GRAPHICS
+    }
+}
+
 /// The width of the Quality section's boxes, beside the left column.
 const QUALITY_FIELD: f32 = 170.0;
 

@@ -161,28 +161,85 @@ pub fn codriver_base_args(mods: &CodriverMods, voice: Option<&str>, style: &str,
         .collect()
 }
 
-/// The viewer and `rbr-standalone` arguments for a boot launch.
-#[allow(clippy::too_many_arguments)]
-pub fn viewer_args(
-    stage: &Stage,
-    car: &Car,
-    options: &RaceOptions,
-    weather: &Weather,
-    tyre: u32,
-    size: (u32, u32),
-    fov: f32,
-    volume: f32,
-    volumes: Volumes,
-    codriver: bool,
-    hud: HudChoice,
-    graphics: &Graphics,
-    wipers: Switch,
-    standalone: &Path,
-    data: &Path,
-    marker: MarkerSettings,
-    bindings: Option<&Path>,
-    setup: Option<&Path>,
-) -> Vec<String> {
+/// The viewer command Start runs: the selection resolved to a stage and weather, and every argument the viewer
+/// and `rbr-standalone` take for a boot launch.
+pub struct ViewerLaunch {
+    pub stage: Stage,
+    pub car: Car,
+    pub options: RaceOptions,
+    pub weather: Weather,
+    pub tyre: u32,
+    pub size: (u32, u32),
+    pub fov: f32,
+    pub volume: f32,
+    pub volumes: Volumes,
+    pub codriver: bool,
+    pub hud: HudChoice,
+    pub graphics: Graphics,
+    pub wipers: Switch,
+    pub standalone: PathBuf,
+    pub data: PathBuf,
+    pub marker: MarkerSettings,
+    pub bindings: Option<PathBuf>,
+    pub setup: Option<PathBuf>,
+}
+
+impl Default for ViewerLaunch {
+    /// Filler for the tests' struct update syntax; [`ViewerLaunch::args`] reads every field set.
+    fn default() -> Self {
+        Self {
+            stage: Stage::default(),
+            car: Car::default(),
+            options: RaceOptions::default(),
+            weather: Weather {
+                map: 0,
+                row: None,
+                letter: 0,
+                cloud: 0,
+                cloud_letter: 0,
+                preset: 0,
+                wetness: 0,
+                wear: 0,
+            },
+            tyre: 0,
+            size: (0, 0),
+            fov: 0.0,
+            volume: 0.0,
+            volumes: Volumes::default(),
+            codriver: false,
+            hud: HudChoice::default(),
+            graphics: Graphics::default(),
+            wipers: Switch::default(),
+            standalone: PathBuf::new(),
+            data: PathBuf::new(),
+            marker: MarkerSettings::default(),
+            bindings: None,
+            setup: None,
+        }
+    }
+}
+
+impl ViewerLaunch {
+    /// The argument vector: the viewer's flags, then `rbr-standalone`'s after the second `--live`.
+    pub fn args(&self) -> Vec<String> {
+        let stage = &self.stage;
+        let car = &self.car;
+        let options = &self.options;
+        let weather = &self.weather;
+        let tyre = self.tyre;
+        let size = self.size;
+        let fov = self.fov;
+        let volume = self.volume;
+        let volumes = self.volumes;
+        let codriver = self.codriver;
+        let hud = self.hud;
+        let graphics = &self.graphics;
+        let wipers = self.wipers;
+        let standalone = self.standalone.as_path();
+        let data = self.data.as_path();
+        let marker = self.marker;
+        let bindings = self.bindings.as_deref();
+        let setup = self.setup.as_deref();
     let pack = car.rsf.as_ref().and_then(|r| r.pack.as_ref().ok()).map(|p| p.display().to_string());
     let car_arg = match &pack {
         Some(pack) => ["--rsf-car".into(), pack.clone()],
@@ -279,6 +336,7 @@ pub fn viewer_args(
         args.extend(["--rsf-car".into(), pack]);
     }
     args
+    }
 }
 
 /// The viewer's `--save-replay` for a live start: the drive's replay in `replays/` of the player's folder `home`,
@@ -521,31 +579,32 @@ impl Form {
         // Read-only, the file already holds the selection and the bindings, when there is one.
         let saved = self.save() || self.read_only && self.paths.settings.is_file();
         let bindings = saved.then_some(self.paths.settings.as_path());
-        let mut args = viewer_args(
-            &stage,
-            car,
-            &options,
-            &weather,
+        let mut args = ViewerLaunch {
+            stage: stage.clone(),
+            car: car.clone(),
+            options,
+            weather,
             tyre,
-            self.size,
-            self.fov,
-            self.volume,
-            Volumes {
+            size: self.size,
+            fov: self.fov,
+            volume: self.volume,
+            volumes: Volumes {
                 engine: self.engine_volume,
                 codriver: self.codriver_volume,
                 effects: self.effects_volume,
                 tyres: self.tyres_volume,
             },
-            self.codriver,
-            self.hud,
-            &self.graphics,
-            self.wipers,
-            &self.paths.standalone,
-            &self.paths.data,
-            self.marker,
-            bindings,
-            setup.as_deref(),
-        );
+            codriver: self.codriver,
+            hud: self.hud,
+            graphics: self.graphics,
+            wipers: self.wipers,
+            standalone: self.paths.standalone.clone(),
+            data: self.paths.data.clone(),
+            marker: self.marker,
+            bindings: bindings.map(Path::to_path_buf),
+            setup,
+        }
+        .args();
         // The viewer's `--live` command is the rest of the line.
         let live = args.iter().position(|a| a == "--live").unwrap_or(args.len());
         let scale = render_scale_args(self.render_scale);
@@ -743,26 +802,24 @@ mod tests {
         assert_eq!(car.unavailable(), None);
         let weather =
             Weather { map: 54, row: Some(162), letter: 4, cloud: 1, cloud_letter: 0, preset: 0, wetness: 1, wear: 0 };
-        let args = viewer_args(
-            &stage,
-            &car,
-            &RaceOptions::default(),
-            &weather,
-            4,
-            (1280, 720),
-            65.0,
-            1.0,
-            Volumes::default(),
-            true,
-            HudChoice::default(),
-            &Quality::Low.graphics(false),
-            Switch::Off,
-            Path::new("/b/rbr-standalone"),
-            Path::new("/d"),
-            MarkerSettings::default(),
-            None,
-            None,
-        );
+        let args = ViewerLaunch {
+            stage,
+            car,
+            weather,
+            tyre: 4,
+            size: (1280, 720),
+            fov: 65.0,
+            volume: 1.0,
+            codriver: true,
+            graphics: Quality::Low.graphics(false),
+            wipers: Switch::Off,
+            standalone: PathBuf::from("/b/rbr-standalone"),
+            data: PathBuf::from("/d"),
+            bindings: Some(PathBuf::from("/l/launcher-settings.ini")),
+            setup: Some(PathBuf::from("/l/setup-current.lsp")),
+            ..Default::default()
+        }
+        .args();
         let live = args.iter().position(|a| a == "--live").unwrap();
         assert_eq!(args[1..3], ["--rsf-car", "/rsf/rsfdata/cars/evo"]);
         assert!(!args[..live].contains(&"--car".to_owned()));
@@ -778,18 +835,18 @@ mod tests {
         let weather =
             Weather { map: 54, row: Some(167), letter: 3, cloud: 3, cloud_letter: 2, preset: 4, wetness: 2, wear: 2 };
         let options = RaceOptions { weather: Preset::Bad, ..RaceOptions::default() };
-        let args = viewer_args(
-            &stage,
-            &car,
-            &options,
-            &weather,
-            5,
-            (1280, 720),
-            65.0,
-            0.5,
-            Volumes { engine: 0.5, codriver: 1.0, effects: 1.5, tyres: 2.0 },
-            false,
-            HudChoice {
+        let args = ViewerLaunch {
+            stage: stage.clone(),
+            car: car.clone(),
+            options,
+            weather,
+            tyre: 5,
+            size: (1280, 720),
+            fov: 65.0,
+            volume: 0.5,
+            volumes: Volumes { engine: 0.5, codriver: 1.0, effects: 1.5, tyres: 2.0 },
+            codriver: false,
+            hud: HudChoice {
                 show: false,
                 mph: true,
                 fps: true,
@@ -798,14 +855,15 @@ mod tests {
                 hide_wheel: true,
                 parts: Parts::hiding("inputs,view").unwrap(),
             },
-            &Quality::Low.graphics(false),
-            Switch::Continuous,
-            Path::new("/b/rbr-standalone"),
-            Path::new("/d"),
-            MarkerSettings::default(),
-            Some(Path::new("/l/launcher-settings.ini")),
-            Some(Path::new("/l/setup-current.lsp")),
-        );
+            graphics: Quality::Low.graphics(false),
+            wipers: Switch::Continuous,
+            standalone: PathBuf::from("/b/rbr-standalone"),
+            data: PathBuf::from("/d"),
+            bindings: Some(PathBuf::from("/l/launcher-settings.ini")),
+            setup: Some(PathBuf::from("/l/setup-current.lsp")),
+            ..Default::default()
+        }
+        .args();
         assert_eq!(
             args.join(" "),
             "track-54_O --car COROLLA --weather wet --size 1280x720 --fov 65 --volume 0.5 --volumes 0.5,1,1.5,2 --no-codriver \
@@ -819,26 +877,23 @@ mod tests {
             damage: DamageLevel::Realistic,
             aids: DriverAids { auto_gears: true, gear_guard: false, neutral_lock: true, clutch_help: false },
         };
-        let args = viewer_args(
-            &stage,
-            &car,
-            &options,
-            &weather,
-            5,
-            (1280, 720),
-            65.0,
-            0.5,
-            Volumes::default(),
-            true,
-            HudChoice::default(),
-            &Graphics { lighting: true, marks: true, ..Quality::Low.graphics(false) },
-            Switch::Auto,
-            Path::new("/b/rbr-standalone"),
-            Path::new("/d"),
-            MarkerSettings::default(),
-            None,
-            None,
-        )
+        let args = ViewerLaunch {
+            stage,
+            car,
+            options,
+            weather,
+            tyre: 5,
+            size: (1280, 720),
+            fov: 65.0,
+            volume: 0.5,
+            codriver: true,
+            graphics: Graphics { lighting: true, marks: true, ..Quality::Low.graphics(false) },
+            wipers: Switch::Auto,
+            standalone: PathBuf::from("/b/rbr-standalone"),
+            data: PathBuf::from("/d"),
+            ..Default::default()
+        }
+        .args()
         .join(" ");
         assert!(args.contains("--boot --weather 1 --wear worn"), "{args}");
         assert!(args.contains("--enhance anisotropy,decals,lighting,marks,water --live "), "{args}");
@@ -901,26 +956,22 @@ mod tests {
             wear: 1,
         };
         let word = |wetness| {
-            let args = viewer_args(
-                &stage,
-                &car,
-                &RaceOptions::default(),
-                &weather(wetness),
-                3,
-                (1280, 720),
-                65.0,
-                1.0,
-                Volumes::default(),
-                true,
-                HudChoice::default(),
-                &Quality::Low.graphics(false),
-                Switch::Off,
-                Path::new("/b/rbr-standalone"),
-                Path::new("/d"),
-                MarkerSettings::default(),
-                None,
-                None,
-            );
+            let args = ViewerLaunch {
+                stage: stage.clone(),
+                car: car.clone(),
+                weather: weather(wetness),
+                tyre: 3,
+                size: (1280, 720),
+                fov: 65.0,
+                volume: 1.0,
+                codriver: true,
+                graphics: Quality::Low.graphics(false),
+                wipers: Switch::Off,
+                standalone: PathBuf::from("/b/rbr-standalone"),
+                data: PathBuf::from("/d"),
+                ..Default::default()
+            }
+            .args();
             let at = args.iter().position(|a| a == "--weather").unwrap();
             args[at + 1].clone()
         };
