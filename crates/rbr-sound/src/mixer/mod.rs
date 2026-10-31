@@ -377,6 +377,9 @@ pub struct Mixer {
     layer: Vec<[f32; 2]>,
 }
 
+/// A hit or effect sample's lookup: its bank, the sample's index, its distances and its family.
+type Bank<'a> = (&'a [Arc<Wave>], usize, Place, Option<Family>);
+
 impl Mixer {
     pub fn new(bank: &CarBank, rate: u32, volume: f32) -> Mixer {
         let voice = |wave: &Wave| LoopVoice { wave: Arc::new(seamless(wave)), pitch: 1.0, ..LoopVoice::default() };
@@ -578,13 +581,8 @@ impl Mixer {
                 Command::ShotAt { shot, gain, pan } => self.shot(shot, gain, Some(pan)),
                 Command::Effect { shot, gain, pitch, repeat } => self.effect(shot, gain, pitch, repeat),
                 Command::Hit { shot, gain, pitch, distance } => {
-                    let (bank, i, place) = match shot {
-                        Shot::Grus(i) => (&self.banks.grus, i, Place::Grus),
-                        Shot::Squeak(i) => (&self.banks.squeaks, i, Place::Default),
-                        Shot::Bottoming(i) => (&self.banks.bottomings, i, Place::Default),
-                        Shot::DriveShaft(i) => (&self.banks.drive_shafts, i, Place::Default),
-                        _ => continue,
-                    };
+                    // Hits are the body's knocks; the other effects fall through as plain one-shots do.
+                    let Some((bank, i, place, None)) = self.bank_of(shot) else { continue };
                     let wave = (!bank.is_empty()).then(|| bank[i % bank.len()].clone());
                     if let Some(wave) = wave.filter(|_| self.make(shot)) {
                         let [vary_pitch, vary_gain] = self.vary();
@@ -716,10 +714,10 @@ impl Mixer {
         }
     }
 
-    /// Plays an effect at the car at `pitch`; a [`Repeat::Restart`] one stops the last of its kind, a
-    /// [`Repeat::IfIdle`] one is skipped while the last plays.
-    fn effect(&mut self, shot: Shot, gain: f32, pitch: f32, repeat: Repeat) {
-        let (bank, index, place, family) = match shot {
+    /// The sample bank, index, distances and family of a hit or effect `shot` (`None`: a plain one-shot, which
+    /// [`Mixer::shot`] plays).
+    fn bank_of(&self, shot: Shot) -> Option<Bank<'_>> {
+        Some(match shot {
             Shot::Grus(i) => (&self.banks.grus, i, Place::Grus, None),
             Shot::Squeak(i) => (&self.banks.squeaks, i, Place::Default, None),
             Shot::Bottoming(i) => (&self.banks.bottomings, i, Place::Default, None),
@@ -730,7 +728,15 @@ impl Mixer {
             Shot::Fire => (&self.banks.fire, 0, Place::Fire, Some(Family::Fire)),
             Shot::BlowOff => (&self.banks.blow_off, 0, Place::BlowOff, Some(Family::BlowOff)),
             Shot::Ignition => (&self.banks.ignition, 0, Place::Ignition, Some(Family::Ignition)),
-            _ => return self.shot(shot, gain, None),
+            _ => return None,
+        })
+    }
+
+    /// Plays an effect at the car at `pitch`; a [`Repeat::Restart`] one stops the last of its kind, a
+    /// [`Repeat::IfIdle`] one is skipped while the last plays.
+    fn effect(&mut self, shot: Shot, gain: f32, pitch: f32, repeat: Repeat) {
+        let Some((bank, index, place, family)) = self.bank_of(shot) else {
+            return self.shot(shot, gain, None);
         };
         if bank.is_empty() {
             return;
@@ -792,19 +798,12 @@ impl Mixer {
     /// Gives an FMOD bank's slots their loops and buses, the mixer its recordings and the bank's mixing tree
     /// ([`Command::FmodLoop`], [`Command::FmodBus`], [`Command::FmodEffect`], [`Command::FmodShot`]).
     pub fn set_fmod(&mut self, loops: Vec<(Arc<Wave>, Option<usize>)>, waves: Vec<Arc<Wave>>, buses: &[Bus]) {
-        let old = self.swap_fmod(Self::prepare_fmod(loops, waves, buses, self.rate));
-        drop(old);
+        drop(self.swap_fmod(Self::prepare_fmod(loops, waves, buses, self.rate)));
     }
 
     /// Gives a co-driver mod's voice its samples ([`Speech::Sample`]).
     pub fn set_voice(&mut self, samples: &[Wave]) {
         self.banks.voice = shared(samples);
-    }
-
-    /// Gives the grind loop ([`Loop::Grind`]) its sample.
-    pub fn set_grind(&mut self, wave: Wave) {
-        let wave = Arc::new(seamless(&wave));
-        self.loops.insert(Loop::Grind, LoopVoice { wave, pitch: 1.0, ..LoopVoice::default() });
     }
 
     pub(crate) fn prepare_fmod(

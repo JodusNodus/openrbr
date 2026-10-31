@@ -287,14 +287,20 @@ impl Player {
         }
     }
 
+    /// Swaps `prepared` into the mixer with `swap`, dropping what it replaces after the lock is released, so
+    /// the audio callback never waits on the work.
+    fn swap<T, U>(&self, prepared: T, swap: impl FnOnce(&mut Mixer, T) -> U) {
+        let old = if let Ok(mut mixer) = self.mixer.lock() { Some(swap(&mut mixer, prepared)) } else { None };
+        drop(old);
+    }
+
     /// Plays the car's FMOD bank (`fmod`) instead of its 1.02 engine, turbo and transmission voices. The loop
     /// waves are cloned and the mixing tree is built before taking the mixer lock; only the swap runs under it,
     /// and the old bank drops after it is released, so the audio callback never waits on the work.
     pub fn use_fmod(&mut self, car: FmodCar) {
         let rate = self.mixer.lock().map(|mixer| mixer.rate()).unwrap_or(44100);
         let prepared = Mixer::prepare_fmod(car.loop_waves(), car.waves.clone(), &car.buses, rate);
-        let old = if let Ok(mut mixer) = self.mixer.lock() { Some(mixer.swap_fmod(prepared)) } else { None };
-        drop(old);
+        self.swap(prepared, Mixer::swap_fmod);
         self.models.fmod = Some(car);
     }
 
@@ -302,8 +308,7 @@ impl Player {
     /// samples are copied before taking the mixer lock; only the swap runs under it.
     pub fn use_codriver(&mut self, mut custom: CustomCoDriver) {
         let prepared: Vec<Arc<data::Wave>> = custom.samples().iter().cloned().map(Arc::new).collect();
-        let old = if let Ok(mut mixer) = self.mixer.lock() { Some(mixer.swap_voice(prepared)) } else { None };
-        drop(old);
+        self.swap(prepared, Mixer::swap_voice);
         custom.muted = self.models.codriver.muted;
         self.models.custom = Some(custom);
     }
@@ -313,8 +318,7 @@ impl Player {
     pub fn set_grind(&mut self, wave: data::Wave) {
         let prepared = Arc::new(crate::mixer::voices::seamless(&wave));
         drop(wave);
-        let old = if let Ok(mut mixer) = self.mixer.lock() { Some(mixer.swap_grind(prepared)) } else { None };
-        drop(old);
+        self.swap(prepared, Mixer::swap_grind);
     }
 
     /// The H-shifter's grind at `pitch` (1 = the sample's rate), or silent.
