@@ -9,6 +9,8 @@
 
 use std::fmt::{self, Display, Formatter};
 
+use crate::tokens;
+
 /// Why a file did not parse.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Error {
@@ -282,23 +284,14 @@ impl ParticleFile {
     }
 }
 
-/// The tokens of `text` up to `$`, without comments.
-fn tokens(text: &str) -> Vec<&str> {
-    let text = text.split('$').next().unwrap_or("");
-    text.lines().flat_map(|line| line.split(';').next().unwrap_or("").split_whitespace()).collect()
-}
-
 struct Reader<'a> {
-    tokens: Vec<&'a str>,
-    at: usize,
+    tokens: tokens::Reader<'a>,
     section: &'static str,
 }
 
 impl<'a> Reader<'a> {
     fn word(&mut self) -> Result<&'a str, Error> {
-        let token = self.tokens.get(self.at).ok_or(Error::Truncated { section: self.section })?;
-        self.at += 1;
-        Ok(token)
+        self.tokens.next().ok_or(Error::Truncated { section: self.section })
     }
 
     fn float(&mut self) -> Result<f32, Error> {
@@ -351,7 +344,7 @@ impl<'a> Reader<'a> {
 
 /// Parses a whole `PS_*.ini` text.
 pub fn parse(text: &str) -> Result<ParticleFile, Error> {
-    let mut r = Reader { tokens: tokens(text), at: 0, section: "version" };
+    let mut r = Reader { tokens: tokens::Reader::new(tokens::words(text)), section: "version" };
     let version = r.word()?;
     if version != "version3" {
         return Err(Error::Version(version.to_owned()));
@@ -495,7 +488,7 @@ pub fn parse(text: &str) -> Result<ParticleFile, Error> {
     let damping = r.list("damping signal handlers", |r| {
         Ok(Damping { material: r.uint()?, emitter: r.name()?, penetration: r.floats()?, velocity_modifier: r.float()? })
     })?;
-    if let Some(t) = r.tokens.get(r.at) {
+    if let Some(t) = r.tokens.rest().first() {
         return Err(Error::Trailing((*t).to_owned()));
     }
     Ok(ParticleFile {
@@ -518,10 +511,10 @@ pub fn parse(text: &str) -> Result<ParticleFile, Error> {
 /// Parses `Misc/particletextures.ini`: a count, then that many texture paths (`Textures\br1_pebble.tga`). The
 /// particle classes' sprite ids index this list.
 pub fn parse_textures(text: &str) -> Result<Vec<String>, Error> {
-    let mut r = Reader { tokens: tokens(text), at: 0, section: "particle textures" };
+    let mut r = Reader { tokens: tokens::Reader::new(tokens::words(text)), section: "particle textures" };
     let n = r.count()?;
     let names = (0..n).map(|_| r.name()).collect::<Result<Vec<_>, _>>()?;
-    if let Some(t) = r.tokens.get(r.at) {
+    if let Some(t) = r.tokens.rest().first() {
         return Err(Error::Trailing((*t).to_owned()));
     }
     Ok(names)

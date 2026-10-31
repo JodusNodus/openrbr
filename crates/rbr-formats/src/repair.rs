@@ -22,6 +22,8 @@
 
 use std::fmt::{self, Display, Formatter};
 
+use crate::tokens;
+
 /// Deepest nesting accepted. The retail trees go up to a few levels.
 const MAX_DEPTH: usize = 64;
 
@@ -75,7 +77,8 @@ impl Display for Error {
 
 impl std::error::Error for Error {}
 
-/// Splits the text into whitespace-separated tokens, dropping `;` comments.
+/// Splits the text into whitespace-separated tokens, dropping `;` comments and stopping at a `$` word (a `$`
+/// inside a word stays part of it, unlike [`tokens::words`]).
 fn tokens(text: &str) -> Vec<&str> {
     text.lines()
         .flat_map(|line| line.split(';').next().unwrap_or("").split_whitespace())
@@ -84,20 +87,17 @@ fn tokens(text: &str) -> Vec<&str> {
 }
 
 struct Reader<'a> {
-    tokens: &'a [&'a str],
-    pos: usize,
+    tokens: tokens::Reader<'a>,
     found: usize,
 }
 
 impl<'a> Reader<'a> {
     fn next(&mut self) -> Result<&'a str, Error> {
-        let token = self.tokens.get(self.pos).copied().ok_or(Error::UnexpectedEnd)?;
-        self.pos += 1;
-        Ok(token)
+        self.tokens.next().ok_or(Error::UnexpectedEnd)
     }
 
     fn peek(&self) -> Option<&'a str> {
-        self.tokens.get(self.pos).copied()
+        self.tokens.peek()
     }
 
     fn expect(&mut self, want: &str) -> Result<(), Error> {
@@ -136,7 +136,7 @@ impl<'a> Reader<'a> {
         let mount = self.timing()?;
         let mut children = Vec::new();
         while self.peek() == Some("{") {
-            self.pos += 1;
+            self.next()?;
             children.push(self.part(depth + 1)?);
         }
         self.expect("}")?;
@@ -148,9 +148,10 @@ impl<'a> Reader<'a> {
 /// are read until the parts read (children included) reach the header count, and a block is read
 /// whole. Use [`node_count`] to count parts with their children.
 pub fn parse(text: &str) -> Result<Vec<Part>, Error> {
-    let tokens = tokens(text);
-    let header: usize = tokens.first().and_then(|t| t.parse().ok()).ok_or(Error::BadCount)?;
-    let mut reader = Reader { tokens: &tokens[1..], pos: 0, found: 0 };
+    let words = tokens(text);
+    let header: usize = words.first().and_then(|t| t.parse().ok()).ok_or(Error::BadCount)?;
+    let mut reader = Reader { tokens: tokens::Reader::new(words), found: 0 };
+    let _ = reader.next(); // The header read above.
     let mut parts = Vec::new();
     while reader.found < header {
         if reader.peek().is_none() {
