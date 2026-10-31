@@ -2,7 +2,7 @@
 
 use super::meshes::{Bound, GpuMesh};
 use super::reflection::{self, REFLECTION_REACH};
-use super::shadows::Casting;
+use super::shadows::{Casting, Layers};
 use super::textures::depth_view;
 use super::uniforms::frame_index;
 use super::{Renderer, CLEAR_COLOR};
@@ -149,9 +149,9 @@ impl Renderer {
             sun,
             queue: &self.queue,
         });
-        let (cascades, lamp) = (self.cascades, self.lamp_matrix);
         let drop = sun::backdrop_drop(self.shadow_light());
-        let range = self.sun_range.as_ref().filter(|_| cascades.is_some());
+        let layers = Layers { cascades: self.cascades, far, lamp: self.lamp_matrix, world, eye, drop };
+        let range = self.sun_range.as_ref().filter(|_| self.cascades.is_some());
         let device = &self.device;
         let stats = std::thread::scope(|scope| {
             let shadows = match (casting, profiler.as_ref().is_some_and(Profiler::blocking)) {
@@ -162,7 +162,7 @@ impl Renderer {
                         let _span = perf_log::span("sun cascades and lamp shadow");
                         let mut encoder = device.create_command_encoder(&Default::default());
                         stamps.iter().for_each(|set| encoder.write_timestamp(set, 0));
-                        casting.draw(&mut encoder, cascades.as_ref(), far, lamp, world, eye, drop);
+                        casting.draw(&mut encoder, &layers, |_, _, _| ());
                         range.iter().for_each(|range| range.draw(&mut encoder));
                         stamps.iter().for_each(|set| encoder.write_timestamp(set, 1));
                         encoder.finish()
@@ -171,19 +171,10 @@ impl Renderer {
                 (Some(casting), true) => {
                     let t = mark(&mut profiler, &mut scene_encoder);
                     let mut layer = 0;
-                    casting.draw_each(
-                        &mut scene_encoder,
-                        cascades.as_ref(),
-                        far,
-                        lamp,
-                        world,
-                        eye,
-                        drop,
-                        |e, label, start| match start {
-                            true => layer = mark(&mut profiler, e),
-                            false => span(&mut profiler, e, label, layer),
-                        },
-                    );
+                    casting.draw(&mut scene_encoder, &layers, |e, label, start| match start {
+                        true => layer = mark(&mut profiler, e),
+                        false => span(&mut profiler, e, label, layer),
+                    });
                     range.iter().for_each(|range| range.draw(&mut scene_encoder));
                     span(&mut profiler, &mut scene_encoder, "sun cascades and lamp shadow", t);
                     None

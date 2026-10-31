@@ -126,50 +126,43 @@ pub(super) struct Casting<'a> {
     pub(super) queue: &'a wgpu::Queue,
 }
 
+/// The sun's map's layers a frame draws ([`Casting::draw`]).
+pub(super) struct Layers {
+    /// The cascades ([`Renderer::cascades`]).
+    pub(super) cascades: Option<Cascades>,
+    /// The far layer, when it is due ([`crate::sun::FarDrawn`]).
+    pub(super) far: Option<Mat4>,
+    /// The headlights' map.
+    pub(super) lamp: Option<Mat4>,
+    /// The world's, when the light has changed ([`crate::sun::world`]).
+    pub(super) world: Option<Mat4>,
+    /// Where the level of detail is seen from.
+    pub(super) eye: Vec3,
+    /// How far the backdrop's casters in the sun's maps move ([`crate::sun::backdrop_drop`]).
+    pub(super) drop: Vec3,
+}
+
 impl Casting<'_> {
-    /// Draws the sun's cascades ([`Renderer::cascades`]): the world-anchored stage draws that write depth and do not
-    /// blend, at the level of detail the view from `eye` shows, the characters among them, and not the car (its own
-    /// shadow covers it); their far layer through `far` (when it is due, [`crate::sun::FarDrawn`]); the headlights'
-    /// map through `lamp` into its own layer; and the world's through `world` (when the light has changed,
-    /// [`crate::sun::world`]). The backdrop's casters in the sun's maps are moved by `drop`
-    /// ([`crate::sun::backdrop_drop`]).
-    #[allow(clippy::too_many_arguments)]
+    /// Draws `layers`: into the sun's cascades and far and world layers, the world-anchored stage draws that write
+    /// depth and do not blend, at the level of detail the view from the eye shows, the characters among them, and not
+    /// the car (its own shadow covers it); the same into the headlights' map. Calls `around` with the encoder and each
+    /// layer's label before (`true`) and after (`false`) it (`--profile` times them).
     pub(super) fn draw(
         &self,
         encoder: &mut wgpu::CommandEncoder,
-        cascades: Option<&Cascades>,
-        far: Option<Mat4>,
-        lamp: Option<Mat4>,
-        world: Option<Mat4>,
-        eye: Vec3,
-        drop: Vec3,
-    ) {
-        self.draw_each(encoder, cascades, far, lamp, world, eye, drop, |_, _, _| ());
-    }
-
-    /// [`Casting::draw`], calling `around` with the encoder and each layer's label before (`true`) and after
-    /// (`false`) it (`--profile` times them).
-    #[allow(clippy::too_many_arguments)]
-    pub(super) fn draw_each(
-        &self,
-        encoder: &mut wgpu::CommandEncoder,
-        cascades: Option<&Cascades>,
-        far: Option<Mat4>,
-        lamp: Option<Mat4>,
-        world: Option<Mat4>,
-        eye: Vec3,
-        drop: Vec3,
+        layers: &Layers,
         mut around: impl FnMut(&mut wgpu::CommandEncoder, &'static str, bool),
     ) {
         const CASCADES: [&str; 3] = ["sun cascade 1", "sun cascade 2", "sun cascade 3"];
-        let mut layers = Vec::new();
+        let &Layers { cascades, far, lamp, world, eye, drop } = layers;
+        let mut drawn = Vec::new();
         if let Some(cascades) = cascades {
-            layers.extend(cascades.matrices.iter().enumerate().map(|(i, &m)| (CASCADES[i], i, m, Some(eye), drop)));
+            drawn.extend(cascades.matrices.iter().enumerate().map(|(i, &m)| (CASCADES[i], i, m, Some(eye), drop)));
         }
-        layers.extend(far.map(|m| ("sun far layer", crate::sun::FAR, m, Some(eye), drop)));
-        layers.extend(lamp.map(|m| ("lamp shadow", crate::sun::LAMP, m, Some(eye), Vec3::ZERO)));
-        layers.extend(world.map(|m| ("sun world layer", crate::sun::WORLD, m, None, drop)));
-        for (label, index, matrix, eye, drop) in layers {
+        drawn.extend(far.map(|m| ("sun far layer", crate::sun::FAR, m, Some(eye), drop)));
+        drawn.extend(lamp.map(|m| ("lamp shadow", crate::sun::LAMP, m, Some(eye), Vec3::ZERO)));
+        drawn.extend(world.map(|m| ("sun world layer", crate::sun::WORLD, m, None, drop)));
+        for (label, index, matrix, eye, drop) in drawn {
             around(encoder, label, true);
             self.draw_layer(encoder, index, matrix, eye, drop);
             around(encoder, label, false);
