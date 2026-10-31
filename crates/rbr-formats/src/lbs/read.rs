@@ -102,12 +102,12 @@ fn geometry_view<'a>(c: &mut Cursor<'a>, stride: usize) -> Result<Option<Buffers
         return Ok(None);
     }
     if index_count & 0x8000_0000 != 0 {
-        return Err(malformed(&c, "view index count has bit 31 set"));
+        return Err(malformed(c, "view index count has bit 31 set"));
     }
     let indices = c.take((index_count as usize).saturating_mul(2))?;
     let vertex_count = c.u32()?;
     if vertex_count & 0xf000_0000 != 0 {
-        return Err(malformed(&c, "view vertex count has flag bits set"));
+        return Err(malformed(c, "view vertex count has flag bits set"));
     }
     let vertex_count = vertex_count as usize;
     let vertices = c.take(vertex_count.saturating_mul(stride))?;
@@ -197,12 +197,12 @@ fn interactive_objects<'a>(c: &mut Cursor<'a>) -> Result<InteractiveObjects<'a>,
             let stride = c.u32()?;
             let index_count = c.u32()? as usize;
             let index_bytes =
-                index_count.checked_mul(2).ok_or_else(|| malformed(&c, "interactive index byte count overflow"))?;
+                index_count.checked_mul(2).ok_or_else(|| malformed(c, "interactive index byte count overflow"))?;
             let indices = c.take(index_bytes)?;
             let vertex_count = c.u32()? as usize;
             let vertex_bytes = vertex_count
                 .checked_mul(vertex_size)
-                .ok_or_else(|| malformed(&c, "interactive vertex byte count overflow"))?;
+                .ok_or_else(|| malformed(c, "interactive vertex byte count overflow"))?;
             let vertices = c.take(vertex_bytes)?;
             draws.push(InteractiveDraw {
                 flags,
@@ -444,7 +444,7 @@ fn object_item<'a>(c: &mut Cursor<'a>) -> Result<ObjectItem<'a>, Error> {
             let count = c.u32()? as usize;
             SecondIndices::Own(c.take(count.saturating_mul(2))?)
         }
-        _ => return Err(malformed(&c, "object item index flag is not 0, 1 or 2")),
+        _ => return Err(malformed(c, "object item index flag is not 0, 1 or 2")),
     };
     let vertex_count = c.u32()? as usize;
     let (box_words, box_extra) = if has_box {

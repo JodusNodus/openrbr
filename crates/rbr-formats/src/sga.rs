@@ -37,10 +37,10 @@
 //! All reads are bounds-checked against the record body, and [`parse`]
 //! requires every body to be consumed exactly.
 
-use crate::sg_framing::{self};
+use crate::sg_framing;
 
-pub use crate::sg_framing::BANNER;
 pub use crate::sg_framing::FileKind;
+pub use crate::sg_framing::BANNER;
 
 const KIND_ANIMATION: u32 = 6;
 const SUBTYPE_ANIMATION: u32 = 21;

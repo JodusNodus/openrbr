@@ -78,7 +78,11 @@ impl<'a, E: From<Truncated>> Reader<'a, E> {
     }
 
     fn error_len(&self) -> usize {
-        if self.remaining { self.end.saturating_sub(self.pos) } else { self.bytes.len() }
+        if self.remaining {
+            self.end.saturating_sub(self.pos)
+        } else {
+            self.bytes.len()
+        }
     }
 
     /// The current absolute offset.
@@ -158,9 +162,9 @@ impl<'a, E: From<Truncated>> Reader<'a, E> {
     /// Fails unless `count` records of `stride` bytes fit in what remains,
     /// before anything is allocated for them.
     pub(crate) fn require(&self, count: usize, stride: usize) -> Result<(), E> {
-        let needed = count.checked_mul(stride).ok_or_else(|| {
-            E::from(Truncated { offset: self.pos, needed: usize::MAX, len: self.error_len() })
-        })?;
+        let needed = count
+            .checked_mul(stride)
+            .ok_or_else(|| E::from(Truncated { offset: self.pos, needed: usize::MAX, len: self.error_len() }))?;
         if needed > self.remaining() {
             return Err(self.truncated(needed));
         }
@@ -283,29 +287,24 @@ mod tests {
         assert_eq!(r.f32().unwrap(), 1.0);
         assert_eq!(r.u8().unwrap(), 5);
         assert!(r.is_empty());
-        assert_eq!(
-            r.take(1).unwrap_err(),
-            Shaped { truncated: Truncated { offset: 12, needed: 1, len: 12 } }
-        );
+        assert_eq!(r.take(1).unwrap_err(), Shaped { truncated: Truncated { offset: 12, needed: 1, len: 12 } });
         // Overflow and short reads name the same values the old cursors did.
         let mut r = Reader::<Shaped>::new(&bytes);
         assert_eq!(
             r.take(usize::MAX).unwrap_err(),
             Shaped { truncated: Truncated { offset: 0, needed: usize::MAX, len: 12 } }
         );
-        assert_eq!(
-            r.require(4, 4).unwrap_err(),
-            Shaped { truncated: Truncated { offset: 0, needed: 16, len: 12 } }
-        );
+        assert_eq!(r.require(4, 4).unwrap_err(), Shaped { truncated: Truncated { offset: 0, needed: 16, len: 12 } });
         assert_eq!(
             r.require(usize::MAX, 40).unwrap_err(),
             Shaped { truncated: Truncated { offset: 0, needed: usize::MAX, len: 12 } }
         );
         r.u32().unwrap();
         assert_eq!(r.words::<2>().unwrap(), [0x0007_0002, 0x053f_8000]);
-        assert_eq!(Reader::<Shaped>::at(&bytes, 13).err().unwrap(), Shaped {
-            truncated: Truncated { offset: 13, needed: 0, len: 12 },
-        });
+        assert_eq!(
+            Reader::<Shaped>::at(&bytes, 13).err().unwrap(),
+            Shaped { truncated: Truncated { offset: 13, needed: 0, len: 12 } }
+        );
     }
 
     #[test]
@@ -316,15 +315,9 @@ mod tests {
         assert_eq!(r.remaining(), 8);
         r.take(8).unwrap();
         assert!(r.is_empty());
-        assert_eq!(
-            r.take(4).unwrap_err(),
-            Shaped { truncated: Truncated { offset: 56, needed: 4, len: 0 } }
-        );
+        assert_eq!(r.take(4).unwrap_err(), Shaped { truncated: Truncated { offset: 56, needed: 4, len: 0 } });
         let mut r = Reader::<Shaped>::within(&bytes, 48, 56);
-        assert_eq!(
-            r.take_cstr().unwrap_err(),
-            Shaped { truncated: Truncated { offset: 48, needed: 1, len: 8 } }
-        );
+        assert_eq!(r.take_cstr().unwrap_err(), Shaped { truncated: Truncated { offset: 48, needed: 1, len: 8 } });
     }
 
     #[test]
@@ -342,10 +335,7 @@ mod tests {
         assert_eq!(r.take_cstr().unwrap(), b"road");
         assert_eq!(r.pos(), 5);
         // No terminator in what is left: the one-byte-past-the-end failure.
-        assert_eq!(
-            r.take_cstr().unwrap_err(),
-            Shaped { truncated: Truncated { offset: 5, needed: 1, len: 9 } }
-        );
+        assert_eq!(r.take_cstr().unwrap_err(), Shaped { truncated: Truncated { offset: 5, needed: 1, len: 9 } });
     }
 
     #[test]
@@ -353,10 +343,7 @@ mod tests {
         let bytes = [1u8, 0, 0, 0, 0, 0, 0x80, 0x3f];
         assert_eq!(read_u32_le(&bytes, 0).unwrap(), 1);
         assert_eq!(read_f32_le(&bytes, 4).unwrap(), 1.0);
-        assert_eq!(
-            read_u32_le(&bytes, 6).unwrap_err(),
-            Truncated { offset: 6, needed: 4, len: 8 }
-        );
+        assert_eq!(read_u32_le(&bytes, 6).unwrap_err(), Truncated { offset: 6, needed: 4, len: 8 });
         assert!(need(&bytes, 0, 8).is_ok());
         assert_eq!(need(&bytes, 7, 4).unwrap_err(), Truncated { offset: 7, needed: 4, len: 8 });
         assert_eq!(u16_at(&bytes, 0), Some(1));

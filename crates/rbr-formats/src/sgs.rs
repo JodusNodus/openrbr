@@ -40,10 +40,10 @@
 //! after the last record are kept in [`Sgs::trailing`] verbatim.
 
 use crate::le::le_bytes;
-use crate::sg_framing::{self};
+use crate::sg_framing;
 
-pub use crate::sg_framing::BANNER;
 pub use crate::sg_framing::FileKind;
+pub use crate::sg_framing::BANNER;
 
 const KIND_GEOMETRY: u32 = 0;
 const KIND_LIGHT: u32 = 1;
@@ -246,7 +246,8 @@ pub fn parse(bytes: &[u8]) -> Result<Sgs<'_>, Error> {
 /// other records are not decoded.
 pub fn node_table(bytes: &[u8]) -> Result<Hierarchy, Error> {
     let mut nodes = Vec::new();
-    for rec in sg_framing::split_records(bytes, true, FileKind::Sgs)?.0.iter().filter(|rec| rec.kind == KIND_HIERARCHY) {
+    for rec in sg_framing::split_records(bytes, true, FileKind::Sgs)?.0.iter().filter(|rec| rec.kind == KIND_HIERARCHY)
+    {
         let mut r = Reader::new(rec.body, rec.offset);
         nodes.extend(hierarchy(&mut r)?.nodes);
         r.finish()?;

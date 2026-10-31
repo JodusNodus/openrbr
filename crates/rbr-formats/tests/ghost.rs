@@ -3,29 +3,23 @@
 //! Runs only when `RBR_DATA` points at the extracted install tree (`original/retail-1.0/install`).
 
 use rbr_formats::ghost::{Ghost, Sample, QUAT_SCALE};
-use rbr_formats::rbz;
-use std::io::Read;
 use std::path::Path;
+
+mod common;
 
 #[test]
 fn every_retail_ghost_parses_and_round_trips() {
-    let Ok(data) = std::env::var("RBR_DATA") else {
-        eprintln!("skipping: RBR_DATA not set");
+    let Some(data) = common::data_dir() else {
         return;
     };
-    let mut archive = rbz::open(&Path::new(&data).join("Root/ghosts.rbz")).expect("ghosts.rbz");
     let (mut rb, mut rse) = (0, 0);
-    for i in 0..archive.len() {
-        let mut entry = archive.by_index(i).unwrap();
-        let name = entry.name().unwrap().into_owned();
+    common::each_rbz_entry(&Path::new(&data).join("Root/ghosts.rbz"), |name, bytes| {
         if !name.ends_with(".gho") {
-            continue;
+            return;
         }
-        let mut bytes = Vec::new();
-        entry.read_to_end(&mut bytes).unwrap();
-        let ghost = Ghost::parse(&bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let ghost = Ghost::parse(bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
         let written = ghost.write();
-        let first = written.iter().zip(&bytes).position(|(a, b)| a != b);
+        let first = written.iter().zip(bytes).position(|(a, b)| a != b);
         assert!(first.is_none() && written.len() == bytes.len(), "{name}: written back differs at {first:?}");
         let stem = name.rsplit('/').next().unwrap().trim_end_matches(".gho");
         if let Some(map) = stem.strip_prefix("rb_") {
@@ -57,7 +51,7 @@ fn every_retail_ghost_parses_and_round_trips() {
             ghost.stream.tail.len(),
             ghost.after.len()
         );
-    }
+    });
     // 20 ghosts: the archive's other 12 entries are `rse*.arp` and `demo1.rpl`.
     assert_eq!((rb, rse), (7, 13));
 }

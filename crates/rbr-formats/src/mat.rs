@@ -130,8 +130,7 @@ pub fn parse(bytes: &[u8]) -> Result<MatFile, Error> {
         let name = std::str::from_utf8(name_bytes).map_err(|_| Error::InvalidName { offset: name_start })?.to_owned();
         offset += nul + 1;
 
-        let run_count =
-            le::read_u32_le(bytes, offset)? as usize;
+        let run_count = le::read_u32_le(bytes, offset)? as usize;
         offset += 4;
 
         let mut runs = Vec::new();

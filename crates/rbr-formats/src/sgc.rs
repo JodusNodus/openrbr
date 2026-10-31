@@ -18,11 +18,11 @@
 //! name a `FaceBlock<N>` shader slot, and, for damageable panels, a morph block.
 
 use crate::le::le_bytes;
-use crate::sg_framing::{self};
+use crate::sg_framing;
 use std::collections::HashMap;
 
-pub use crate::sg_framing::BANNER;
 pub use crate::sg_framing::FileKind;
+pub use crate::sg_framing::BANNER;
 
 pub const KIND_GEOMETRY: u32 = 0;
 pub const KIND_CAMERA: u32 = 2;

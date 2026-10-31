@@ -31,7 +31,7 @@
 //! definition is the only unparsed region), so trailing or overlapping
 //! data is an error. All reads are bounds-checked.
 
-use crate::le::{self, Truncated, bytes_at, floats_of, read_u32_le, u32_of};
+use crate::le::{self, bytes_at, floats_of, read_u32_le, u32_of, Truncated};
 use std::collections::HashSet;
 use std::fmt::{self, Display, Formatter};
 use std::ops::Range;
@@ -485,10 +485,7 @@ fn parse_brake_wall(bytes: &[u8], off: usize) -> Result<Option<BrakeWall>, Error
         return Err(Error::BrakeWall { offset: off });
     }
     let root = bytes_at(bytes, root_off, 0x18)?;
-    Ok(Some(BrakeWall {
-        points: points.chunks_exact(8).map(floats_of::<2>).collect(),
-        root_box: floats_of::<4>(root),
-    }))
+    Ok(Some(BrakeWall { points: points.chunks_exact(8).map(floats_of::<2>).collect(), root_box: floats_of::<4>(root) }))
 }
 
 fn parse_meshes(bytes: &[u8], off: usize, count: usize, spans: &mut Vec<Span>) -> Result<Vec<Mesh>, Error> {

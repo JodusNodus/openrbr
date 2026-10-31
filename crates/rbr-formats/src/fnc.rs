@@ -150,8 +150,7 @@ pub fn parse(bytes: &[u8]) -> Result<FncFile, Error> {
     groups.try_reserve_exact(group_count).map_err(|_| Error::Allocation { offset, count: group_count })?;
 
     for _ in 0..group_count {
-        let post_count =
-            le::read_u32_le(bytes, offset)? as usize;
+        let post_count = le::read_u32_le(bytes, offset)? as usize;
         offset += 4;
 
         le::need(bytes, offset, GROUP_HEADER_LEN)?;
@@ -204,14 +203,11 @@ pub fn parse(bytes: &[u8]) -> Result<FncFile, Error> {
     if group_count == 0 {
         ignored_tail.extend_from_slice(&bytes[offset..]);
     } else {
-        let texture_count =
-            le::read_u32_le(bytes, offset)? as usize;
+        let texture_count = le::read_u32_le(bytes, offset)? as usize;
         offset += 4;
 
         if texture_count != 0 {
-            let name_len =
-                le::read_u32_le(bytes, offset)?
-                    as usize;
+            let name_len = le::read_u32_le(bytes, offset)? as usize;
             offset += 4;
             if texture_count > bytes.len() {
                 return Err(Error::Truncated { offset, needed: texture_count, len: bytes.len() });
