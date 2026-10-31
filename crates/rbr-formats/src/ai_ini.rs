@@ -446,6 +446,52 @@ mod tests {
         assert_eq!(parse_time("4.225"), 4.225);
     }
 
+    /// 90 mistake cells, 5 skill mods, 10 par times, 16 injury bands, the ignore chance, 8 repair pairs, 3 blow
+    /// limits, 6 breakdown numbers, 5 temperaments of 7 times, then empty accident, mistake, penalty and track lists.
+    fn small_master(first: &str) -> String {
+        let mut words = vec!["7"; 90 + 5 + 10 + 16 + 1 + 16 + 3 + 6 + 35];
+        words[0] = first;
+        words.extend(["0", "0", "0", "0"]);
+        words.join(" ")
+    }
+
+    #[test]
+    fn small_master_reads_values_in_file_order() {
+        let m = parse_master(&small_master("20")).unwrap();
+        assert_eq!(m.mistakes[0][..2], [20, 7]);
+        assert_eq!(m.mistakes[4][17], 7);
+        assert_eq!(m.skill_mods, [7; 5]);
+        assert_eq!((m.par_low[0], m.par_high[4]), (7.0, 7.0));
+        assert_eq!((m.driver_injury[0], m.codriver_injury[7]), (7, 7));
+        assert_eq!(m.ignore_speciality, 7);
+        assert_eq!((m.repair_value[0], m.repair_time[7]), (7, 7));
+        assert_eq!(m.blow_limits, [7; 3]);
+        assert_eq!((m.breakdown_base, m.breakdown_durability), ([7; 3], [7; 3]));
+        assert_eq!(m.temperaments[0].mood_resistance, [7.0; 5]);
+        assert!(m.accident_tables.is_empty() && m.mistake_types.is_empty());
+        assert!(m.damage_penalties.is_empty() && m.tracks.is_empty());
+    }
+
+    #[test]
+    fn small_roster_reads_one_driver() {
+        let r = parse_roster("1\nPablo\n5\n1\n2\n1 2 3 4\n6\n7\n8\n9\n10\nRod\n0\n0\n").unwrap();
+        assert_eq!(r.drivers.len(), 1);
+        let d = &r.drivers[0];
+        assert_eq!((d.name.as_str(), d.codriver.as_str()), ("Pablo", "Rod"));
+        assert_eq!((d.photo, d.technique, d.temperament), (5, 1, 2));
+        assert_eq!(d.skills, [1, 2, 3, 4]);
+        assert_eq!((d.speed, d.endurance, d.condition, d.history, d.nationality), (6, 7, 8, 9, 10));
+        assert!(r.teams.is_empty() && r.cars.is_empty());
+    }
+
+    #[test]
+    fn short_texts_fail_at_their_line() {
+        assert_eq!(parse_master("").unwrap_err(), "unexpected end at line 1");
+        assert_eq!(parse_master("20 15").unwrap_err(), "unexpected end at line 2");
+        assert_eq!(parse_roster("").unwrap_err(), "unexpected end at line 1");
+        assert_eq!(parse_roster("1\n").unwrap_err(), "unexpected end before a name");
+    }
+
     fn read(data: &crate::data::Data, name: &str) -> String {
         use std::io::Read;
         let mut zip = crate::rbz::open(&data.resolve("Root/misc.rbz").unwrap()).unwrap();

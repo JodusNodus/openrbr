@@ -573,6 +573,20 @@ mod tests {
     }
 
     #[test]
+    fn numbers_kinds_and_trailing_fail_with_their_section() {
+        let bad = SAMPLE.replacen("10 ;air friction", "x ;air friction", 1);
+        assert_eq!(parse(&bad), Err(Error::Number { section: "general settings", token: "x".into() }));
+        // An integer takes the leading digits, like the loader's `atoi`-style reads (`1.0` in community files).
+        let lenient = SAMPLE.replacen("\n13\n", "\n13.5\n", 1);
+        assert_eq!(parse(&lenient).unwrap().classes[0].sprite, 13);
+        // One emitter class of an unknown shape (16 leaf floats, the air friction, no classes, then it).
+        let one = format!("version3\n{}0\n0\n1\ne\n9\n", "0 ".repeat(16));
+        assert_eq!(parse(&one), Err(Error::Kind { section: "emitter classes", kind: 9 }));
+        let trailing = SAMPLE.replacen("$ ignored", "extra\n$ ignored", 1);
+        assert_eq!(parse(&trailing), Err(Error::Trailing("extra".into())));
+    }
+
+    #[test]
     fn texture_list_and_sprite_names() {
         let names = parse_textures("; n\n2\nTextures\\a.tga ;0\nTextures\\b_c.tga\n;\n$").unwrap();
         assert_eq!(names, ["Textures\\a.tga", "Textures\\b_c.tga"]);

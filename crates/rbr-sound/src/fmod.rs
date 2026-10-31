@@ -741,6 +741,25 @@ mod tests {
     }
 
     #[test]
+    fn stereo_pcm_is_mixed_down_to_mono() {
+        let mut bytes = Vec::new();
+        for s in [1000i16, 3000, -1000, -3000] {
+            bytes.extend_from_slice(&s.to_le_bytes());
+        }
+        let sample = Sample {
+            name: "s".into(),
+            rate: 44100,
+            channels: 2,
+            frames: 2,
+            vorbis_crc: None,
+            codec: fmod::PCM16,
+            data: 0..8,
+        };
+        let bank = Bank { bytes, samples: vec![sample.clone()], params: Vec::new(), events: Vec::new(), buses: Vec::new() };
+        assert_eq!(decode(&bank, &sample).unwrap(), Wave { rate: 44100, samples: vec![2000.0, -2000.0] });
+    }
+
+    #[test]
     fn a_layer_plays_in_its_region_with_its_fades_and_auto_pitch() {
         let at = |rpm: f32, throttle: Option<f32>| play(&layer(), |k| if k == 0 { Some(rpm) } else { throttle });
         assert_eq!(at(1000.0, Some(1.0)), None);
