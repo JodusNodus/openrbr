@@ -295,18 +295,19 @@ fn load_scene<'scope, 'env>(
                         if let Some(root) = rsf.filter(|_| args.enhance.cabin && dials.is_some()) {
                             mark_gauges(root, car_name, &mut stage, &mut interior);
                         }
-                        let mirrors = (args.enhance.mirrors != mirrors::Rate::Off)
-                            .then(|| -> Result<_, String> {
-                                let eye = Mounts::load(data, car_name, lo, hi, &model, &interior)?.cockpit.eye;
-                                let found = mirrors::add(&mut stage, &mut interior, &mut interior_damage, eye);
-                                eprintln!(
-                                    "mirrors: {} found, {} face sets not flat",
-                                    found.mirrors.len(),
-                                    found.unfitted.len()
-                                );
-                                Ok(found.mirrors)
-                            })
-                            .transpose()?;
+                        // Before the mirrors are marked: marking copies their vertices where they are, so the views
+                        // stay the same.
+                        let mut car_mounts = Mounts::load(data, car_name, lo, hi, &model, &interior)?;
+                        let mirrors = (args.enhance.mirrors != mirrors::Rate::Off).then(|| {
+                            let eye = car_mounts.cockpit.eye;
+                            let found = mirrors::add(&mut stage, &mut interior, &mut interior_damage, eye);
+                            eprintln!(
+                                "mirrors: {} found, {} face sets not flat",
+                                found.mirrors.len(),
+                                found.unfitted.len()
+                            );
+                            found.mirrors
+                        });
                         crew = load_crew(data, car_name, &mut stage, args);
                         // With the `--at` frames that first list a detached part (`start_live`).
                         let (process, drive, detaching) =
@@ -350,7 +351,6 @@ fn load_scene<'scope, 'env>(
                             live: live.is_some(),
                         };
                         ghost = Some(ghost::Session::load(data, &mut stage, name, car_name, &loaded, options)?);
-                        let mut car_mounts = Mounts::load(data, car_name, lo, hi, &model, &interior)?;
                         cameras.apply(&mut car_mounts, &mut loaded);
                         playback = Some(loaded);
                         mounts = Some(car_mounts);
