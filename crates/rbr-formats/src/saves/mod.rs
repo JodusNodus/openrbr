@@ -93,10 +93,6 @@ impl SaveDir {
         self.store(&Kind::Profile.file_name(name), &file.write()?)
     }
 
-    pub fn load_action_map(&self, name: &str) -> Result<action_map::ActionMap, Error> {
-        action_map::ActionMap::read(&fs::read(self.path.join(Kind::ActionMap.file_name(name)))?)
-    }
-
     pub fn load_results(&self) -> Result<results::Results, Error> {
         results::Results::read(&fs::read(self.path.join(Kind::Results.file_name("result")))?)
     }
