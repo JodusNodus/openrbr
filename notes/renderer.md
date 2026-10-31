@@ -158,6 +158,9 @@ Rally3 Evo, 1280x720: 63.9 fps render, replay 16920 of 16920 frames equal, video
 - The backdrop's pieces have no bounds (no reach, no levels); each view culls them by their vertices' box
   (`GpuMesh::backdrop_bounds`, 2026-10-31): 580 chase 2.04M to 1.85M triangles, surroundings cube face 0.51 to
   0.35 ms, frames byte-identical.
+- Load (`Renderer::with_progress`): the meshes' drawn vertices (`sun::with_normals`, `foliage::with_plants`, ...) are
+  made over the load's threads 1024 meshes at a time, the uploads in order (2026-10-31): 580 renderer creation to the
+  sky occlusion bake 5.0 to 4.1 s, byte-identical.
 - Object lanes `(1,1)` (`stage::OBJECT_ALPHA_REF`, kind-byte address modes).
 - Interactive props `(1,6)` (`stage/mod.rs` `InteractivePose`): every retail record drawn at its placement while its
   cell shows; live moves a woken prop by its solid's pose. The car's glass (no depth write) goes over them.

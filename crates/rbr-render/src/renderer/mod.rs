@@ -16,7 +16,7 @@ use crate::post::{Post, SCENE_FORMAT};
 use crate::profile::Profiler;
 use crate::puddles;
 use crate::skylight::{self, SkyLight};
-use crate::stage::{Anchor, Draw, Image, Layer, Lod, Stage, TextureRef, Weather};
+use crate::stage::{Anchor, Draw, Image, Layer, Lod, Mesh, Stage, TextureRef, Weather};
 use crate::start_board::{self, StartBoard, StartLamp};
 use crate::sun::{self, Cascades, SunShadow};
 use crate::terrain_detail;
@@ -502,6 +502,31 @@ impl Renderer {
         let (solid, blended) = stage.meshes.split_at(first_blended.unwrap_or(stage.meshes.len()));
         let mut interactive_slots = HashMap::with_capacity(stage.interactive.len());
         let over = crate::sky_dome::Over::of(&stage.meshes);
+        // A stage mesh's vertices as drawn, when they are not its own: the sun's light needs the normals the baked stage
+        // draws do not store, the sun's shadows the plants. The grass's tile meshes (`Lod::Close`) have none to light:
+        // `Renderer::stream_grass` gives them their cards' vertices. Their zeroed ones, all in one place, made grouping
+        // the plants into trees quadratic: 5 s of the load on 580.
+        let lit = enhance.lighting || enhance.wet || timed;
+        let prepare = |mesh: &Mesh| {
+            let grass = mesh.draws.iter().all(|draw| draw.lod == Lod::Close);
+            (lit && !grass).then(|| {
+                let mut vertices = sun::with_normals(mesh);
+                // The fences carry their own light (`fences::FENCE`).
+                if mesh.anchor == Anchor::World && !crate::fences::is_fence(mesh) {
+                    if let Some(ground) = &ground {
+                        vertices = ground.on_foliage(vertices, mesh);
+                    }
+                    vertices = foliage::with_plants(vertices, mesh, plant);
+                    if let Some(heights) = &heights {
+                        vertices = puddles::with_lowness(vertices, mesh, heights);
+                    }
+                }
+                vertices
+            })
+        };
+        // Made over the load's threads 1024 meshes at a time, bounding the vertices held; the uploads stay in order.
+        // One after another they took 1.2 s of the load on 580.
+        let mut prepared = stage.meshes.chunks(1024).flat_map(|part| in_parallel(part, prepare));
         let meshes_and_props = solid.iter().map(Some).chain([None]).chain(blended.iter().map(Some));
         for (done, mesh) in meshes_and_props.enumerate() {
             progress(done as f32 / (stage.meshes.len() + 1) as f32);
@@ -546,6 +571,7 @@ impl Renderer {
                 }
                 continue;
             };
+            let drawn = prepared.next().expect("one per stage mesh");
             // Under the physically based sky a sky dome is left out: the sky is ours (`crate::sky_dome`).
             let sky_dome = over.as_ref().is_some_and(|o| o.roofed_by(mesh));
             if mesh.draws.is_empty() || (sky_dome && enhance.lighting) {
@@ -553,28 +579,9 @@ impl Renderer {
                 continue;
             }
             slots.push(Some(meshes.len()));
-            // The sun's light needs the normals the baked stage draws do not store, the sun's shadows the plants. The
-            // grass's tile meshes (`Lod::Close`) have none to light: `Renderer::stream_grass` gives them their cards'
-            // vertices. Their zeroed ones, all in one place, made grouping the plants into trees quadratic: 5 s of the
-            // load on 580.
             let backdrop = mesh.anchor == Anchor::World && mesh.layer == Layer::Sky;
-            let grass = mesh.draws.iter().all(|draw| draw.lod == Lod::Close);
-            let (slot, first_index) = if (enhance.lighting || enhance.wet || timed) && !grass {
-                let mut vertices = sun::with_normals(mesh);
-                // The fences carry their own light (`fences::FENCE`).
-                if mesh.anchor == Anchor::World && !crate::fences::is_fence(mesh) {
-                    if let Some(ground) = &ground {
-                        vertices = ground.on_foliage(vertices, mesh);
-                    }
-                    vertices = foliage::with_plants(vertices, mesh, plant);
-                    if let Some(heights) = &heights {
-                        vertices = puddles::with_lowness(vertices, mesh, heights);
-                    }
-                }
-                packing.add(&device, &vertices, &mesh.indices, backdrop)
-            } else {
-                packing.add(&device, &mesh.vertices, &mesh.indices, backdrop)
-            };
+            let drawn = drawn.as_deref().unwrap_or(&mesh.vertices);
+            let (slot, first_index) = packing.add(&device, drawn, &mesh.indices, backdrop);
             // A mirror's glass (`mirrors::mark`): a lit draw with a marked corner.
             let mirror = |draw: &Draw| {
                 enhance.mirrors != crate::mirrors::Rate::Off
