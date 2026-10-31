@@ -10,8 +10,10 @@
 //!
 //! [`add`] keeps the ground's triangles by [`TILE`] square tile (a [`Field`]); the stage holds [`SLOTS`] tile meshes,
 //! and the renderer keeps those of the tiles about the eye filled with all their cards ([`Ring`]), each in the
-//! smallest free mesh that holds them, drawn within [`CLOSE_DISTANCE`] ([`Lod::Close`]); the shader flattens them into
-//! the ground over the last metres of [`REACH`] (`GRASS_FADE`), so they rise in rather than pop. A worker
+//! smallest free mesh that holds them, drawn within [`CLOSE_DISTANCE`] ([`Lod::Close`]): all of them near and a
+//! thinning share further out ([`density`], [`take`]). The shader shrinks each card into the ground by its rank against
+//! the density where it stands, and all of them over the last metres of [`REACH`] (`GRASS_THIN`, `GRASS_FADE`), so the
+//! field thins and thickens smoothly rather than popping at share steps. A worker
 //! thread makes the cards off the frame ([`Ring::update`]), the frame only uploading finished tiles. They
 //! are cut-out stage draws marked as grass tufts, so the plants' lighting takes them (`tuft_light` in `shader.wgsl`)
 //! and they cast no sun shadow; they take the sky's occlusion and the bounce computed at load for the ground under
@@ -43,18 +45,26 @@ const LEVEL: f32 = 0.45;
 /// The side of the square tiles, metres.
 const TILE: f32 = 8.0;
 /// How far from the eye grass draws, metres: the tiles with their middle within this of the eye stream in and draw
-/// ([`CLOSE_DISTANCE`] covers a tile past it), full to 10 m short of it and flattened into the ground over those
-/// (`GRASS_FADE` in `shader.wgsl`, which the ground under it fades its thatch over too).
+/// ([`CLOSE_DISTANCE`] covers a tile past it), flattened into the ground over its last 10 m (`GRASS_FADE` in
+/// `shader.wgsl`, which the ground under it fades its thatch over too).
 pub(crate) const REACH: f32 = 110.0;
+/// The grass is full within [`FULL_DENSE`] metres of the eye, then halves every [`HALVING`] ([`density`]).
+const FULL_DENSE: f32 = 50.0;
+const HALVING: f32 = 25.0;
+/// A tile holds this much more of its cards than its density draws: the shader shrinks those past the density into
+/// the ground (`GRASS_THIN` in `shader.wgsl`), so the field thins and thickens smoothly rather than popping.
+const GROW_MARGIN: f32 = 1.5;
+/// The steps of a tile's share of its cards ([`take`]): a tile rebuilds when its share crosses one.
+const LADDER: f32 = 24.0;
 /// How far past [`REACH`], about the eye a few frames ahead along its motion, tiles are built before the eye needs
 /// them.
 const PREFETCH: f32 = 16.0;
 /// The tile meshes the stage holds, filled with the tiles about the eye: how many hold up to how many cards. Each
 /// tile takes the smallest free one that holds its cards; the ground with none takes none. Sized for every grassy tile
-/// within [`REACH`] of the RSF stages 580, 621, 532, 450, 417, 176 and retail 52 (the farthest of a few at Odry 462's
-/// densest spot go without), in about 650 MB of video memory ([`tests::slots_fit_video_budget`]).
+/// within [`REACH`] of the RSF stages 580, 621, 532, 450, 417, 176 and retail 52 at their shares (the farthest of a
+/// few at Odry 462's densest spot go without), in about 540 MB of video memory ([`tests::slots_fit_video_budget`]).
 const SLOTS: [(usize, usize); 9] =
-    [(60, 6400), (50, 5600), (60, 4800), (60, 4000), (60, 3200), (60, 2400), (70, 1600), (70, 800), (90, 400)];
+    [(40, 6400), (40, 5600), (50, 4800), (50, 4000), (50, 3200), (60, 2400), (70, 1600), (80, 800), (100, 400)];
 /// The most cards a tile holds: its clumps at [`DENSITY`], with room for ground laid over ground.
 const CAPACITY: usize = (TILE * TILE * DENSITY * 2.0 * 1.25) as usize;
 /// The tiles built on the frame itself, within this of the eye, so the near field is there on the first frame and
@@ -146,7 +156,8 @@ struct Ground {
 }
 
 /// One card of grass: its foot's middle, the ground's normal there, half its width across (x and z), its top's lean,
-/// its height, its brightness against the texture's ([`GRASS_MARK`]), its tint, its picture and the ground's light.
+/// its height, its brightness against the texture's ([`GRASS_MARK`]), its tint, its picture, the ground's light and its
+/// rank.
 #[derive(Clone, Copy)]
 struct Card {
     at: Vec3,
@@ -158,6 +169,8 @@ struct Card {
     hue: [u8; 3],
     picture: usize,
     light: Light,
+    /// Its rank in the tile's cards, 0 to 1: drawn where the density reaches it ([`take`], `GRASS_THIN`).
+    keep: f32,
 }
 
 /// The light the load computes for a ground vertex, unpacked: how little of the sky it sees
@@ -279,8 +292,7 @@ pub fn add(stage: &mut Stage) -> Option<Field> {
             }
         }
     }
-    let slots =
-        SLOTS.iter().flat_map(|&(count, capacity)| (0..count).map(move |_| slot_mesh(texture, capacity)));
+    let slots = SLOTS.iter().flat_map(|&(count, capacity)| (0..count).map(move |_| slot_mesh(texture, capacity)));
     stage.meshes.splice(blended..blended, slots);
     stage
         .texture_names
@@ -290,8 +302,14 @@ pub fn add(stage: &mut Stage) -> Option<Field> {
 }
 
 impl Field {
-    /// The cards of `tile`, up to `capacity` of them, lit by `light`, each triangle's corners' (none: open sky).
-    fn cards(&self, tile: (i32, i32), capacity: usize, light: &[[Light; 3]]) -> Vec<Card> {
+    /// The cards of a tile at its share ([`step_of`]), as many as a tile holds.
+    fn cards_of(&self, (tile, step): Held, light: &[[Light; 3]]) -> Vec<Card> {
+        self.cards(tile, step as f32 / LADDER, CAPACITY, light)
+    }
+
+    /// The cards of `tile` ranked under `take` (0 to 1, an even subset: the same cards at any share that holds them),
+    /// up to `capacity` of them, lit by `light`, each triangle's corners' (none: open sky).
+    fn cards(&self, tile: (i32, i32), take: f32, capacity: usize, light: &[[Light; 3]]) -> Vec<Card> {
         let mut cards = Vec::new();
         let Some(list) = self.tiles.get(&tile) else { return cards };
         let luma = |c: Vec3| c.powf(2.2).dot(Vec3::new(0.2126, 0.7152, 0.0722));
@@ -322,10 +340,10 @@ impl Field {
             };
             for _ in 0..wanted as usize {
                 // Every card draws the same numbers whatever it becomes, so the sequence holds across tiles and shares.
-                let [a, b, _, chance, turn, width, height, pick, lean, lean_turn] = [0; 10].map(|_| random.next());
+                let [a, b, keep, chance, turn, width, height, pick, lean, lean_turn] = [0; 10].map(|_| random.next());
                 let (a, b) = if a + b > 1.0 { (1.0 - a, 1.0 - b) } else { (a, b) };
                 let at = p[0] * (1.0 - a - b) + p[1] * a + p[2] * b;
-                if tile_of(at) != tile {
+                if tile_of(at) != tile || keep >= take {
                     continue;
                 }
                 let distance = self.line.distance(at.xz());
@@ -365,6 +383,7 @@ impl Field {
                     hue: [hue.x as u8, hue.y as u8, hue.z as u8],
                     picture: kind.picture(pick),
                     light: Light::blend(&corners, [1.0 - a - b, a, b]),
+                    keep,
                 };
                 // The other card across it, a little shorter, with another picture of its kind.
                 let crossed = Card {
@@ -456,6 +475,18 @@ fn tile_of(p: Vec3) -> (i32, i32) {
     ((p.x / TILE).floor() as i32, (p.z / TILE).floor() as i32)
 }
 
+/// The density of the grass `distance` metres from the eye: full within [`FULL_DENSE`], halving every [`HALVING`]
+/// past it (`grass_density` in `shader.wgsl` is the same).
+fn density(distance: f32) -> f32 {
+    0.5f32.powf((distance - FULL_DENSE) / HALVING).min(1.0)
+}
+
+/// The share of a tile's cards its mesh holds where the density is `density`: that and the [`GROW_MARGIN`] past it, up
+/// to all of them, on the [`LADDER`]'s steps, as a step (1 to 24).
+fn step_of(density: f32) -> u32 {
+    ((density * GROW_MARGIN * LADDER).ceil() as u32).clamp(1, LADDER as u32)
+}
+
 /// An empty tile mesh of `capacity` cards' vertices, all zero (no area) until it is filled, and no bounds, so that the
 /// load's bakes over the stage's extent leave it out.
 fn slot_mesh(texture: TextureRef, capacity: usize) -> Mesh {
@@ -486,14 +517,12 @@ fn slot_mesh(texture: TextureRef, capacity: usize) -> Mesh {
     }
 }
 
-/// A tile mesh's build job for the worker thread: the tile.
-struct Job {
-    tile: (i32, i32),
-}
+/// A tile and the share of its cards it is built with: the tile and its [`step_of`].
+type Held = ((i32, i32), u32);
 
 /// A finished tile: its cards' vertices and their bounds.
 struct Done {
-    tile: (i32, i32),
+    held: Held,
     vertices: Vec<Vertex>,
     bounds: Bounds,
 }
@@ -502,22 +531,22 @@ struct Done {
 struct Slot {
     mesh: usize,
     capacity: usize,
-    held: Option<(i32, i32)>,
+    held: Option<Held>,
 }
 
 /// The tile meshes, and what each holds, filled about the eye ([`Ring::update`]). The cards are made on a worker
-/// thread ([`Job`]); the frame only uploads finished tiles ([`Done`]).
+/// thread; the frame only uploads finished tiles ([`Done`]).
 pub(crate) struct Ring {
     field: Arc<Field>,
     slots: Vec<Slot>,
     /// Each ground triangle's corners' light ([`Field::corners`]).
     light: Arc<Vec<[Light; 3]>>,
-    jobs: Option<std::sync::mpsc::SyncSender<Job>>,
+    jobs: Option<std::sync::mpsc::SyncSender<Held>>,
     done: std::sync::mpsc::Receiver<Done>,
-    in_flight: HashSet<(i32, i32)>,
+    in_flight: HashSet<Held>,
     ready: Vec<Done>,
     /// The tiles built with no cards: no mesh holds them, and they are not built again while wanted.
-    bare: HashSet<(i32, i32)>,
+    bare: HashSet<Held>,
     last_eye: Option<Vec3>,
     worker: Option<std::thread::JoinHandle<()>>,
 }
@@ -532,22 +561,22 @@ impl Drop for Ring {
     }
 }
 
-/// The worker thread making the tiles' cards ([`Job`] in, [`Done`] out): one end of each channel and its handle.
+/// The worker thread making the tiles' cards ([`Held`] in, [`Done`] out): one end of each channel and its handle.
 /// Respawned when it dies ([`Ring::update`]): the frame then only ever loses far tiles for a frame.
 fn spawn_worker(
     field: &Arc<Field>,
     light: &Arc<Vec<[Light; 3]>>,
-) -> (std::sync::mpsc::SyncSender<Job>, std::sync::mpsc::Receiver<Done>, Option<std::thread::JoinHandle<()>>) {
-    let (jobs, receive) = std::sync::mpsc::sync_channel::<Job>(16);
+) -> (std::sync::mpsc::SyncSender<Held>, std::sync::mpsc::Receiver<Done>, Option<std::thread::JoinHandle<()>>) {
+    let (jobs, receive) = std::sync::mpsc::sync_channel::<Held>(16);
     let (send, done) = std::sync::mpsc::channel::<Done>();
     let background = field.clone();
     let worker_light = light.clone();
     let worker = std::thread::Builder::new()
         .name("grass".into())
         .spawn(move || {
-            while let Ok(job) = receive.recv() {
-                let (vertices, bounds) = tile_vertices(&background.cards(job.tile, CAPACITY, &worker_light));
-                if send.send(Done { tile: job.tile, vertices, bounds }).is_err() {
+            while let Ok(held) = receive.recv() {
+                let (vertices, bounds) = tile_vertices(&background.cards_of(held, &worker_light));
+                if send.send(Done { held, vertices, bounds }).is_err() {
                     break;
                 }
             }
@@ -603,79 +632,93 @@ impl Ring {
             let r = (radius / TILE).ceil() as i32;
             (cx - r..=cx + r).flat_map(move |x| (cz - r..=cz + r).map(move |z| (x, z)))
         };
+        // A tile's share by its nearest point to the eye, so none of its cards the shader grows is missing.
+        let held = |tile: (i32, i32), at: Vec3| {
+            let d = centre(tile).distance(at.xz());
+            (tile, step_of(density((d - TILE * std::f32::consts::FRAC_1_SQRT_2).max(0.0))))
+        };
         // The drawn tiles: ground within reach of the eye, nearest first.
         let reach = REACH + TILE;
-        let mut wanted: Vec<((i32, i32), f32)> = range(eye, reach)
+        let mut wanted: Vec<(Held, f32)> = range(eye, reach)
             .filter(|tile| self.field.tiles.contains_key(tile))
-            .map(|tile| (tile, centre(tile).distance(eye.xz())))
+            .map(|tile| (held(tile, eye), centre(tile).distance(eye.xz())))
             .filter(|&(_, d)| d < reach)
             .collect();
         wanted.sort_by(|a, b| a.1.total_cmp(&b.1));
         // Tiles past the draw reach the eye is heading for: built early, into free meshes only.
-        let mut early: Vec<((i32, i32), f32)> = range(predicted, reach + PREFETCH)
+        let mut early: Vec<(Held, f32)> = range(predicted, reach + PREFETCH)
             .filter(|tile| self.field.tiles.contains_key(tile))
             .filter(|&tile| centre(tile).distance(eye.xz()) >= reach)
-            .map(|tile| (tile, centre(tile).distance(predicted.xz())))
+            .map(|tile| (held(tile, predicted), centre(tile).distance(predicted.xz())))
             .collect();
         early.sort_by(|a, b| a.1.total_cmp(&b.1));
         early.truncate(8);
-        let drawn: HashSet<(i32, i32)> = wanted.iter().map(|&(t, _)| t).collect();
-        let ahead: HashSet<(i32, i32)> = early.iter().map(|&(t, _)| t).collect();
-        self.bare.retain(|t| drawn.contains(t) || ahead.contains(t));
-        self.ready.retain(|done| drawn.contains(&done.tile) || ahead.contains(&done.tile));
-        let built = |ring: &Ring, tile: (i32, i32)| {
-            ring.bare.contains(&tile)
-                || ring.in_flight.contains(&tile)
-                || ring.ready.iter().any(|done| done.tile == tile)
-                || ring.slots.iter().any(|s| s.held == Some(tile))
+        let drawn: HashSet<Held> = wanted.iter().map(|&(h, _)| h).collect();
+        let ahead: HashSet<Held> = early.iter().map(|&(h, _)| h).collect();
+        let kept = |h: &Held| drawn.contains(h) || ahead.contains(h);
+        self.bare.retain(kept);
+        self.ready.retain(|done| kept(&done.held));
+        let built = |ring: &Ring, h: Held| {
+            ring.bare.contains(&h)
+                || ring.in_flight.contains(&h)
+                || ring.ready.iter().any(|done| done.held == h)
+                || ring.slots.iter().any(|s| s.held == Some(h))
         };
         // The drawn tiles first, nearest first, then the early ones.
-        for &(tile, dist) in wanted.iter().chain(&early) {
-            if built(self, tile) {
+        for &(h, dist) in wanted.iter().chain(&early) {
+            if built(self, h) {
                 continue;
             }
-            if dist < SYNC_DISTANCE && drawn.contains(&tile) {
-                let (vertices, bounds) = tile_vertices(&self.field.cards(tile, CAPACITY, &self.light));
-                self.ready.push(Done { tile, vertices, bounds });
-            } else if self.jobs.as_ref().is_some_and(|jobs| jobs.try_send(Job { tile }).is_ok()) {
-                self.in_flight.insert(tile);
+            if dist < SYNC_DISTANCE && drawn.contains(&h) {
+                let (vertices, bounds) = tile_vertices(&self.field.cards_of(h, &self.light));
+                self.ready.push(Done { held: h, vertices, bounds });
+            } else if self.jobs.as_ref().is_some_and(|jobs| jobs.try_send(h).is_ok()) {
+                self.in_flight.insert(h);
             } else {
                 // The worker is busy: leave the tile for a later frame.
                 break;
             }
         }
         for done in self.done.try_iter() {
-            self.in_flight.remove(&done.tile);
-            if drawn.contains(&done.tile) || ahead.contains(&done.tile) {
+            self.in_flight.remove(&done.held);
+            if kept(&done.held) {
                 self.ready.push(done);
             }
         }
         // Upload the finished tiles nearest first: the drawn ones, then the early ones with what is left.
-        let distance = |tile: (i32, i32)| centre(tile).distance(eye.xz());
+        let distance = |h: Held| centre(h.0).distance(eye.xz());
         let mut ready = std::mem::take(&mut self.ready);
         ready.sort_by(|a, b| {
-            drawn.contains(&b.tile).cmp(&drawn.contains(&a.tile)).then(distance(a.tile).total_cmp(&distance(b.tile)))
+            drawn.contains(&b.held).cmp(&drawn.contains(&a.held)).then(distance(a.held).total_cmp(&distance(b.held)))
         });
         let mut filled = Vec::new();
         let mut bytes = 0;
         for done in ready {
             if done.vertices.is_empty() {
-                self.bare.insert(done.tile);
+                self.bare.insert(done.held);
                 continue;
             }
             let size = done.vertices.len() * size_of::<Vertex>();
             let cards = done.vertices.len() / 4;
-            let early = !drawn.contains(&done.tile);
+            let early = !drawn.contains(&done.held);
             let slot = self
                 .slots
                 .iter_mut()
-                .filter(|s| s.capacity >= cards && s.held.is_none_or(|t| !early && !drawn.contains(&t) && !ahead.contains(&t)))
+                .filter(|s| s.capacity >= cards && s.held.is_none_or(|h| !early && !kept(&h)))
                 .min_by_key(|s| s.capacity);
             match slot {
                 Some(slot) if filled.len() < UPLOAD_TILES && bytes + size <= UPLOAD_BYTES => {
                     bytes += size;
-                    slot.held = Some(done.tile);
-                    filled.push((slot.mesh, done.vertices, done.bounds));
+                    slot.held = Some(done.held);
+                    let mesh = slot.mesh;
+                    filled.push((mesh, done.vertices, done.bounds));
+                    // The tile at its other share draws no more.
+                    for other in
+                        self.slots.iter_mut().filter(|s| s.mesh != mesh && s.held.is_some_and(|h| h.0 == done.held.0))
+                    {
+                        other.held = None;
+                        filled.push((other.mesh, Vec::new(), Bounds { center: Vec3::ZERO, half_extent: Vec3::ZERO }));
+                    }
                 }
                 _ => self.ready.push(done),
             }
@@ -713,8 +756,8 @@ fn tile_vertices(cards: &[Card]) -> (Vec<Vertex>, Bounds) {
                 specular: [GRASS_MARK + card.bright, 1.0, 1.0],
                 wet: if top { 1.0 } else { FOOT },
                 uv1: (way * side).to_array(),
-                // The top's height, for the wind (`grass_sway` in `shader.wgsl`).
-                uv2: [if top { card.height } else { 0.0 }, 0.0],
+                // The top's height, for the wind (`grass_sway` in `shader.wgsl`), and the card's rank (`GRASS_THIN`).
+                uv2: [if top { card.height } else { 0.0 }, card.keep],
                 occlusion,
                 sky_dir,
                 bounce,
@@ -1058,6 +1101,17 @@ mod tests {
     }
 
     #[test]
+    fn density_is_full_to_fifty_metres_then_halves_every_twenty_five() {
+        assert_eq!(density(0.0), 1.0);
+        assert_eq!(density(FULL_DENSE), 1.0);
+        assert!((density(75.0) - 0.5).abs() < 1e-6, "{}", density(75.0));
+        assert!((density(100.0) - 0.25).abs() < 1e-6, "{}", density(100.0));
+        assert_eq!(step_of(1.0), LADDER as u32);
+        assert_eq!(step_of(0.5), 18);
+        assert_eq!(step_of(0.0), 1);
+    }
+
+    #[test]
     fn patches_stay_in_range() {
         for k in 0..500 {
             let p = Vec2::new(k as f32 * 0.37 - 90.0, k as f32 * 1.13 - 300.0);
@@ -1069,12 +1123,12 @@ mod tests {
     #[test]
     fn slots_fit_video_budget() {
         // The fullest tile has a mesh to fit, and the vertices and indices of every tile mesh, and the grass texture
-        // with its mips, are under 700 MB.
+        // with its mips, are under 600 MB.
         assert!(SLOTS.iter().any(|&(_, capacity)| capacity >= CAPACITY));
         let cards: usize = SLOTS.iter().map(|&(count, capacity)| count * capacity).sum();
         let bytes = cards * 4 * size_of::<Vertex>()
             + cards * 6 * size_of::<u32>()
             + (PICTURE.0 * COLUMNS * PICTURE.1 * ROWS * 4) * 4 / 3;
-        assert!(bytes < 700_000_000, "{bytes}");
+        assert!(bytes < 600_000_000, "{bytes}");
     }
 }

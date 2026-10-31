@@ -410,8 +410,8 @@ fn vertex(input: VertexIn) -> VertexOut {
     out.uv2 = v.uv2;
     out.world = v.position;
     if (is_grass_top(v)) {
-        // Flattened into the ground at the far edge of the grass (`GRASS_FADE`).
-        let height = v.uv2.x * smoothstep(GRASS_FADE.y, GRASS_FADE.x, distance(v.position, frame.eye.xyz));
+        // Shrunk into the ground past the density where it stands and at the far edge of the grass.
+        let height = v.uv2.x * grass_grown(distance(v.position, frame.eye.xyz), v.uv2.y);
         out.world = v.position + vec3<f32>(0.0, height - v.uv2.x, 0.0) + grass_sway(v.position, max(height, 1e-3));
         out.clip = frame.view_projection * vec4<f32>(out.world, 1.0);
     }
@@ -443,6 +443,20 @@ const GRASS_WIND: vec2<f32> = vec2<f32>(0.8, 0.6);
 // The distances from the eye, metres, over which our grass's cards flatten into the ground and drawing ends
 // (`grass::REACH`), and the ground under it fades its thatch (`thatch`).
 const GRASS_FADE: vec2<f32> = vec2<f32>(100.0, 110.0);
+// The grass is full within `GRASS_THIN.x` metres of the eye, then halves every `.y` (`grass::density`); a card of rank
+// `keep` (`grass::Card::keep`) is full height under the density and shrinks into the ground up to `.z` times it
+// (`grass::GROW_MARGIN`).
+const GRASS_THIN: vec3<f32> = vec3<f32>(50.0, 25.0, 1.5);
+
+fn grass_density(d: f32) -> f32 {
+    return min(exp2((GRASS_THIN.x - d) / GRASS_THIN.y), 1.0) * (1.0 - smoothstep(GRASS_FADE.x, GRASS_FADE.y, d));
+}
+
+// How grown a card of rank `keep` is `d` metres from the eye, 0 to 1.
+fn grass_grown(d: f32, keep: f32) -> f32 {
+    let density = grass_density(d);
+    return 1.0 - smoothstep(density, density * GRASS_THIN.z, keep);
+}
 const GRASS_SWAY: f32 = 0.22;
 const GRASS_GUST: vec2<f32> = vec2<f32>(2.5, 1.4);
 const GRASS_FLUTTER: vec2<f32> = vec2<f32>(0.3, 4.3);
@@ -2395,8 +2409,8 @@ fn asphalt_texel(t: texture_2d<f32>, uv: vec2<f32>, dx: vec2<f32>, dy: vec2<f32>
 // colour (`THATCH`: brightness, saturation) by how much grass grows there. That is the grass's own test (`grass::green`,
 // `THATCH_GRASSY` its ranges off the road and on the road mesh) on the ground's colour as it takes it: the texture's mip
 // about 45 texels wide (`THATCH_MIP` levels under its width: the test's 256-texel level blurred over 7) in `GROUND_HUE`
-// of the vertex tint; on faces no steeper than it grows on (`THATCH_UP`, about `grass::LEVEL`), within its reach of the
-// eye (`GRASS_FADE`). Not the band along the driveline it keeps to: the near ground past it is thatched too. `face` is the face's
+// of the vertex tint; on faces no steeper than it grows on (`THATCH_UP`, about `grass::LEVEL`), at its density by the
+// distance from the eye (`grass_density`). Not the band along the driveline it keeps to: the near ground past it is thatched too. `face` is the face's
 // normal, any length.
 const THATCH: vec2<f32> = vec2<f32>(0.82, 1.1);
 const THATCH_GRASSY: array<vec2<f32>, 2> = array<vec2<f32>, 2>(vec2<f32>(0.02, 0.07), vec2<f32>(0.05, 0.11));
@@ -2419,10 +2433,10 @@ fn thatch(colour: vec3<f32>, v: VertexOut, face: vec3<f32>) -> vec3<f32> {
     let range = THATCH_GRASSY[u32(road)];
     let green = smoothstep(range.x, range.y, g.g - g.b - 2.0 * max(g.r - g.g - 0.02, 0.0));
     let up = smoothstep(THATCH_UP.x, THATCH_UP.y, abs(face.y) * inverseSqrt(max(dot(face, face), 1e-12)));
-    let near = smoothstep(GRASS_FADE.y, GRASS_FADE.x, distance(v.world, frame.eye.xyz));
+    let dense = grass_density(distance(v.world, frame.eye.xyz));
     let grey = dot(colour, vec3<f32>(0.2126, 0.7152, 0.0722));
     let thatched = max(mix(vec3<f32>(grey), colour, THATCH.y), vec3<f32>(0.0)) * THATCH.x;
-    return mix(colour, thatched, candidate * green * up * near);
+    return mix(colour, thatched, candidate * green * up * dense);
 }
 
 fn thatch_texel(t: texture_2d<f32>, uv: vec2<f32>) -> vec4<f32> {
