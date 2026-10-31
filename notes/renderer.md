@@ -173,7 +173,8 @@ Rally3 Evo, 1280x720: 63.9 fps render, replay 16920 of 16920 frames equal, video
 - Terrain detail (ours, always on; `terrain_detail.wgsl`, `terrain_detail.rs`, 2026-10-28): the draw's most
   detailed texture window tiled mirrored and triplanar adds its high pass on the near ground (RSF Luceram's 4096
   `z*` atlases, past the upscaler's cap). Load 63-72 ms (52M, 417O); scene pass 1080p 417O rain fly-by 2.74 to 2.84
-  ms (golden fly-by, 580 chase and 1440p similar; `RERBR_NO_TERRAIN_DETAIL` A/B).
+  ms (golden fly-by, 580 chase and 1440p similar; `RERBR_NO_TERRAIN_DETAIL` A/B). The windows are found over the
+  load's threads (2026-10-31): 580's 0.51 s to about 0.05.
 
 ## Atmosphere and sky
 

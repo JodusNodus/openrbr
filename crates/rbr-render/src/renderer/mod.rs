@@ -10,6 +10,7 @@ use crate::effects::Effects;
 use crate::foliage;
 use crate::glass;
 use crate::lights::Lamp;
+use crate::parallel::in_parallel;
 use crate::particles;
 use crate::post::{Post, SCENE_FORMAT};
 use crate::profile::Profiler;
@@ -18,6 +19,7 @@ use crate::skylight::{self, SkyLight};
 use crate::stage::{Anchor, Draw, Image, Layer, Lod, Stage, TextureRef, Weather};
 use crate::start_board::{self, StartBoard, StartLamp};
 use crate::sun::{self, Cascades, SunShadow};
+use crate::terrain_detail;
 use glam::{Mat4, Vec3, Vec4};
 use rbr_formats::dds::{self, Format};
 use std::collections::{BTreeMap, HashMap};
@@ -323,23 +325,28 @@ impl Renderer {
         let samplers = Samplers::new(&device, if enhance.anisotropy { 16 } else { 1 });
         let mut dial_targets = BTreeMap::new();
         let mut glows = BTreeMap::new();
-        let mut detail = BTreeMap::new();
-        // `RERBR_NO_TERRAIN_DETAIL` leaves the terrain detail out (A/B timing; `terrain_detail`).
-        let terrain_detail = std::env::var_os("RERBR_NO_TERRAIN_DETAIL").is_none();
+        // `RERBR_NO_TERRAIN_DETAIL` leaves the terrain detail out (A/B timing; `terrain_detail`). Its windows over the
+        // machine's threads: one after another they took 0.5 s of the load on 580.
+        let detail = if std::env::var_os("RERBR_NO_TERRAIN_DETAIL").is_none() {
+            let dds: Vec<_> = (stage.textures.iter())
+                .filter_map(|(&key, texture)| match texture.image.as_ref()? {
+                    Image::Dds(bytes) => Some((key, bytes)),
+                    _ => None,
+                })
+                .collect();
+            let windows =
+                in_parallel(&dds, |&(key, bytes)| Some((key, terrain_detail::window(&dds::parse(bytes).ok()?)?)));
+            windows.into_iter().flatten().collect()
+        } else {
+            BTreeMap::new()
+        };
         let mut views = Views {
             loaded: stage
                 .textures
                 .iter()
                 .filter_map(|(&key, texture)| {
                     let texture = match texture.image.as_ref()? {
-                        Image::Dds(bytes) => {
-                            let dds = dds::parse(bytes).ok()?;
-                            if let Some(window) = terrain_detail.then(|| crate::terrain_detail::window(&dds)).flatten()
-                            {
-                                detail.insert(key, window);
-                            }
-                            dds_texture(&device, &queue, &dds)
-                        }
+                        Image::Dds(bytes) => dds_texture(&device, &queue, &dds::parse(bytes).ok()?),
                         Image::Solid(texel) => solid_texture(&device, &queue, *texel),
                         Image::Shadow { width, height, pixels } => {
                             luminance_texture(&device, &queue, *width, *height, pixels)
