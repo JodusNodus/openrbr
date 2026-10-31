@@ -1050,7 +1050,7 @@ fn assistance_note(options: ChampionshipOptions) -> String {
     let quick = rbr_gameplay::race_options::RaceOptions::default();
     let settings = options.assist_settings(&quick);
     let penalty = settings.penalty();
-    if rbr_gameplay::flow::assistance_gate(settings, None) {
+    if rbr_gameplay::flow::assistance_gate(settings) {
         format!("{penalty} s penalty")
     } else {
         format!("{penalty} s penalty; a stuck car is not helped back and retires")

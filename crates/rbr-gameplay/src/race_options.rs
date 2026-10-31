@@ -277,7 +277,7 @@ mod tests {
         let penalties: Vec<f32> = Skill::ALL.into_iter().map(|s| settings(s).penalty()).collect();
         assert_eq!(penalties, [10.0, 20.0, 35.0]);
         let gates: Vec<bool> =
-            Skill::ALL.into_iter().map(|s| crate::flow::assistance_gate(settings(s), None)).collect();
+            Skill::ALL.into_iter().map(|s| crate::flow::assistance_gate(settings(s))).collect();
         assert_eq!(gates, [true, true, false]);
     }
 
