@@ -51,7 +51,7 @@ pub trait CarStore: Raw {
     fn ffb_torque(&self, car: u32) -> Real;
     /// Whether the force-feedback output is muted: the entity's output gate.
     fn ffb_muted(&self, car: u32) -> bool;
-    /// The car's setup (`CCar::CDef`) address.
+    /// The car's setup definition address.
     fn def_address(&self, car: u32) -> u32;
     /// The drag coefficient `Cd` (`DragCoefficient`).
     fn drag_coefficient(&self, car: u32) -> f32;
@@ -65,7 +65,7 @@ pub trait CarStore: Raw {
     fn roll_bar_travels(&self, car: u32, i: u32) -> (f32, f32);
     /// The stiffness of anti-roll bar `i` (`AntiRollBarStiffness0` and `1`).
     fn roll_bar_stiffness(&self, car: u32, i: u32) -> f32;
-    /// The car's local inverse inertia diagonal (`vecLocalInverseInertiaDiagonal`).
+    /// The car's local inverse inertia diagonal.
     fn local_inverse_inertia(&self, car: u32) -> Vec3;
     /// The low-pass filtered vector the force step keeps (`0.7` old, `0.3` new). All four lanes are modelled: the blend
     /// runs over four lanes, and lane 3 comes from the walk's copy of its input's lane 3.
@@ -184,8 +184,8 @@ pub trait CarStore: Raw {
     fn wheel_pointers(&self, car: u32) -> [u32; 4];
     /// The object the setup's words land in: the car's setup.
     fn setup_target(&self, car: u32) -> u32;
-    /// The base the body scatters add or subtract: the body's centre of gravity (`vecCenterOfGravity`). None when the
-    /// body's owner has none: the original faults then.
+    /// The base the body scatters add or subtract: the body's centre of gravity. None when the
+    /// body's owner has none.
     fn body_base(&self, body: u32) -> Option<Vec3>;
     /// The `n` points at `out` (four lanes each).
     fn load_points(&self, out: u32, n: u32) -> Vec<Vec4>;
