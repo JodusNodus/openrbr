@@ -21,7 +21,8 @@ pub(crate) struct Post {
     sampler: wgpu::Sampler,
     down: wgpu::RenderPipeline,
     up: wgpu::RenderPipeline,
-    composite: wgpu::RenderPipeline,
+    /// The composite, then the in-car view's, with the cabin's exposure (`CABIN` in `post.wgsl`).
+    composite: [wgpu::RenderPipeline; 2],
     /// Bins the scene's light (`cs_histogram`), then meters the bins into [`Post::exposure`] (`cs_meter`).
     meter: [wgpu::ComputePipeline; 2],
     /// The exposure the composite applies, kept from frame to frame.
@@ -55,9 +56,10 @@ struct Targets {
     meter: [[wgpu::BindGroup; 2]; 2],
 }
 
-/// The metering's grid, in `cs_histogram`'s workgroups (`METER_GRID` in `post.wgsl` over 16), and its bins (`BINS`).
+/// The metering's grid, in `cs_histogram`'s workgroups (`METER_GRID` in `post.wgsl` over 16), and its bins, the
+/// outside's then the cabin's (`ZONE_BINS`).
 const METER_GROUPS: (u32, u32) = (8, 4);
-const BINS: u64 = 128;
+const ZONE_BINS: u64 = 256;
 
 /// `cs_meter`'s and `fs_composite`'s settings (`Meter` in `post.wgsl`).
 #[repr(C)]
@@ -115,7 +117,7 @@ const DAY_PRE_EXPOSURE: f32 = 1.93 * std::f32::consts::PI / 100_000.0;
 
 /// The time between frames past which the exposure is set outright rather than eased, seconds.
 const JUMP: f32 = 1.0;
-/// How far from the eye the in-car view's cabin reaches, metres (`cs_meter` weighs it less).
+/// How far from the eye the in-car view's cabin reaches, metres (`cs_meter` meters it apart).
 pub(crate) const CABIN_REACH: f32 = 2.0;
 
 /// In the in-car view of `view_projection` (reversed depth), the depth of a point [`CABIN_REACH`] ahead of the eye.
@@ -182,8 +184,10 @@ impl Post {
             label: Some("post"),
             source: wgpu::ShaderSource::Wgsl(SHADER.into()),
         });
-        let shafts_on: &[(&str, f64)] = &[("SHAFTS", 1.0)];
-        let pipeline = |entry: &str, layouts: &[&wgpu::BindGroupLayout], target: wgpu::ColorTargetState| {
+        let pipeline = |entry: &str,
+                        layouts: &[&wgpu::BindGroupLayout],
+                        target: wgpu::ColorTargetState,
+                        constants: &[(&str, f64)]| {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some(entry),
                 layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -203,17 +207,14 @@ impl Post {
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
                     entry_point: Some(entry),
-                    compilation_options: wgpu::PipelineCompilationOptions {
-                        constants: if shafts && entry == "fs_composite" { shafts_on } else { &[] },
-                        ..Default::default()
-                    },
+                    compilation_options: wgpu::PipelineCompilationOptions { constants, ..Default::default() },
                     targets: &[Some(target)],
                 }),
                 multiview_mask: None,
                 cache: None,
             })
         };
-        let down = pipeline("fs_down", &[&source_layout], SCENE_FORMAT.into());
+        let down = pipeline("fs_down", &[&source_layout], SCENE_FORMAT.into(), &[]);
         // Each level adds the blurred level below it.
         let add = wgpu::BlendComponent {
             src_factor: wgpu::BlendFactor::One,
@@ -228,8 +229,12 @@ impl Post {
                 blend: Some(wgpu::BlendState { color: add, alpha: add }),
                 write_mask: wgpu::ColorWrites::ALL,
             },
+            &[],
         );
-        let composite = pipeline("fs_composite", &[&source_layout, &composite_layout], format.into());
+        let composite = [0.0, 1.0].map(|cabin| {
+            let constants = [("SHAFTS", f64::from(u8::from(shafts))), ("CABIN", cabin)];
+            pipeline("fs_composite", &[&source_layout, &composite_layout], format.into(), &constants)
+        });
         let meter = ["cs_histogram", "cs_meter"].map(|entry| {
             device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
                 label: Some(entry),
@@ -244,7 +249,7 @@ impl Post {
             device.create_buffer(&wgpu::BufferDescriptor { label: Some(label), size, usage, mapped_at_creation: false })
         };
         let exposure = buffer("exposure", 16, wgpu::BufferUsages::STORAGE);
-        let histogram = buffer("histogram", BINS * 4, wgpu::BufferUsages::STORAGE);
+        let histogram = buffer("histogram", ZONE_BINS * 4, wgpu::BufferUsages::STORAGE);
         let meter_settings =
             buffer("meter", size_of::<Meter>() as u64, wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST);
         let (scene, targets) = targets(
@@ -361,7 +366,8 @@ impl Post {
         for index in (1..t.levels.len()).rev() {
             pass(encoder, &t.levels[index - 1], wgpu::LoadOp::Load, &self.up, &[&t.sources[index + 1]]);
         }
-        pass(encoder, target, clear, &self.composite, &[&t.sources[0], &t.composite]);
+        let composite = &self.composite[usize::from(cabin_depth > 0.0)];
+        pass(encoder, target, clear, composite, &[&t.sources[0], &t.composite]);
     }
 }
 

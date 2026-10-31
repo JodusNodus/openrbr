@@ -13,6 +13,8 @@ struct Exposure {
     value: f32,
     // The luminance the eye is adapted to, cd/m2, eased as the exposure.
     adapting: f32,
+    // In the in-car view the cabin's own exposure (`cs_meter`), eased as `value`; elsewhere `value`'s.
+    cabin: f32,
 }
 
 // `cs_meter`'s settings (`post::Meter`).
@@ -35,13 +37,16 @@ struct Meter {
 // The frame's depth (reversed), which the shafts' depth (their alpha) is matched against (`shafts_at`).
 @group(1) @binding(3) var composite_depth: texture_depth_2d;
 override SHAFTS: bool = false;
+// The in-car view's cabin exposure (`Exposure::cabin`, `CABIN_STOPS`): a pipeline override, so the composite outside
+// the car is built as before.
+override CABIN: bool = false;
 
 // `cs_histogram`'s and `cs_meter`'s, with the scene in `source`. `cs_meter` empties the histogram for the next frame.
 // `meter` is the composite's too.
 @group(1) @binding(2) var meter_depth: texture_depth_2d;
 @group(1) @binding(3) var<storage, read_write> meter_exposure: Exposure;
 @group(1) @binding(4) var<uniform> meter: Meter;
-@group(1) @binding(5) var<storage, read_write> meter_histogram: array<atomic<u32>, BINS>;
+@group(1) @binding(5) var<storage, read_write> meter_histogram: array<atomic<u32>, ZONE_BINS>;
 
 // How much of the frame the bloom replaces.
 const BLOOM: f32 = 0.06;
@@ -50,16 +55,22 @@ const LEVELS: f32 = 6.0;
 // The metering (`cs_histogram`, `cs_meter`): the scene's luminance (cd/m2, its light over the pre-exposure) on a grid
 // of `METER_GRID` points binned by its log2 in `BINS` bins from `EV_LOW` over `EV_SPAN` stops (starlit ground to the
 // sunlit sky); the mean of the bins between the `PERCENTILES` (the darkest shadows and the
-// brightest highlights dropped) is the frame's light. In the in-car view the cabin counts `CABIN_WEIGHT` against the
-// outside's `WEIGHT` (a half, user's call), between an eye on the road (the cabin at a fifth: the cabin dark) and a
-// camera's whole frame (the cabin readable, the outside washed out).
+// brightest highlights dropped) is the frame's light, each point counting `WEIGHT`.
+// In the in-car view the cabin (nearer than `Meter::cabin_depth`) is metered apart too, as the eye adapts to the dash
+// when it looks there (user's call, 2026-10-31; was one exposure with the cabin at half the outside's weight): the
+// outside's light counts the outside's points `IN_CAR_WEIGHT.x` and the cabin's `.y` (a fifth: the outside exposed
+// nearly as seen from outside the car, the cabin's dark still holding it back a little), the cabin's light the cabin's
+// points alone, in the next `BINS` bins. The cabin takes its own exposure, at least the outside's and at most
+// `CABIN_STOPS` over it.
 const METER_GRID: vec2<u32> = vec2<u32>(128u, 64u);
 const BINS: u32 = 128u;
+const ZONE_BINS: u32 = 2u * BINS;
 const EV_LOW: f32 = -14.0;
 const EV_SPAN: f32 = 32.0;
 const PERCENTILES: vec2<f32> = vec2<f32>(0.1, 0.9);
 const WEIGHT: u32 = 2u;
-const CABIN_WEIGHT: u32 = 1u;
+const IN_CAR_WEIGHT: vec2<u32> = vec2<u32>(5u, 1u);
+const CABIN_STOPS: f32 = 4.0;
 // The exposure, as Unreal's and BeamNG's auto exposure: the metered light, back in luminance (over the pre-exposure),
 // as EV100 (ISO 100, the calibration constant `CALIBRATION`), held within `EV100_RANGE`, is exposed to `KEY`, middle
 // grey (18 percent before `AGX_SCALE`), shifted by the exposure compensation curve (`compensation`). The curve is Krawczyk, Myszkowski and Seidel's (2005) key value
@@ -98,6 +109,9 @@ const ROD_RETINA: f32 = 3000.0;
 // A day's sky seldom reaches it.
 const LOCAL_FROM: f32 = 2.0;
 const LOCAL_GIVE: f32 = 0.6;
+// The cabin's darkest values lifted, as a camera's shadows (user's call, 2026-10-31): `CABIN_TOE.x` stops at black,
+// half of it `CABIN_TOE.y` stops under `KEY`, a sixty-fifth at `KEY`.
+const CABIN_TOE: vec2<f32> = vec2<f32>(1.0, 3.0);
 // How fast the exposure follows the frame, per second: faster down into a bright frame than up into a dark one.
 const ADAPT_SPEED: vec2<f32> = vec2<f32>(3.0, 1.2);
 
@@ -188,34 +202,34 @@ fn luminance(c: vec3<f32>) -> f32 {
     return dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
 }
 
-var<workgroup> histogram: array<atomic<u32>, BINS>;
+var<workgroup> histogram: array<atomic<u32>, ZONE_BINS>;
 
 // Bins the scene's light (`source`) into `meter_histogram`: a workgroup for each 16x16 of the grid's points, each
 // binning its own before adding them in.
 @compute @workgroup_size(16, 16)
 fn cs_histogram(@builtin(global_invocation_id) id: vec3<u32>, @builtin(local_invocation_index) index: u32) {
-    if (index < BINS) {
-        atomicStore(&histogram[index], 0u);
-    }
+    atomicStore(&histogram[index], 0u);
     workgroupBarrier();
     if (all(id.xy < METER_GRID)) {
         let uv = (vec2<f32>(id.xy) + 0.5) / vec2<f32>(METER_GRID);
         let l = luminance(textureSampleLevel(source, linear_sampler, uv, 0.0).rgb) / max(meter.pre_exposure, 1e-12);
         let bin = u32(clamp((log2(max(l, 1e-6)) - EV_LOW) / EV_SPAN * f32(BINS), 0.0, f32(BINS - 1u)));
         let depth = textureLoad(meter_depth, vec2<i32>(uv * vec2<f32>(textureDimensions(meter_depth))), 0);
-        let cabin = meter.cabin_depth > 0.0 && depth > meter.cabin_depth;
-        atomicAdd(&histogram[bin], select(WEIGHT, CABIN_WEIGHT, cabin));
+        let in_car = meter.cabin_depth > 0.0;
+        let cabin = in_car && depth > meter.cabin_depth;
+        atomicAdd(&histogram[bin], select(WEIGHT, select(IN_CAR_WEIGHT.x, IN_CAR_WEIGHT.y, cabin), in_car));
+        if (cabin) {
+            atomicAdd(&histogram[BINS + bin], WEIGHT);
+        }
     }
     workgroupBarrier();
-    if (index < BINS) {
-        let count = atomicLoad(&histogram[index]);
-        if (count != 0u) {
-            atomicAdd(&meter_histogram[index], count);
-        }
+    let count = atomicLoad(&histogram[index]);
+    if (count != 0u) {
+        atomicAdd(&meter_histogram[index], count);
     }
 }
 
-var<workgroup> counts: array<u32, BINS>;
+var<workgroup> counts: array<u32, ZONE_BINS>;
 
 // The light `c` (cd/m2) with the rods' signal added (`LMSR`).
 fn rod_vision(c: vec3<f32>) -> vec3<f32> {
@@ -233,46 +247,78 @@ fn krawczyk_key(l: f32) -> f32 {
     return 1.03 - 2.0 / (2.0 + log2(l + 1.0) * 0.30103);
 }
 
-// The exposure from `cs_histogram`'s histogram, eased from the last frame's (`meter_exposure`).
-@compute @workgroup_size(128)
-fn cs_meter(@builtin(local_invocation_index) index: u32) {
-    if (index < BINS) {
-        counts[index] = atomicExchange(&meter_histogram[index], 0u);
-    }
-    workgroupBarrier();
-    if (index != 0u) {
-        return;
-    }
+// The mean log2 light of the weight between the percentiles of the bins from `first`, and the weight binned.
+fn metered(first: u32) -> vec2<f32> {
     var total = 0.0;
     for (var bin = 0u; bin < BINS; bin++) {
-        total += f32(counts[bin]);
+        total += f32(counts[first + bin]);
     }
-    // The mean log2 light of the weight between the percentiles.
     let range = PERCENTILES * total;
     var below = 0.0;
     var sum = 0.0;
     var counted = 0.0;
     for (var bin = 0u; bin < BINS; bin++) {
-        let w = f32(counts[bin]);
+        let w = f32(counts[first + bin]);
         let kept = max(min(below + w, range.y) - max(below, range.x), 0.0);
         sum += kept * (EV_LOW + (f32(bin) + 0.5) / f32(BINS) * EV_SPAN);
         counted += kept;
         below += w;
     }
-    let luminance = exp2(sum / max(counted, 1.0));
-    let ev100 = clamp(log2(luminance * 100.0 / CALIBRATION), EV100_RANGE.x, EV100_RANGE.y);
+    return vec2<f32>(sum / max(counted, 1.0), total);
+}
+
+// The adapting luminance (held within `EV100_RANGE`) and the exposure aimed at for a metered log2 light.
+fn aimed(light: f32) -> vec2<f32> {
+    let ev100 = clamp(log2(exp2(light) * 100.0 / CALIBRATION), EV100_RANGE.x, EV100_RANGE.y);
     let held = exp2(ev100) * CALIBRATION / 100.0;
-    let aim = KEY * compensation(held) / (held * meter.pre_exposure) * meter.grade.x;
+    return vec2<f32>(held, KEY * compensation(held) / (held * meter.pre_exposure) * meter.grade.x);
+}
+
+// The exposure from `cs_histogram`'s histogram, eased from the last frame's (`meter_exposure`), and the cabin's.
+@compute @workgroup_size(128)
+fn cs_meter(@builtin(local_invocation_index) index: u32) {
+    counts[index] = atomicExchange(&meter_histogram[index], 0u);
+    counts[BINS + index] = atomicExchange(&meter_histogram[BINS + index], 0u);
+    workgroupBarrier();
+    if (index != 0u) {
+        return;
+    }
+    let outside = aimed(metered(0u).x);
+    let held = outside.x;
+    let aim = outside.y;
+    // Without the cabin in view (or outside the car) the cabin's follows the outside's.
+    let inside = metered(BINS);
+    let cabin = select(aim, aimed(inside.x).y, inside.y > 0.0);
     let last = meter_exposure.value;
-    if (meter.snap != 0.0 || !(last > 0.0) || !(meter_exposure.adapting > 0.0)) {
+    if (meter.snap != 0.0 || !(last > 0.0) || !(meter_exposure.adapting > 0.0) || !(meter_exposure.cabin > 0.0)) {
         meter_exposure.value = aim;
         meter_exposure.adapting = held;
+        meter_exposure.cabin = cabin;
         return;
     }
     let speed = select(ADAPT_SPEED.y, ADAPT_SPEED.x, aim < last);
     let eased = 1.0 - exp(-meter.step * speed);
     meter_exposure.value = exp2(mix(log2(last), log2(aim), eased));
     meter_exposure.adapting = exp2(mix(log2(meter_exposure.adapting), log2(held), eased));
+    let cabin_speed = select(ADAPT_SPEED.y, ADAPT_SPEED.x, cabin < meter_exposure.cabin);
+    let cabin_eased = 1.0 - exp(-meter.step * cabin_speed);
+    meter_exposure.cabin = exp2(mix(log2(meter_exposure.cabin), log2(cabin), cabin_eased));
+}
+
+// Whether the pixel at `uv` takes the cabin's exposure: it and its 8 neighbours are the cabin's. The edge's pixels,
+// whose colour the resolve mixed with the outside's, keep the outside's (a softer blend drew a dark band inside the
+// pillars, or a bright halo outside them).
+fn in_cabin(uv: vec2<f32>) -> bool {
+    let size = vec2<i32>(textureDimensions(composite_depth));
+    let p = vec2<i32>(uv * vec2<f32>(size));
+    for (var y = -1; y <= 1; y++) {
+        for (var x = -1; x <= 1; x++) {
+            if (textureLoad(composite_depth, clamp(p + vec2<i32>(x, y), vec2<i32>(0), size - 1), 0) <= meter.cabin_depth) {
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 // The shafts' map (a quarter of the frame's size) at `uv`: its four texels around `uv` weighted bilinearly and by how
@@ -329,9 +375,18 @@ fn sharpened(uv: vec2<f32>) -> vec3<f32> {
 fn fs_composite(v: Out) -> @location(0) vec4<f32> {
     let scene = sharpened(v.uv);
     let glow = textureSampleLevel(bloom, linear_sampler, v.uv, 0.0).rgb / LEVELS;
-    var lit = mix(scene, glow, BLOOM);
+    // The cabin's exposure (`CABIN_STOPS`). The glow and the shafts (the light scattered on the way, mostly the
+    // outside's) keep the outside's: at the cabin's they lit the pillars with a green haze.
+    let cabin = CABIN && in_cabin(v.uv);
+    var exposed = exposure.value;
+    var veil = 1.0;
+    if (cabin) {
+        exposed = clamp(exposure.cabin, exposure.value, exposure.value * exp2(CABIN_STOPS));
+        veil = exposure.value / exposed;
+    }
+    var lit = mix(scene, glow * veil, BLOOM);
     if (SHAFTS) {
-        lit += shafts_at(v.uv);
+        lit += shafts_at(v.uv) * veil;
     }
     // Rod vision (`rod_vision`) on the light in cd/m2, over what it adds to white at the adapting luminance: the
     // exposure meters the cones' light, the rods shift the hues and the light between colours.
@@ -340,9 +395,15 @@ fn fs_composite(v: Out) -> @location(0) vec4<f32> {
     let white = luminance(rod_vision(vec3<f32>(adapting))) / adapting;
     lit = rod_vision(lit / pre) * pre / white;
     // Local exposure (`LOCAL_FROM`).
-    let broad = log2(max(luminance(glow) * exposure.value, 1e-9) / KEY);
-    let linear = lit * exposure.value * exp2(-LOCAL_GIVE * max(broad - LOCAL_FROM, 0.0));
-    let c = agx(max(linear, vec3<f32>(0.0)) * AGX_SCALE, compensation(adapting));
+    let broad = log2(max(luminance(glow) * exposed, 1e-9) / KEY);
+    var linear = max(lit * exposed * exp2(-LOCAL_GIVE * max(broad - LOCAL_FROM, 0.0)), vec3<f32>(0.0));
+    if (cabin) {
+        // The cabin's toe (`CABIN_TOE`).
+        let pivot = KEY * exp2(-CABIN_TOE.y);
+        let y = luminance(linear);
+        linear *= exp2(CABIN_TOE.x * pivot * pivot / (y * y + pivot * pivot));
+    }
+    let c = agx(linear * AGX_SCALE, compensation(adapting));
     let grey = dot(c, vec3<f32>(0.299, 0.587, 0.114));
     return vec4<f32>(clamp(mix(vec3<f32>(grey), c, SATURATION * meter.grade.y), vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);
 }

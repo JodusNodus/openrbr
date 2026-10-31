@@ -810,19 +810,35 @@ area-weighted interior albedo (texel at each face's uv centroid at 64 px or less
 at most 0.9; the bounce per channel, so a tan cabin's is warm), over the faces that see the sky at most 0.6 to 0.9 of
 the time (`cabin::OUTSIDE`): the interior set holds outside body panels, and the RSF M3 E30's green livery (13.7 of its
 28.7 m^2) lit its headliner teal (albedo 0.099 / 0.183 / 0.146, now 0.095 / 0.112 / 0.106; roof 19 / 44 / 34 of 255,
-now 23 / 29 / 28; sky share unchanged). Weighing the sky share by it too took the share to 0.092 and the roof to 7.
-The day's window light and sky inside take `IBL_TINT` as the outside's ambient does (no visible change). Measured (luma) sky share / albedo / bounce: Escort
-0.280 / 0.124 / 0.141, GC8 0.343 / 0.075 / 0.081, Clio 0.361 / 0.154 / 0.183, 131 0.222 / 0.185 / 0.227, 208 0.296 /
-0.088 / 0.097, Fiesta 0.236 / 0.055 / 0.058, Yaris 0.198 / 0.447 / 0.810. Dark cabins fall off to the roof and
+now 23 / 29 / 28). The light in (sky share, seen direction, the sun's n.l) is weighed so too (2026-10-31, with the
+cabin's own exposure below): the body seen through the glass takes in light the cabin does not, and counted it made
+the bounce 1.5 to 2.7 stops too bright (before, under one exposure, it took the M3's roof to 7 of 255 and was left
+out). The day's window light and sky inside take `IBL_TINT` as the outside's ambient does (no visible change).
+Measured (luma, the viewer's `cabin:` line) sky share (was) / albedo / bounce: Escort 0.090 (0.280) / 0.104 / 0.116,
+GC8 0.068 (0.343) / 0.056 / 0.060, Clio Rally3 0.055 (0.361) / 0.084 / 0.092, 131 0.087 (0.222) / 0.152 / 0.179, 208
+0.057 (0.296) / 0.087 / 0.095, Fiesta 0.059 (0.236) / 0.043 / 0.045, Yaris 0.059 (0.198) / 0.467 / 0.877, M3 E30 0.092
+(0.380) / 0.108 / 0.122. Dark cabins fall off to the roof and
 footwells, the white Yaris shell is lighter; the window term is untinted (`CABIN_DAY_RANGE` 0.03 to 4). The glass: the
 sky's share through two clear faces, `(1 - F)^2` over the cosine-weighed hemisphere, 0.848 (`CABIN_SKY_THROUGH`; the
 former 0.85 was this); the sun's from the blended panes facing it, weighed by area toward it, per measured direction
 (`SunIn::through`; 208 at 19:30 about 0.8). Left heuristic: `CABIN_SHADE`, `CABIN_GAUGE_LEAST`.
 
-Exposure in the cockpit (user's call, 2026-10-31, was 2/5): the cabin meters at 1/2 of the outside (`CABIN_WEIGHT`), between an
-eye on the road (1/5, the cabin dark) and a camera's full weight (cabin readable, outside washed out); 208 cockpit frame
-mean 46 / 60 / 80 for 1, 2, 5. At 1/2 the cockpit shots' frame mean rises 3-5 levels (Escort door 106 to 112, GC8 87
-to 96); the 532 Clio's door card stays near black (33 to 34): its light, not the metering, is what is missing there.
+Exposure in the cockpit (user's call, 2026-10-31; was one exposure, the cabin metered at 1/2 of the outside, before that
+2/5): the outside and the cabin (nearer than `post::CABIN_REACH`) are metered apart (`cs_meter`, 128 bins each), as the
+eye adapts to the dash when it looks there. The outside's meter counts the cabin at 1/5 (`IN_CAR_WEIGHT`): at 1/2 the
+dark cabin held the outside 1.5 to 2 stops over (Escort road 168 of 255; metered alone 91). The cabin takes its own
+exposure, eased as the outside's, at least the outside's and at most 4 stops over it (`CABIN_STOPS`), its darkest
+values lifted by a toe (`CABIN_TOE`, 1 stop at black, a sixty-fifth at middle grey), in a composite pipeline of its
+own (`CABIN`). The glow and the light shafts keep the outside's exposure (at the cabin's they lit the pillars with a
+green haze); a pixel takes the cabin's only when its 3 x 3 are all cabin (a softer blend drew a dark band inside the
+pillars, or a bright halo outside them). Chosen against more cabin light (the light is right, above), a shadow-side
+local exposure and the curve's toe alone, then from cabin weights 0, 1/5, 1/2 by 3, 4, 5 stops. Eight day cockpit
+shots, means: outside 149 to 125, cabin 35 to 62, pixels at 8 or below 24.9 to 14.0 %, cabin detail (mean |luma - its
+5 px blur|) 4.3 to 7.5; the two nights within a few levels. Post pass 0.29 to 0.36 ms (Escort cockpit, 1080p); the 24
+outside shots byte-identical; 4 s of driving (Escort, Clio) hold the cabin within 2 levels, no pumping. Left: glass
+that writes depth (the Clio Rally3's `CarPlastic` side windows) and the rear-view mirror count as cabin, so what is
+seen in them takes the cabin's exposure (about 1.5 stops over on the Clio); the forest shots' door cards stay dark (5
+to 7 stops under the road, which their light is).
 
 The car's sun shadow (2026-10-30, `car_shadow`): a penumbra by the sun's disc and the casters' mean distance (3x3
 search, PCSS as the cascades), taps a texel apart, at most 9 a side and the range's reach. The fixed 4x4 taps 4 cm
