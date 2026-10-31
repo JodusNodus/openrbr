@@ -1,17 +1,17 @@
-//! `E50_QuerySlip` (0x536fe0): the slip query that FlagDispatch makes before a downshift. Two gates, each on
-//! when its slip gate (the setup's, copied by CopyDef) is nonzero. The rpm gate, in gears above 2, asks whether
+//! The slip query that the flag dispatch makes before a downshift. Two gates, each on
+//! when its slip gate (the setup's, copied from the definition) is nonzero. The rpm gate, in gears above 2, asks whether
 //! the gear's rpm is above the rev limit. The speed gate, in second gear, asks whether the car speed's magnitude
-//! is above 10 km/h. The asm (not the C++ in `src/rbr`) fixes the operation order: the rpm is rounded to f32
+//! is above 10 km/h. The operation order is fixed: the rpm is rounded to f32
 //! before it multiplies the gear ratio.
 
 use super::gear::gear_index;
 use super::layout::{GearRatios, RPM_PER_RAD_S};
 
-/// 10 km/h in m/s (`0x741378`).
+/// 10 km/h in m/s.
 const SLIP_SPEED: f32 = 2.777_777_9;
 
-/// The slip answer. `engine` is the engine speed (rad/s), `car_speed` the car's speed (m/s); both are read through
-/// the drive and the car by the original, so the caller passes them in.
+/// The slip answer. `engine` is the engine speed (rad/s), `car_speed` the car's speed (m/s); both are passed in by
+/// the caller.
 pub fn query_slip(
     gate_rpm: u32,
     gate_speed: u32,

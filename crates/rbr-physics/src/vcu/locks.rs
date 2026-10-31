@@ -1,13 +1,11 @@
-//! Diff locks (`CScratchSim::LockMax` 0x5376e0, `CScratchSim::DiffLocks` 0x537b70). A lock is the
-//! largest of a throttle map, a brake map and a speed map at the current speed. The three results are
-//! stored as f32 before the compare in the asm, so the port works in f32 throughout.
+//! Diff locks. A lock is the largest of a throttle map, a brake map and a speed map at the current speed.
+//! The three results are stored as f32 before the compare, so the port works in f32 throughout.
 
 use super::layout::{Def, Knot, Locks, Pedals, SpeedKnot};
 use super::tables::{lookup_pair_table, table_blend};
 
-/// The largest of the throttle and brake lock and the speed lock, with the asm's ties: `r1` (throttle)
-/// when it is not below `r2` or `r3`, else `r2` (brake) when it is not below `r1` or `r3`, else `r3`.
-/// The comparisons are ordered, so a NaN never wins.
+/// The largest of the throttle and brake lock and the speed lock, with ties broken toward the throttle,
+/// then the brake. The comparisons are ordered, so a NaN never wins.
 pub fn lock_max(pedals: Pedals, throttle_map: &[Knot], brake_map: &[Knot], speed_map: &[SpeedKnot], speed: f32) -> f32 {
     let r1 = table_blend(throttle_map, pedals.throttle, 0.0, 1.0) as f32;
     let r2 = table_blend(brake_map, pedals.brake, 0.0, 1.0) as f32;
@@ -22,8 +20,8 @@ pub fn lock_max(pedals: Pedals, throttle_map: &[Knot], brake_map: &[Knot], speed
 }
 
 /// The diff locks for the drive's channels 0 (centre), 1 (front) and 2 (rear), as the values the
-/// original passes to `CDrive::Set4570` (the drive clamps them to [0, 1] itself). `drive_speed` is the
-/// drive's `Get4540`; the speed key is that times 0.3. Front and rear use the same key.
+/// drive clamps to [0, 1] itself. `drive_speed` is the drive's speed; the speed key is that times 0.3.
+/// Front and rear use the same key.
 ///
 /// The centre lock is 0 while the handbrake is at or above the release value. Otherwise the
 /// left-foot maps are used when the threshold is nonzero and both pedals are above it. A NaN
@@ -44,15 +42,15 @@ pub fn diff_locks(pedals: Pedals, def: &Def, drive_speed: f32) -> [f32; 3] {
 }
 
 impl Locks {
-    /// `CDrive::Set4570` for a channel: stores the lock that `lock_output` gives for the value.
+    /// Stores the lock that `lock_output` gives for the value on a channel.
     pub fn set(&mut self, channel: usize, value: f32) {
         self.torque[channel] = lock_output(value, self.ratio[channel], self.enabled, self.max_torque[channel]);
     }
 }
 
-/// The lock the drive stores for a value (`CDrive::Set4570`, 0x504570). Without the gate it is 0. With it, the
+/// The lock the drive stores for a value. Without the gate it is 0. With it, the
 /// value is clamped to [0, 1] and cut by the channel's ratio band: |ratio| below 1 gives 0, from 1 to 2 gives
-/// (|ratio| - 1) times the value, and 2 or more keeps the value (the 2.0 at 0x72ad94). The maximum torque multiplies last.
+/// (|ratio| - 1) times the value, and 2 or more keeps the value. The maximum torque multiplies last.
 pub fn lock_output(value: f32, ratio: f32, enabled: bool, max_torque: f32) -> f32 {
     if !enabled {
         return 0.0;

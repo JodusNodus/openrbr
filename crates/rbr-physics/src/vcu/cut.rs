@@ -1,10 +1,9 @@
-//! Rev-limit cut (`CScratchSim::RevLimitCut`, 0x536ee0) and the slip check of the gear logic
-//! (`CScratchSim::CheckSlip`, 0x537110). Both read the drive through its accessors, which the caller
+//! Rev-limit cut and the slip check of the gear logic. Both read the drive through its accessors, which the caller
 //! passes in as values.
 
 use super::layout::{Def, State, RPM_PER_RAD_S};
 
-/// The four arguments of `CEngine::SetState4` for the rev-limit cut.
+/// The four rev-limit cut flags for the engine.
 ///
 /// Over the limit by more than `margin` rpm (300; NGP's 25, `Tuning::cut_margin`): all off. Over by up to the
 /// margin: the first and third on. At or under the limit with a shift cooldown running: the second and fourth on.
@@ -24,7 +23,7 @@ pub fn rev_limit_cut(engine_speed: f32, def: &Def, state: &State, margin: f32) -
     }
 }
 
-/// 1 when the unit is enabled, the drive's slip flag (`drive + 8`, `+0x55c`) is set and `0 < x < 7`.
+/// 1 when the unit is enabled, the drive's slip flag is set and `0 < x < 7`.
 pub fn check_slip(vcu_enabled: u32, drive_slip_flag: u32, x: f32) -> bool {
     vcu_enabled != 0 && drive_slip_flag != 0 && x > 0.0 && 7.0 > x
 }

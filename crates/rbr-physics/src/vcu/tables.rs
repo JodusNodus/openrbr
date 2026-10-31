@@ -1,18 +1,16 @@
-//! Table lookups of the VCU: the uniform pedal maps (`VcuTableBlend`, 0x536950) and the speed maps
-//! (`LookupPairTable`, 0x536880). Both are piecewise linear. The asm sets the operation order and
-//! the NaN behaviour; the x87 interpolation rounds each operation at the thread's precision (`fpu::round_x87`: 24 bits
-//! in 1.02, 53 under NGP's race, `notes/ngp.md` "x87 precision"). Each returns st0, so a double at PC=53.
+//! Table lookups of the VCU: the uniform pedal maps and the speed maps. Both are piecewise linear. The operation
+//! order and the NaN behaviour are fixed; the x87 interpolation rounds each operation at the thread's precision
+//! (`fpu::round_x87`: 24 bits in 1.02, 53 under NGP's race, `notes/ngp.md` "x87 precision"). Each returns a double.
 
 use super::layout::{Knot, SpeedKnot};
 use crate::fpu::{round_x87, trunc_i32};
 
-/// Pedal map lookup (`E49Proxy::VcuTableBlend`, stdcall `(table, x, lo, hi, n)`): knots spread evenly
-/// over `[lo, hi]`, with `n` the length of `knots`. The index `f = (x - lo) * (n - 1) / (hi - lo)`
-/// clamps to the first and last knot.
+/// Pedal map lookup: knots spread evenly over `[lo, hi]`, with `n` the length of `knots`. The index
+/// `f = (x - lo) * (n - 1) / (hi - lo)` clamps to the first and last knot.
 pub fn table_blend(knots: &[Knot], x: f32, lo: f32, hi: f32) -> f64 {
     let n = knots.len() as i32;
     let f = (x - lo) * (n - 1) as f32 / (hi - lo);
-    // A NaN or f < -2^31 index here logs in the original (E01Log); no physics effect, so not ported.
+    // A NaN or f < -2^31 index here logs in the game log; no physics effect, so not ported.
     let i = knot_index(f);
     if n - 2 < i {
         return knots[(n - 1) as usize].value.into();
@@ -28,12 +26,11 @@ pub fn table_blend(knots: &[Knot], x: f32, lo: f32, hi: f32) -> f64 {
     r(r(below * knots[i].value as f64) + r(a * knots[i + 1].value as f64))
 }
 
-/// Speed map lookup (`NPhysics::LookupPairTable`, stdcall `(table, x, n)`): piecewise linear over the
-/// keys, which increase with the record. Below the first key the first value is returned, above the
-/// last key the last one. Between keys `k[u - 1]` and `k[u]` the x87 interpolation is
+/// Speed map lookup: piecewise linear over the keys, which increase with the record. Below the first key the first
+/// value is returned, above the last key the last one. Between keys `k[u - 1]` and `k[u]` the x87 interpolation is
 /// `(1 - f) * v[u] + f * v[u - 1]` with `f = 1 - (x - k[u-1]) / (k[u] - k[u-1])`.
 ///
-/// `!(x > key)` is the asm's `jbe`, so a NaN `x` stops at the first record.
+/// `!(x > key)` is a below-or-equal compare (`jbe`), so a NaN `x` stops at the first record.
 pub fn lookup_pair_table(knots: &[SpeedKnot], x: f32) -> f64 {
     let first = knots[0];
     let last = knots[knots.len() - 1];
