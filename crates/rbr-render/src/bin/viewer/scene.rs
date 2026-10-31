@@ -104,7 +104,7 @@ impl Scene {
 
 /// [`load_scene`], with its report, at the `--at` frame.
 pub fn load(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Result<Scene, String> {
-    let mut scene = load_scene(args, data, progress)?;
+    let mut scene = std::thread::scope(|scope| load_scene(scope, args, data, progress))?;
     // The car's textures, once its sets and dials are in the stage.
     if let Some(dir) = &args.textures {
         let replaced = scene.stage.apply_texture_pack(dir, |set| set == stage::TextureSet::Car);
@@ -139,8 +139,14 @@ pub fn load(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Result<
 }
 
 /// The stage (or the car alone) with the car on it, telling `progress` each [`Step`] as it starts. The car is loaded
-/// after the stage's textures, which [`Stage::load_textures`] replaces.
-fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Result<Scene, String> {
+/// after the stage's textures, which [`Stage::load_textures`] replaces; the live process starts on a thread of `scope`
+/// meanwhile.
+fn load_scene<'scope, 'env>(
+    scope: &'scope std::thread::Scope<'scope, 'env>,
+    args: &'env Args,
+    data: &'env Data,
+    progress: &mut dyn FnMut(Step),
+) -> Result<Scene, String> {
     let error = |e: car::Error| e.to_string();
     let car_key = args.car.as_deref().map(|car| camera_prefs::car_key(car, args.rsf_car_id));
     let cameras = camera_prefs::Session::load(args.cameras.as_deref(), car_key);
@@ -242,8 +248,6 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
             let mut cabin_sun = None;
             let mut tints = glass::Tints::default();
             let mut bulkhead = None;
-            // The `--at` frames that first list a detached part (`start_live`).
-            let mut detaching = Vec::new();
             if let Some(car_name) = car_name {
                 match (&args.drive, &args.live) {
                     (None, None) => {
@@ -253,19 +257,20 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
                         report_car(&car.at_rest().add_to_stage(&mut stage));
                     }
                     (drive, command) => {
-                        let drive = match (drive, command) {
+                        if command.is_some() {
+                            progress(Step::Physics);
+                        }
+                        let command = command.as_deref().map(|command| with_start_time(command, day_clock.as_ref()));
+                        // The live process boots and steps to its `--at` frames while the car loads.
+                        let started = scope.spawn(move || match (drive, command) {
                             (Some(path), _) => {
-                                Drive::parse(&std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?)?
+                                let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+                                Ok((None, Drive::parse(&bytes)?, Vec::new()))
                             }
-                            (None, Some(command)) => {
-                                progress(Step::Physics);
-                                let command = with_start_time(command, day_clock.as_ref());
-                                let (process, drive, detached) = start_live(args, data, &command)?;
-                                (live, detaching) = (Some(process), detached);
-                                drive
-                            }
+                            (None, Some(command)) => start_live(args, data, &command)
+                                .map(|(process, drive, detached)| (Some(process), drive, detached)),
                             (None, None) => unreachable!(),
-                        };
+                        });
                         progress(Step::Car);
                         let mut car = car::load(data, car_name, car::placement_at(None)).map_err(error)?;
                         if args.enhance.cabin {
@@ -301,6 +306,10 @@ fn load_scene(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Resul
                             })
                             .transpose()?;
                         crew = load_crew(data, car_name, &mut stage, args);
+                        // With the `--at` frames that first list a detached part (`start_live`).
+                        let (process, drive, detaching) =
+                            started.join().unwrap_or_else(|panic| std::panic::resume_unwind(panic))?;
+                        live = process;
                         let mut loaded = Playback::load(data, car_name, &stage, &model, &damage, drive)?;
                         let probe = StageProbe::load(data, name).map(std::sync::Arc::new);
                         if let Some(characters) = &mut characters {
