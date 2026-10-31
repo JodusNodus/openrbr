@@ -37,10 +37,10 @@
 //! All reads are bounds-checked against the record body, and [`parse`]
 //! requires every body to be consumed exactly.
 
-use crate::sg_framing::{self, FrameError};
-use std::fmt::{self, Display, Formatter};
+use crate::sg_framing::{self};
 
 pub use crate::sg_framing::BANNER;
+pub use crate::sg_framing::FileKind;
 
 const KIND_ANIMATION: u32 = 6;
 const SUBTYPE_ANIMATION: u32 = 21;
@@ -68,63 +68,14 @@ pub const SCALE_LINEAR: u32 = 0x2d;
 
 pub use crate::sg_framing::Record;
 
-/// Failure to read a scenery animation.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Error {
-    /// The file does not start with [`BANNER`].
-    BadBanner,
-    /// A record header length other than 12.
-    HeaderLength { offset: usize, length: u32 },
-    /// A record header or body runs past the end of the file.
-    Truncated { offset: usize },
-    /// A body is shorter than its layout, or a count is negative.
-    BadBody { offset: usize, what: &'static str },
-    /// A body ends before its layout does.
-    Leftover { offset: usize, unread: usize },
-    /// A 6/21 inner type, or a track type, this reader does not decode.
-    /// Rotation, look-at, Euler, link-constraints and plain-PRS bindings
-    /// never occur in retail files.
-    UnknownBinding { offset: usize, controller: u32, subtype: u32 },
-}
-
-impl Display for Error {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::BadBanner => write!(f, "not a scenery animation (banner mismatch)"),
-            Error::HeaderLength { offset, length } => {
-                write!(f, "record at {offset:#x}: header length {length}, expected 12")
-            }
-            Error::Truncated { offset } => write!(f, "record at {offset:#x} runs past the file"),
-            Error::BadBody { offset, what } => write!(f, "record at {offset:#x}: {what}"),
-            Error::Leftover { offset, unread } => {
-                write!(f, "record at {offset:#x}: {unread} bytes unread")
-            }
-            Error::UnknownBinding { offset, controller, subtype } => {
-                write!(f, "record at {offset:#x}: unknown animation binding ({controller}, {subtype})")
-            }
-        }
-    }
-}
-
-impl std::error::Error for Error {}
-
-impl FrameError for Error {
-    fn bad_banner() -> Self {
-        Error::BadBanner
-    }
-    fn header_length(offset: usize, length: u32) -> Self {
-        Error::HeaderLength { offset, length }
-    }
-    fn truncated(offset: usize) -> Self {
-        Error::Truncated { offset }
-    }
-    fn bad_body(offset: usize, what: &'static str) -> Self {
-        Error::BadBody { offset, what }
-    }
-    fn leftover(offset: usize, unread: usize) -> Self {
-        Error::Leftover { offset, unread }
-    }
-}
+/// Failure to read a scenery animation. The variants live in
+/// [`sg_framing::Error`](crate::sg_framing::Error).
+///
+/// The animation reader never constructs
+/// [`Trailing`](crate::sg_framing::Error::Trailing) or
+/// [`UnknownSubtype`](crate::sg_framing::Error::UnknownSubtype); the banner
+/// reports [`FileKind::Sga`].
+pub type Error = crate::sg_framing::Error;
 
 /// A decoded record.
 #[derive(Debug, Clone, PartialEq)]
@@ -230,7 +181,7 @@ pub struct NamedRange {
 
 /// Reads the banner and the record list. Records must tile the file exactly.
 pub fn records(bytes: &[u8]) -> Result<Vec<Record<'_>>, Error> {
-    sg_framing::records(bytes)
+    sg_framing::records(bytes, FileKind::Sga)
 }
 
 /// Decodes every record of a scenery animation in file order.
@@ -438,7 +389,7 @@ fn scale_track(r: &mut Reader<'_>, track_type: u32) -> Result<Track<ScaleKey>, E
     Ok(Track { before, after, keys })
 }
 
-type Reader<'a> = sg_framing::Reader<'a, Error>;
+type Reader<'a> = sg_framing::Reader<'a>;
 
 #[cfg(test)]
 mod tests {

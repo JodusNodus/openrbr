@@ -39,10 +39,11 @@
 //! requires every body to be consumed exactly, and any non-record bytes
 //! after the last record are kept in [`Sgs::trailing`] verbatim.
 
-use crate::sg_framing::{self, le_bytes, FrameError};
-use std::fmt::{self, Display, Formatter};
+use crate::le::le_bytes;
+use crate::sg_framing::{self};
 
 pub use crate::sg_framing::BANNER;
+pub use crate::sg_framing::FileKind;
 
 const KIND_GEOMETRY: u32 = 0;
 const KIND_LIGHT: u32 = 1;
@@ -68,67 +69,13 @@ pub const STREAM_EXTRA: u32 = 0x10;
 
 pub use crate::sg_framing::Record;
 
-/// Failure to read a scenery model.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Error {
-    /// The file does not start with [`BANNER`].
-    BadBanner,
-    /// A record header length other than 12.
-    HeaderLength { offset: usize, length: u32 },
-    /// A record header or body runs past the end of the file.
-    Truncated { offset: usize },
-    /// A body is shorter than its layout, or a count is negative.
-    BadBody { offset: usize, what: &'static str },
-    /// Non-record bytes after the last record ([`parse`] keeps them;
-    /// [`records`] rejects them). Only two retail files have any.
-    Trailing { offset: usize, len: usize },
-    /// A body ends before its layout does.
-    Leftover { offset: usize, unread: usize },
-    /// A read record with a subtype this reader does not know.
-    UnknownSubtype { offset: usize, kind: u32, subtype: u32 },
-}
-
-impl Display for Error {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::BadBanner => write!(f, "not a scenery model (banner mismatch)"),
-            Error::HeaderLength { offset, length } => {
-                write!(f, "record at {offset:#x}: header length {length}, expected 12")
-            }
-            Error::Truncated { offset } => write!(f, "record at {offset:#x} runs past the file"),
-            Error::BadBody { offset, what } => write!(f, "record at {offset:#x}: {what}"),
-            Error::Trailing { offset, len } => {
-                write!(f, "{len} trailing bytes at {offset:#x} past the last record")
-            }
-            Error::Leftover { offset, unread } => {
-                write!(f, "record at {offset:#x}: {unread} bytes unread")
-            }
-            Error::UnknownSubtype { offset, kind, subtype } => {
-                write!(f, "record at {offset:#x}: kind {kind}, unknown subtype {subtype}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for Error {}
-
-impl FrameError for Error {
-    fn bad_banner() -> Self {
-        Error::BadBanner
-    }
-    fn header_length(offset: usize, length: u32) -> Self {
-        Error::HeaderLength { offset, length }
-    }
-    fn truncated(offset: usize) -> Self {
-        Error::Truncated { offset }
-    }
-    fn bad_body(offset: usize, what: &'static str) -> Self {
-        Error::BadBody { offset, what }
-    }
-    fn leftover(offset: usize, unread: usize) -> Self {
-        Error::Leftover { offset, unread }
-    }
-}
+/// Failure to read a scenery model. The variants live in
+/// [`sg_framing::Error`](crate::sg_framing::Error).
+///
+/// The scenery reader never constructs
+/// [`UnknownBinding`](crate::sg_framing::Error::UnknownBinding); the banner
+/// reports [`FileKind::Sgs`].
+pub type Error = crate::sg_framing::Error;
 
 /// A decoded record. Records both loaders skip keep only their kind and subtype.
 #[derive(Debug, Clone, PartialEq)]
@@ -279,7 +226,7 @@ pub struct Sgs<'a> {
 /// Reads the banner and the record list. Records must tile the file exactly;
 /// files with trailing bytes fail here but load through [`parse`].
 pub fn records(bytes: &[u8]) -> Result<Vec<Record<'_>>, Error> {
-    let (out, trailing) = sg_framing::split_records(bytes, true)?;
+    let (out, trailing) = sg_framing::split_records(bytes, true, FileKind::Sgs)?;
     if trailing.is_empty() {
         Ok(out)
     } else {
@@ -290,7 +237,7 @@ pub fn records(bytes: &[u8]) -> Result<Vec<Record<'_>>, Error> {
 /// Decodes every record of a scenery model in file order, keeping any
 /// trailing non-record bytes in [`Sgs::trailing`].
 pub fn parse(bytes: &[u8]) -> Result<Sgs<'_>, Error> {
-    let (recs, trailing) = sg_framing::split_records(bytes, true)?;
+    let (recs, trailing) = sg_framing::split_records(bytes, true, FileKind::Sgs)?;
     Ok(Sgs { elements: recs.iter().map(element).collect::<Result<_, _>>()?, trailing })
 }
 
@@ -299,7 +246,7 @@ pub fn parse(bytes: &[u8]) -> Result<Sgs<'_>, Error> {
 /// other records are not decoded.
 pub fn node_table(bytes: &[u8]) -> Result<Hierarchy, Error> {
     let mut nodes = Vec::new();
-    for rec in sg_framing::split_records(bytes, true)?.0.iter().filter(|rec| rec.kind == KIND_HIERARCHY) {
+    for rec in sg_framing::split_records(bytes, true, FileKind::Sgs)?.0.iter().filter(|rec| rec.kind == KIND_HIERARCHY) {
         let mut r = Reader::new(rec.body, rec.offset);
         nodes.extend(hierarchy(&mut r)?.nodes);
         r.finish()?;
@@ -532,7 +479,7 @@ fn hierarchy(r: &mut Reader<'_>) -> Result<Hierarchy, Error> {
     Ok(Hierarchy { nodes })
 }
 
-type Reader<'a> = sg_framing::Reader<'a, Error>;
+type Reader<'a> = sg_framing::Reader<'a>;
 
 #[cfg(test)]
 mod tests {
