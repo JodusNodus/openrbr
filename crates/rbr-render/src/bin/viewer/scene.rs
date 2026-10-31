@@ -364,6 +364,8 @@ fn load_scene<'scope, 'env>(
             if let (Some(drawn), true) = (&mut particles, args.enhance.marks) {
                 drawn.particles.lay_tyre_marks();
             }
+            // The particles hold the collision ground they use; the stage keeps none.
+            stage.collision = None;
             // A recording's lamps and tyre payloads, when given (`particles::sidecar`).
             if let (Some(_), Some(playback)) = (&args.drive, &mut playback) {
                 let recorded = particles::sidecar::events();

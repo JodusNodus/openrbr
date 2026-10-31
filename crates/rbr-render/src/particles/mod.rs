@@ -29,6 +29,7 @@ pub mod wheel_spray;
 use std::collections::{HashMap, VecDeque};
 use std::io::Read;
 use std::path::Path;
+use std::sync::Arc;
 
 use glam::{Mat4, Vec3};
 use rbr_formats::data::Data;
@@ -136,7 +137,7 @@ pub type Step = (Vec<TyreParticles>, Vec<Event>);
 pub struct Particles {
     pub sim: Simulation,
     tyres: Tyres,
-    ground: Option<Ground>,
+    ground: Option<Arc<Ground>>,
     precipitation: Option<Precipitation>,
     /// The wind of the stage's `track_w.ini`.
     wind: Wind,
@@ -177,7 +178,8 @@ pub struct Particles {
 
 impl Particles {
     /// The particles of `stage` (`track-54_E`) for `selection`, the `TrackSettings.ini` section `section` and the car
-    /// `car` (its `Cars.ini` folder, for the exhaust). `None` when the stage's map has no particle file.
+    /// `car` (its `Cars.ini` folder, for the exhaust), on the stage's collision ground `ground` when it is built
+    /// ([`Stage::collision`](crate::stage::Stage::collision)). `None` when the stage's map has no particle file.
     pub fn load(
         data: &Data,
         stage: &str,
@@ -185,6 +187,7 @@ impl Particles {
         section: Option<&str>,
         car: Option<&str>,
         chosen: Option<crate::atmosphere::Rain>,
+        ground: Option<Arc<Ground>>,
     ) -> Result<Option<Particles>, String> {
         let maps = data.install().join("Maps");
         let Some(path) = particle_file(data, &maps, stage)? else { return Ok(None) };
@@ -195,7 +198,7 @@ impl Particles {
         let car_effects = CarEffects::new(&mut sim);
         let damping = Damping::new(&file, &sim);
         let marks = rbr_formats::skidmarks::for_stage(data, stage)?.map(SkidMarks::new);
-        let ground = load_ground(&maps, stage, selection);
+        let ground = ground.or_else(|| load_ground(&maps, stage, selection).map(Arc::new));
         let has = |name: &str| file.emitter(name).is_some();
         let (has_rain, has_snow) = (has("g_rain_emitter"), has("g_snow_emitter"));
         let precipitation = Precipitation::resolve(chosen, section, has_rain, has_snow);
@@ -549,11 +552,13 @@ pub struct Drawn {
 }
 
 impl Drawn {
-    /// The particles of `stage` for `car`, or `None` (reported on stderr) when the stage has none or they do not load.
+    /// The particles of `stage` for `car` (on its [`Stage::collision`] when built), or `None` (reported on stderr) when
+    /// the stage has none or they do not load.
     pub fn load(data: &Data, stage: &Stage, car: Option<&str>) -> Option<Drawn> {
         let section = stage.atmosphere.section.as_deref();
-        let chosen = stage.atmosphere.rain;
-        let loaded = Particles::load(data, &stage.name, stage.selection, section, car, chosen).and_then(|particles| {
+        let (chosen, ground) = (stage.atmosphere.rain, stage.collision.clone());
+        let loaded = Particles::load(data, &stage.name, stage.selection, section, car, chosen, ground);
+        let loaded = loaded.and_then(|particles| {
             let Some(particles) = particles else { return Ok(None) };
             let mut sprites = gpu::Sprites::decode(&sprite_files(data, &particles.sprites)?);
             let splash = sprite_files(data, &["splashcolor.dds".to_owned()])?.pop().flatten();

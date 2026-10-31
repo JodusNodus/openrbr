@@ -14,7 +14,7 @@ const CELL: f32 = 4.0;
 /// How far above the point a triangle may be and still count as its ground, metres.
 const ABOVE: f32 = 0.5;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct Face {
     corners: [[f32; 3]; 3],
     /// The two surface ids at each corner, sampled per corner (their weighted mean picks the cell).
@@ -31,6 +31,7 @@ pub struct Hit {
 }
 
 /// The stage's ground triangles in a grid of [`CELL`] squares, and the material runs of the selected `.mat` entry.
+#[derive(Debug, PartialEq)]
 pub struct Ground {
     faces: Vec<Face>,
     cells: HashMap<(i32, i32), Vec<u32>>,

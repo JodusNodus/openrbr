@@ -31,6 +31,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         textures: Default::default(),
         start_digits: None,
         snow_ground: false,
+        collision: None,
         start: None,
         atmosphere: Default::default(),
         driveline: Vec::new(),

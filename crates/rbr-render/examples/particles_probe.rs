@@ -15,7 +15,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let every: usize = args.next().map_or(Ok(500), |s| s.parse())?;
     let data = Data::from_env().ok_or("RBR_DATA is not set")?;
     let particles =
-        Particles::load(&data, &stage, Selection::default(), None, None, None)?.ok_or("no particle file")?;
+        Particles::load(&data, &stage, Selection::default(), None, None, None, None)?.ok_or("no particle file")?;
     let bytes = std::fs::read(recording)?;
     let mut samples = Vec::new();
     for frame in Frames::new(&bytes) {

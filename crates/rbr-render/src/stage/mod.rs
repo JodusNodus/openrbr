@@ -18,6 +18,8 @@ use std::fmt::{self, Display, Formatter};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::particles::ground::Ground;
+
 mod mesh;
 mod textures;
 
@@ -220,6 +222,10 @@ pub struct Stage {
     pub start_digits: Option<Vec<u8>>,
     /// The off-road ground is snow's ([`crate::puddles::mark_ground`]); the far ground's calming leaves it alone.
     pub snow_ground: bool,
+    /// The collision ground for `selection` (`.col`, and the `.mat` entry for its weather), when marking the surfaces
+    /// built it ([`load`] in the wet, [`Stage::mark_surfaces`]), for the particles to take rather than build again
+    /// ([`crate::particles::Drawn::load`]).
+    pub collision: Option<Arc<Ground>>,
     /// The car start location, if the stage has one.
     pub start: Option<Pose>,
     /// The light and haze (`Maps/TrackSettings.ini`), a renderer choice of section (`atmosphere`).
@@ -506,10 +512,15 @@ pub fn load(maps: &Path, name: &str, selection: Selection) -> Result<Stage, Erro
     // The clouds go first: the capture draws them right after the sky dome, before the sky faces and the
     // stage, with no depth test, so everything drawn later covers them (`global_clouds`).
     let sky = selection.sky.and_then(|sky| sky.section(name));
-    // Ours: in the wet and the damp the roads take the film by their surface ([`mark_roads`]); dry, only the road scans
-    // need them ([`Stage::mark_surfaces`]).
-    if selection.weather != Weather::Dry {
-        mark_roads(&mut meshes, maps, name, selection);
+    // Ours: in the wet and the damp the roads take the film by their surface ([`crate::puddles::mark_roads`]); dry, only
+    // the road scans need them ([`Stage::mark_surfaces`]).
+    let wet = selection.weather != Weather::Dry;
+    let collision = wet.then(|| collision(maps, name, selection)).flatten();
+    if wet {
+        if let Some(marking) = marking(collision.as_ref(), maps, name, selection) {
+            let triangles = crate::puddles::ground_triangles(&meshes, &marking);
+            crate::puddles::mark_roads(&mut meshes, &triangles);
+        }
     }
     let atmosphere = Atmosphere::load(maps, name, selection.weather.as_str(), sky.as_deref());
     meshes.splice(0..0, global_clouds(maps, selection.weather, atmosphere.cloud_name.as_deref(), &mut report)?);
@@ -525,6 +536,7 @@ pub fn load(maps: &Path, name: &str, selection: Selection) -> Result<Stage, Erro
         textures: BTreeMap::new(),
         start_digits: None,
         snow_ground: false,
+        collision,
         start,
         atmosphere,
         driveline: driveline(maps, name),
@@ -532,19 +544,16 @@ pub fn load(maps: &Path, name: &str, selection: Selection) -> Result<Stage, Erro
     })
 }
 
-/// Stage `name`'s collision ground for marking its surfaces, from the dry entry where the `.mat` has none for the
-/// weather (460M): only the kind of surface counts.
-fn collision(maps: &Path, name: &str, selection: Selection) -> Option<crate::particles::ground::Ground> {
-    let ground = |weather| crate::particles::load_ground(maps, name, Selection { weather, ..selection });
-    ground(selection.weather).filter(|g| g.has_surfaces()).or_else(|| ground(Weather::Dry))
+/// Stage `name`'s collision ground for `selection` ([`Stage::collision`]).
+fn collision(maps: &Path, name: &str, selection: Selection) -> Option<Arc<Ground>> {
+    crate::particles::load_ground(maps, name, selection).map(Arc::new)
 }
 
-/// Marks the roads of `meshes` by the collision surface under them (`puddles::mark_roads`, [`Vertex::wet`]).
-fn mark_roads(meshes: &mut [Mesh], maps: &Path, name: &str, selection: Selection) {
-    if let Some(collision) = collision(maps, name, selection) {
-        let triangles = crate::puddles::ground_triangles(meshes, &collision);
-        crate::puddles::mark_roads(meshes, &triangles);
-    }
+/// The collision ground to mark the surfaces by: the `weather`'s, or the dry entry's where the `.mat` has none for the
+/// weather (460M): only the kind of surface counts.
+fn marking(weather: Option<&Arc<Ground>>, maps: &Path, name: &str, selection: Selection) -> Option<Arc<Ground>> {
+    let dry = || collision(maps, name, Selection { weather: Weather::Dry, ..selection });
+    weather.filter(|g| g.has_surfaces()).cloned().or_else(dry)
 }
 
 impl Stage {
@@ -558,8 +567,11 @@ impl Stage {
         if !(roads || ground) {
             return;
         }
-        let Some(collision) = collision(maps, &self.name, self.selection) else { return };
-        let triangles = crate::puddles::ground_triangles(&self.meshes, &collision);
+        if self.collision.is_none() {
+            self.collision = collision(maps, &self.name, self.selection);
+        }
+        let Some(marking) = marking(self.collision.as_ref(), maps, &self.name, self.selection) else { return };
+        let triangles = crate::puddles::ground_triangles(&self.meshes, &marking);
         if roads {
             crate::puddles::mark_roads(&mut self.meshes, &triangles);
         }
