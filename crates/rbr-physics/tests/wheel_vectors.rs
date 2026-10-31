@@ -5,7 +5,7 @@
 
 mod common;
 
-use common::{load, map_windows, shared_windows, Call, Inner};
+use common::{load, map_windows, shared_windows, After, Call, Inner, Window};
 use rbr_physics::car_body::transform::FRAME;
 use rbr_physics::fpu::Precision;
 use rbr_physics::math::vec::{clear_vec4, Vec4};
@@ -30,9 +30,9 @@ fn xform_from_record(call: &Call) -> impl FnOnce(u32, Vec4) -> Vec4 + '_ {
     move |car, tmp| {
         let inner = call.inner.iter().find(|i| i.addr == 0x4E6870).expect("Copy100 records one Xform6870");
         assert_eq!(car, inner.args[0], "Copy100 call {}: receiver", call.index);
-        let (_, _, _, tmp_pre, _) = &inner.windows[1];
+        let Window { index: _, at: _, len: _, before: tmp_pre, after: _ } = &inner.windows[1];
         assert_eq!(bytes_of(tmp), *tmp_pre, "Copy100 call {}: tmp", call.index);
-        let (_, _, _, _, x_post) = &inner.windows[2];
+        let Window { index: _, at: _, len: _, before: _, after: x_post } = &inner.windows[2];
         vec4_of(x_post)
     }
 }
@@ -66,7 +66,7 @@ fn replay_with(addr: u32, name: &str, map: fn(&Call) -> Mem, port: impl Fn(&mut 
     for call in &calls {
         let mut mem = map(call);
         port(&mut mem, call);
-        for (k, at, len, _, post) in &call.windows {
+        for Window { index: k, at, len, before: _, after: post } in &call.windows {
             let got = mem.read(*at, *len);
             if let Some(i) = (0..*len).find(|&i| got[i] != post[i]) {
                 panic!(
@@ -219,12 +219,12 @@ impl RecordedXform<'_> {
     fn answer(&mut self, addr: u32, car: u32, a: Option<Vec4>) -> Vec4 {
         let inner = next_call(self.call, &mut self.next, addr);
         assert_eq!(inner.args[0], car, "M3A8A0 call {}: receiver", self.call.index);
-        let (_, _, _, src_pre, _) = &inner.windows[0];
+        let Window { index: _, at: _, len: _, before: src_pre, after: _ } = &inner.windows[0];
         match a {
             Some(v) => assert_eq!(bytes_of(v), *src_pre, "M3A8A0 call {}: source", self.call.index),
             None => assert_eq!(inner.args[1], 0, "M3A8A0 call {}: null source", self.call.index),
         }
-        let (_, _, _, _, out_post) = &inner.windows[1];
+        let Window { index: _, at: _, len: _, before: _, after: out_post } = &inner.windows[1];
         vec4_of(out_post)
     }
 }
@@ -262,12 +262,12 @@ impl WalkCalls for RecordedWalk<'_> {
         let inner = next_call(self.call, &mut self.next, 0x51B560);
         assert_eq!(inner.args[0], walker, "walk call {}: walker", self.call.index);
         assert_eq!(inner.args[2], car, "walk call {}: car", self.call.index);
-        let (_, _, _, a_pre, _) = &inner.windows[0];
+        let Window { index: _, at: _, len: _, before: a_pre, after: _ } = &inner.windows[0];
         match a {
             Some(v) => assert_eq!(bytes_of(v), *a_pre, "walk call {}: a bytes", self.call.index),
             None => assert_eq!(inner.args[1], 0, "walk call {}: null a", self.call.index),
         }
-        let (_, _, _, _, c_post) = &inner.windows[1];
+        let Window { index: _, at: _, len: _, before: _, after: c_post } = &inner.windows[1];
         vec4_of(c_post)
     }
 }
@@ -371,7 +371,7 @@ fn apply_writes(mem: &mut Mem, writes: &Writes) {
 }
 
 fn windows_of(inner: &Inner) -> Writes {
-    inner.windows.iter().map(|(_, at, _, _, post)| (*at, post.clone())).collect()
+    inner.windows.iter().map(|Window { at, after: post, .. }| (*at, post.clone())).collect()
 }
 
 /// Answers `M3D030`'s host calls from its records, in call order: the car transforms (through `RecordedXform`) and the
@@ -518,7 +518,8 @@ impl SubCalls for RecordedSub<'_> {
             self.call.index
         );
         // Window 2 is the stack vector `v` as the asm wrote it before the call (lane 3 is never written, so not checked).
-        let (_, _, _, pre, _) = inner.windows.iter().find(|w| w.0 == 2).expect("Unk94d0 record: the vector window");
+        let Window { index: _, at: _, len: _, before: pre, after: _ } =
+            inner.windows.iter().find(|w| w.index == 2).expect("Unk94d0 record: the vector window");
         let want = vec4_of(pre);
         assert_eq!(
             [v.x.to_bits(), v.y.to_bits(), v.z.to_bits()],
@@ -545,10 +546,11 @@ fn split_on_sub_matches_original_calls() {
     let (mut sign_only, mut long_rest) = (0, 0);
     for c in &calls {
         let mut mem = map_windows(c);
-        let (_, residue_at, ..) = c.windows.iter().find(|w| w.0 == 6).expect("Unk94d0 record: the stack word");
+        let Window { at: residue_at, .. } =
+            c.windows.iter().find(|w| w.index == 6).expect("Unk94d0 record: the stack word");
         let eax = layout::split_on_sub(&mut mem, c.args[0], c.args[1], c.args[2], c.args[3], residue_at + 0x18);
         assert_eq!(eax, c.eax, "Unk94d0 call {}: eax", c.index);
-        for (k, at, _, _, post) in &c.windows {
+        for Window { index: k, at, len: _, before: _, after: post } in &c.windows {
             for (w, bytes) in post.chunks_exact(4).enumerate() {
                 let (ours, theirs) = (mem.u32(at + 4 * w as u32), u32::from_le_bytes(bytes.try_into().unwrap()));
                 if ours != theirs {
@@ -662,7 +664,7 @@ impl SolidCalls for RecordedSolidCall<'_> {
             self.solid.index
         );
         // The tail call's writes are in the wheel's post window, so the test applies them.
-        self.writes.extend(self.solid.windows.iter().map(|(_, at, _, _, post)| (*at, post.clone())));
+        self.writes.extend(self.solid.windows.iter().map(|Window { at, after: post, .. }| (*at, post.clone())));
     }
 }
 
@@ -701,8 +703,8 @@ impl BlendCalls for RecordedBlendCalls<'_> {
             "Unk9900 call {}: BlendTable arguments",
             self.call.index
         );
-        let (_, _, _, _, o1) = &inner.windows[1];
-        let (_, _, _, _, o2) = &inner.windows[2];
+        let Window { index: _, at: _, len: _, before: _, after: o1 } = &inner.windows[1];
+        let Window { index: _, at: _, len: _, before: _, after: o2 } = &inner.windows[2];
         (f32::from_bits(word_of(o1)), f32::from_bits(word_of(o2)))
     }
 
@@ -991,7 +993,7 @@ impl SolidCtorHost for SolidReplay<'_> {
     ) -> Result<(), HostUnavailable> {
         let inner = self.call.inner.iter().find(|i| i.addr == 0x52D480).expect("CSolid::CSolid");
         assert_eq!(inner.args, [solid, def, a, b, flags], "CSolid::CSolid arguments");
-        for (_, at, _, _, post) in &inner.windows {
+        for Window { index: _, at, len: _, before: _, after: post } in &inner.windows {
             mem.map(*at, post);
         }
         Ok(())
@@ -1014,7 +1016,7 @@ impl EmitHost for SolidReplay<'_> {
 
     fn wake(&mut self, body: &mut rbr_physics::rigid_body::layout::Body) -> Result<(), HostUnavailable> {
         let inner = self.call.inner.iter().find(|i| i.addr == 0x52BF30).expect("CSolid::E43Vf90");
-        let (_, at, _, _, post) = &inner.windows[0];
+        let Window { index: _, at, len: _, before: _, after: post } = &inner.windows[0];
         self.mem.map(*at, post);
         *body = rbr_physics::rigid_body::layout::Body::load(&self.mem, inner.args[0]);
         Ok(())
@@ -1101,7 +1103,7 @@ fn new_wheel_matches_original_calls() {
         let wheel = layout::new_wheel(&mut mem, &mut host, c.args[0], c.args[1], c.args[2])
             .expect("the recorded calls have no host gap");
         assert_eq!(wheel, c.eax, "M3D1C0 call {}: eax", c.index);
-        for (at, len, bytes) in &c.after {
+        for After { at, len, bytes } in &c.after {
             assert_eq!(&mem.read(*at, *len), bytes, "M3D1C0 call {}: the wheel", c.index);
         }
     }

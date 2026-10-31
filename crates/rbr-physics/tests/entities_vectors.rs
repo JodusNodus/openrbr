@@ -4,7 +4,7 @@
 
 mod common;
 
-use common::{check_windows, load, map_after_zero, map_windows, shared_windows, Call, Inner};
+use common::{check_windows, load, map_after_zero, map_windows, replay_eax, shared_windows, Call, Inner, Window};
 use rbr_physics::entities::def;
 use rbr_physics::entities::exclusion::{self, Heap, ParentTest};
 use rbr_physics::entities::frame::{self, Form, Hook, Owner};
@@ -21,32 +21,6 @@ use rbr_physics::entities::walk::{self, FactoryTable, Node, Walk, Walker};
 use rbr_physics::mem::Mem;
 
 const VAR: &str = "RBR_ENT_VECTORS";
-
-/// Replays every recorded call of `addr` through `port(mem, args)`, which returns eax. The windows
-/// are mapped from the record, the port runs, then eax (when `eax_checked`: the original returns a
-/// value) and every window are compared with the original's.
-fn replay(addr: u32, name: &str, eax_checked: bool, port: impl Fn(&mut Mem, &[u32]) -> u32) {
-    let Some(calls) = load(VAR, addr) else {
-        eprintln!("skipping {name}: {VAR} not set");
-        return;
-    };
-    if calls.is_empty() {
-        // Not reached by the recorded steps (load-time calls are not in them): no evidence here.
-        eprintln!("{name}: no calls in the vector files");
-        return;
-    }
-    let mut branches = std::collections::BTreeMap::<String, usize>::new();
-    for call in &calls {
-        let mut mem = map_windows(call);
-        let eax = port(&mut mem, &call.args);
-        if eax_checked {
-            assert_eq!(eax, call.eax, "{name} call {}: eax", call.index);
-        }
-        check_windows(call, &mem, name);
-        *branches.entry(call.branch.clone()).or_default() += 1;
-    }
-    eprintln!("{name}: {} calls match, by branch: {branches:?}", calls.len());
-}
 
 /// Answers the port's external calls from the recorded ones: each call must be the next recorded one, with the
 /// same arguments, and the answer is its eax.
@@ -137,7 +111,7 @@ fn old_entity_frame_hooks_match_original_calls() {
 
 #[test]
 fn e44_mat_table_build_matches_original_calls() {
-    replay(0x520190, "E44MatTable::Build", false, |mem, a| {
+    replay_eax(VAR, 0x520190, "E44MatTable::Build", false, |mem, a| {
         layout::build_material_table(mem, a[0], a[1]);
         0
     });
@@ -145,7 +119,7 @@ fn e44_mat_table_build_matches_original_calls() {
 
 #[test]
 fn e44_fill_ones_matches_original_calls() {
-    replay(0x51CD60, "E44_FillOnes", false, |mem, a| {
+    replay_eax(VAR, 0x51CD60, "E44_FillOnes", false, |mem, a| {
         layout::fill_ones(mem, a[0]);
         0
     });
@@ -153,13 +127,13 @@ fn e44_fill_ones_matches_original_calls() {
 
 #[test]
 fn hinged_def_constants_match_original_calls() {
-    replay(0x51CC30, "CHingedRigidBody::CDef::Vf4c", true, |_, _| layout::HINGED_DEF_NAME);
-    replay(0x51CC40, "CHingedRigidBody::CDef::Unk20", true, |_, _| layout::HINGED_TWEAK_DICT);
+    replay_eax(VAR, 0x51CC30, "CHingedRigidBody::CDef::Vf4c", true, |_, _| layout::HINGED_DEF_NAME);
+    replay_eax(VAR, 0x51CC40, "CHingedRigidBody::CDef::Unk20", true, |_, _| layout::HINGED_TWEAK_DICT);
 }
 
 #[test]
 fn hinged_set_650_matches_original_calls() {
-    replay(0x51DA50, "CHingedRigidBody::Set650", false, |mem, a| {
+    replay_eax(VAR, 0x51DA50, "CHingedRigidBody::Set650", false, |mem, a| {
         layout::set_hinge_link(mem, a[0], a[1]);
         0
     });
@@ -167,18 +141,18 @@ fn hinged_set_650_matches_original_calls() {
 
 #[test]
 fn pair_stores_match_original_calls() {
-    replay(0x51AD50, "E43PairWalk::MD50", true, |mem, a| mem.store_pair(a[0], a[1], a[2]));
-    replay(0x51AD70, "E43PairWalk::MD70", true, |mem, a| mem.store_pair(a[0], a[1], a[2]));
+    replay_eax(VAR, 0x51AD50, "E43PairWalk::MD50", true, |mem, a| mem.store_pair(a[0], a[1], a[2]));
+    replay_eax(VAR, 0x51AD70, "E43PairWalk::MD70", true, |mem, a| mem.store_pair(a[0], a[1], a[2]));
 }
 
 #[test]
 fn pair_combine_matches_original_calls() {
-    replay(0x51AB90, "E33Mat34::Combine", true, |mem, a| mem.store_pair(a[0], a[1], a[2]));
+    replay_eax(VAR, 0x51AB90, "E33Mat34::Combine", true, |mem, a| mem.store_pair(a[0], a[1], a[2]));
 }
 
 #[test]
 fn combine_twin_matches_original_calls() {
-    replay(0x51AB70, "E33Mat34::CombineTwin", true, |mem, a| mem.store_pair(a[0], a[1], a[2]));
+    replay_eax(VAR, 0x51AB70, "E33Mat34::CombineTwin", true, |mem, a| mem.store_pair(a[0], a[1], a[2]));
 }
 
 /// `E43PairWalk::MFc00` (0x519c00) returns `this`; no record backs it (status `unit`).
@@ -232,15 +206,15 @@ fn functor_calls_callback_or_tail_target() {
 
 #[test]
 fn empty_hooks_match_original_calls() {
-    replay(0x519B90, "CEntity hook (ret)", false, |_, _| {
+    replay_eax(VAR, 0x519B90, "CEntity hook (ret)", false, |_, _| {
         layout::empty_hook();
         0
     });
-    replay(0x519AC0, "CEntity hook (xor eax, eax)", true, |_, _| layout::zero_hook());
-    replay(0x519A20, "CEntity::E43Vf80 (xor eax, eax)", true, |_, _| layout::zero_hook());
-    replay(0x519D60, "CEntity::Vf114 (xor eax, eax)", true, |_, _| layout::zero_hook());
-    replay(0x519970, "CEntity::VfE8 (xor eax, eax)", true, |_, _| layout::zero_hook());
-    replay(0x519EB0, "CEntity::VfF0 (xor eax, eax)", true, |_, _| layout::zero_hook());
+    replay_eax(VAR, 0x519AC0, "CEntity hook (xor eax, eax)", true, |_, _| layout::zero_hook());
+    replay_eax(VAR, 0x519A20, "CEntity::E43Vf80 (xor eax, eax)", true, |_, _| layout::zero_hook());
+    replay_eax(VAR, 0x519D60, "CEntity::Vf114 (xor eax, eax)", true, |_, _| layout::zero_hook());
+    replay_eax(VAR, 0x519970, "CEntity::VfE8 (xor eax, eax)", true, |_, _| layout::zero_hook());
+    replay_eax(VAR, 0x519EB0, "CEntity::VfF0 (xor eax, eax)", true, |_, _| layout::zero_hook());
 }
 
 #[test]
@@ -253,20 +227,20 @@ fn entity_and_pair_echoes_return_first_argument() {
 
 #[test]
 fn echo_calls_match_original_calls() {
-    replay(0x51A710, "CEntity::E43VfA0", true, |_, a| frame::entity_result(a[0], a[1], a[2]));
+    replay_eax(VAR, 0x51A710, "CEntity::E43VfA0", true, |_, a| frame::entity_result(a[0], a[1], a[2]));
     for (addr, name) in [
         (0x51AB10, "E43PairWalk::MAB10"),
         (0x51AB20, "E43PairWalk::MAB20"),
         (0x51AB30, "E43PairWalk::MAB30"),
         (0x51AB40, "E43PairWalk::MAB40"),
     ] {
-        replay(addr, name, true, |_, a| walk::return_first(a[0], a[1], a[2]));
+        replay_eax(VAR, addr, name, true, |_, a| walk::return_first(a[0], a[1], a[2]));
     }
 }
 
 #[test]
 fn hinged_mul4_matches_original_calls() {
-    replay(0x51C8C0, "E44Shell::M51C8C0", false, |mem, a| {
+    replay_eax(VAR, 0x51C8C0, "E44Shell::M51C8C0", false, |mem, a| {
         layout::componentwise_mul(mem, a[0], a[1], a[2]);
         0
     });
@@ -274,22 +248,22 @@ fn hinged_mul4_matches_original_calls() {
 
 #[test]
 fn ground_constants_match_original_calls() {
-    replay(0x51BA20, "CGround::CDef::Vf4c", true, |_, _| layout::GROUND_DEF_NAME);
-    replay(0x51BB00, "CGround::CDef::Unk20", true, |_, _| layout::GROUND_TWEAK_DICT);
+    replay_eax(VAR, 0x51BA20, "CGround::CDef::Vf4c", true, |_, _| layout::GROUND_DEF_NAME);
+    replay_eax(VAR, 0x51BB00, "CGround::CDef::Unk20", true, |_, _| layout::GROUND_TWEAK_DICT);
     for addr in [0x51BB60, 0x51BB70, 0x51BB80] {
-        replay(addr, "CGround flag slot", true, |_, _| ground::present() as u32);
+        replay_eax(VAR, addr, "CGround flag slot", true, |_, _| ground::present() as u32);
     }
-    replay(0x51BC70, "CGround::VfCC", true, |_, _| ground::present() as u32);
+    replay_eax(VAR, 0x51BC70, "CGround::VfCC", true, |_, _| ground::present() as u32);
 }
 
 #[test]
 fn material_unk20_matches_original_calls() {
-    replay(0x520820, "CMaterial::Unk20", true, |_, _| layout::MATERIAL_TWEAK_DICT);
+    replay_eax(VAR, 0x520820, "CMaterial::Unk20", true, |_, _| layout::MATERIAL_TWEAK_DICT);
 }
 
 #[test]
 fn cframe_init_matches_original_calls() {
-    replay(0x51AF70, "CFrame::CFrame", false, |mem, a| {
+    replay_eax(VAR, 0x51AF70, "CFrame::CFrame", false, |mem, a| {
         layout::construct_frame(mem, a[0], a[1]);
         0
     });
@@ -394,11 +368,11 @@ fn mat_walk_matches_original_calls() {
         let mut mem = map_windows(call);
         // Window 0 is `a` (before the copy), window 1 is `c`: the walk's slot calls write `c` after the copy,
         // and those writes are not modelled, so `c` is checked at the copy only.
-        let a_before = &call.windows[0].3;
+        let a_before = &call.windows[0].before;
         let mut answers = WalkAnswers { mem: &mut mem, inner: &call.inner, next: 0, copy_expected: Some(a_before) };
         walk::carry_three_four(&mut answers, call.args[0], call.args[1], call.args[2], call.args[3]);
         assert_eq!(answers.next, call.inner.len(), "{name} call {}: calls", call.index);
-        for (k, at, len, _, post) in &call.windows {
+        for Window { index: k, at, len, before: _, after: post } in &call.windows {
             if *k != 1 {
                 assert_eq!(mem.read(*at, *len), *post, "{name} call {} window {k}", call.index);
             }
@@ -464,13 +438,13 @@ fn factory_name_matches_original_calls() {
     for call in &calls {
         let mut mem = map_windows(call);
         // Window 0 is the walker (count at +0x18, indices from +0x1c), before and after the call.
-        let (_, _, _, walker_before, walker_after) = &call.windows[0];
+        let Window { index: _, at: _, len: _, before: walker_before, after: walker_after } = &call.windows[0];
         let count_before = le_word(walker_before, 0x18) as usize;
         let stored = le_word(walker_after, 0x1c + 4 * count_before);
         let mut answers = FactoryAnswers { mem: &mut mem, inner: &call.inner, next: 0, stored };
         walk::lookup_factory_name(&mut answers, call.args[0], call.args[1], call.args[3]);
         assert_eq!(answers.next, call.inner.len(), "{name} call {}: calls", call.index);
-        for (k, at, len, _, post) in &call.windows {
+        for Window { index: k, at, len, before: _, after: post } in &call.windows {
             // Window 2 is the token cursor: its advance is the table's call, which is not modelled.
             if *k != 2 {
                 assert_eq!(mem.read(*at, *len), *post, "{name} call {} window {k}", call.index);
@@ -750,7 +724,7 @@ fn name_walk_matches_original_calls() {
 
 #[test]
 fn append_child_matches_original_calls() {
-    replay(0x51A370, "CEntity::E43Vf150 (AppendChild)", true, |mem, a| layout::append_child(mem, a[0], a[1]));
+    replay_eax(VAR, 0x51A370, "CEntity::E43Vf150 (AppendChild)", true, |mem, a| layout::append_child(mem, a[0], a[1]));
 }
 
 /// The calls an allocation or a def makes on the game, answered from the record: each takes the next inner
@@ -909,7 +883,7 @@ impl transform::GridFetch for GridAnswers<'_> {
         self.next += 1;
         assert_eq!(rec.addr, 0x51B410, "grid walk");
         assert_eq!(rec.args, vec![receiver, o2, a, b], "grid walk args");
-        for (_, at, _, pre, post) in &rec.windows {
+        for Window { index: _, at, len: _, before: pre, after: post } in &rec.windows {
             assert_eq!(self.mem.read(*at, pre.len()), *pre, "grid walk input");
             self.mem.map(*at, post);
         }
@@ -949,7 +923,7 @@ impl rbr_physics::collision::layout::wall_tree::VfF0Host for SlotE8Answers<'_> {
         let rec = &self.inner[self.next];
         self.next += 1;
         assert_eq!(rec.args, vec![wall, a, b, 0, out, 1], "VfE8 args");
-        for (_, at, _, _, post) in &rec.windows {
+        for Window { index: _, at, len: _, before: _, after: post } in &rec.windows {
             self.mem.map(*at, post);
         }
         rec.eax
@@ -968,7 +942,7 @@ impl rbr_physics::collision::layout::wall_tree::VfE8Host for FetchXAnswers<'_> {
         let rec = &self.inner[self.next];
         self.next += 1;
         assert_eq!(rec.args, vec![matrix, out, worker], "FetchX args");
-        for (_, at, _, _, post) in &rec.windows {
+        for Window { index: _, at, len: _, before: _, after: post } in &rec.windows {
             self.mem.map(*at, post);
         }
     }
@@ -1030,7 +1004,7 @@ fn brake_wall_vf_f0_matches_original_calls() {
 
 #[test]
 fn ground_def_ctor_matches_original_calls() {
-    replay(0x51B990, "CGround::CDef::CDef", true, |mem, a| {
+    replay_eax(VAR, 0x51B990, "CGround::CDef::CDef", true, |mem, a| {
         layout::construct_ground_def(mem, a[0], a[1]);
         a[0]
     });
@@ -1071,7 +1045,7 @@ fn ground_box_probe_matches_original_calls() {
             ProbeScratch { first: calls.inner[0].args[1], second: calls.inner[1].args[1], out: calls.inner[2].args[3] };
         // The host's output is its inner window's after bytes: the port reads them after the query, so they are
         // in memory from the start (the query itself is answered from its record).
-        for (_, at, _, _, post) in &calls.inner[2].windows {
+        for Window { index: _, at, len: _, before: _, after: post } in &calls.inner[2].windows {
             mem.map(*at, post);
         }
         let mut answers = ProbeAnswers { calls };
@@ -1382,7 +1356,7 @@ impl E90BuildRecorded<'_> {
         let call = self.inner.get(self.next).unwrap_or_else(|| panic!("E90 Build: inner {} is missing", self.next));
         assert_eq!(call.addr, addr, "E90 Build inner {} target", self.next);
         assert_eq!(call.args, args, "E90 Build inner {} args", self.next);
-        for (_, at, _, pre, post) in &call.windows {
+        for Window { index: _, at, len: _, before: pre, after: post } in &call.windows {
             self.mem.map(*at, pre);
             self.mem.map(*at, post);
         }
@@ -1449,10 +1423,10 @@ impl E90SegmentRecorded<'_> {
             .unwrap_or_else(|| panic!("E90 segment inner {} is missing ({addr:#x})", self.next));
         assert_eq!(call.addr, addr, "E90 segment inner {} target", self.next);
         assert_eq!(call.args, args, "E90 segment inner {} args", self.next);
-        for (_, at, len, pre, _) in &call.windows {
+        for Window { index: _, at, len, before: pre, after: _ } in &call.windows {
             assert_eq!(self.mem.read(*at, *len), *pre, "E90 segment inner {} pre", self.next);
         }
-        for (_, at, _, _, post) in &call.windows {
+        for Window { index: _, at, len: _, before: _, after: post } in &call.windows {
             self.mem.map(*at, post);
         }
         self.next += 1;
@@ -1633,11 +1607,12 @@ fn clear480_and_exclusion_remove_match_direct_records() {
             assert_eq!(host.next, call.inner.len(), "Clear480 call {} children", call.index);
             let car = call.args[0];
             let expected =
-                &call.windows.iter().find(|(_, at, _, _, _)| *at == car).expect("Clear480 car window").4[0x480..0x490];
+                &call.windows.iter().find(|Window { at, .. }| *at == car).expect("Clear480 car window").after
+                    [0x480..0x490];
             assert_eq!(mem.read(car + 0x480, 0x10), expected, "Clear480 slots call {}", call.index);
         }
     }
-    replay(0x51a060, "CEntity::E43_ExclA060", false, |mem, args| {
+    replay_eax(VAR, 0x51a060, "CEntity::E43_ExclA060", false, |mem, args| {
         layout::remove_exclusion(mem, args[0], args[1]);
         0
     });
@@ -1660,7 +1635,7 @@ impl Vf128xRecorded<'_> {
 
     fn apply(&mut self, index: usize) {
         let call = &self.inner[index];
-        for (_, at, _, _, post) in &call.windows {
+        for Window { index: _, at, len: _, before: _, after: post } in &call.windows {
             self.mem.map(*at, post);
         }
     }
@@ -1749,14 +1724,14 @@ impl layout::Clear480Calls for Clear480Recorded<'_> {
 
 impl Clear480Recorded<'_> {
     fn apply(&mut self, call: &Inner) {
-        for (_, at, len, pre, _) in &call.windows {
+        for Window { index: _, at, len, before: pre, after: _ } in &call.windows {
             if *at < 0x4000_0000 {
                 self.mem.map(*at, pre);
             } else {
                 assert_eq!(self.mem.read(*at, *len), *pre, "Clear480 nested pre");
             }
         }
-        for (_, at, _, _, post) in &call.windows {
+        for Window { index: _, at, len: _, before: _, after: post } in &call.windows {
             self.mem.map(*at, post);
         }
     }
@@ -1787,7 +1762,7 @@ impl F350Recorded<'_> {
         while let Some(call) = self.inner.get(self.next) {
             if call.addr == target {
                 assert_eq!(call.args, args, "SimF350 inner {} args", self.next);
-                for (_, at, _, pre, post) in &call.windows {
+                for Window { index: _, at, len: _, before: pre, after: post } in &call.windows {
                     self.mem.map(*at, pre);
                     self.mem.map(*at, post);
                 }
@@ -1800,7 +1775,7 @@ impl F350Recorded<'_> {
                 self.next,
                 call.addr
             );
-            for (_, at, _, pre, post) in &call.windows {
+            for Window { index: _, at, len: _, before: pre, after: post } in &call.windows {
                 self.mem.map(*at, pre);
                 self.mem.map(*at, post);
             }
@@ -1872,19 +1847,21 @@ fn sim_f350_matches_owner_car_records() {
 
 #[test]
 fn e90_seg_add_helpers_match_direct_records() {
-    replay(0x605F30, "E90Seg::AddParticle", true, |mem, a| layout::add_particle(mem, a[0], a[1], f32::from_bits(a[2])));
-    replay(0x605FB0, "E90Seg::AddSpring", true, |mem, a| {
+    replay_eax(VAR, 0x605F30, "E90Seg::AddParticle", true, |mem, a| {
+        layout::add_particle(mem, a[0], a[1], f32::from_bits(a[2]))
+    });
+    replay_eax(VAR, 0x605FB0, "E90Seg::AddSpring", true, |mem, a| {
         layout::add_spring(mem, a[0], a[1], a[2], a[3], f32::from_bits(a[4]))
     });
-    replay(0x606070, "E90Seg::AddFixed", false, |mem, a| {
+    replay_eax(VAR, 0x606070, "E90Seg::AddFixed", false, |mem, a| {
         layout::add_fixed(mem, a[0], a[1]);
         0
     });
-    replay(0x606090, "E90Seg::AddPin", false, |mem, a| {
+    replay_eax(VAR, 0x606090, "E90Seg::AddPin", false, |mem, a| {
         layout::add_pin(mem, a[0], a[1]);
         0
     });
-    replay(0x6060B0, "E90Seg::AddBend", false, |mem, a| {
+    replay_eax(VAR, 0x6060B0, "E90Seg::AddBend", false, |mem, a| {
         layout::add_bend(mem, a[0], a[1], a[2]);
         0
     });
@@ -1905,10 +1882,10 @@ impl E90InitRecorded<'_> {
             self.inner.get(self.next).unwrap_or_else(|| panic!("E90 init inner {} is missing ({addr:#x})", self.next));
         assert_eq!(call.addr, addr, "E90 init inner {} target", self.next);
         assert_eq!(call.args, args, "E90 init inner {} args", self.next);
-        for (_, at, len, pre, _) in &call.windows {
+        for Window { index: _, at, len, before: pre, after: _ } in &call.windows {
             assert_eq!(self.mem.read(*at, *len), *pre, "E90 init inner {} pre", self.next);
         }
-        for (_, at, _, _, post) in &call.windows {
+        for Window { index: _, at, len: _, before: _, after: post } in &call.windows {
             self.mem.map(*at, post);
         }
         self.next += 1;
@@ -1992,7 +1969,7 @@ impl<'a> InOrder<'a> {
         }
         assert_eq!(call.args, args, "{name} call {index}: inner {} {:#x} args", self.next, call.addr);
         let frame = self.frame.wrapping_sub(0x100)..self.frame.wrapping_add(0x100);
-        for (k, at, len, pre, _) in &call.windows {
+        for Window { index: k, at, len, before: pre, after: _ } in &call.windows {
             if !frame.contains(at) {
                 assert_eq!(
                     mem.read(*at, *len),
@@ -2003,7 +1980,7 @@ impl<'a> InOrder<'a> {
                 );
             }
         }
-        for (_, at, _, _, post) in &call.windows {
+        for Window { index: _, at, len: _, before: _, after: post } in &call.windows {
             mem.map(*at, post);
         }
         self.next += 1;
@@ -2019,9 +1996,9 @@ impl<'a> InOrder<'a> {
 /// state of memory the port does not read, which the inner calls' pre checks compare.
 fn seed_inner(mem: &mut Mem, call: &Call) {
     let mut seen: std::collections::HashSet<u32> =
-        call.windows.iter().flat_map(|(_, at, len, _, _)| (0..*len as u32).map(move |i| at + i)).collect();
+        call.windows.iter().flat_map(|Window { at, len, .. }| (0..*len as u32).map(move |i| at + i)).collect();
     for inner in &call.inner {
-        for (_, at, _, pre, _) in &inner.windows {
+        for Window { index: _, at, len: _, before: pre, after: _ } in &inner.windows {
             for (i, byte) in pre.iter().enumerate() {
                 if seen.insert(at + i as u32) {
                     mem.map(at + i as u32, &[*byte]);
@@ -2081,13 +2058,13 @@ impl layout::FD00Calls for InOrder<'_> {
     fn emit_detach(&mut self, mem: &mut Mem, _: u32, signal: u32, sig: u32) {
         let payload = mem.read(sig, 4);
         let call = self.take(mem, Some(0x51f580), &[signal, sig]);
-        assert_eq!(payload, call.windows[0].3, "{} call {}: the detach payload", self.name, self.index);
+        assert_eq!(payload, call.windows[0].before, "{} call {}: the detach payload", self.name, self.index);
     }
 
     fn emit_event(&mut self, mem: &mut Mem, _: u32, signal: u32, event: u32) {
         let ours = mem.read(event, 0x50);
         let call = self.take(mem, Some(0x51f7c0), &[signal, event]);
-        let theirs = &call.windows[0].3;
+        let theirs = &call.windows[0].before;
         // The words at +0x8 and +0xc are the original's stack, not the event's.
         assert_eq!(ours[..8], theirs[..8], "{} call {}: the event's head", self.name, self.index);
         assert_eq!(ours[0x10..], theirs[0x10..], "{} call {}: the event's poses", self.name, self.index);
@@ -2172,13 +2149,13 @@ fn sim_da60_matches_direct_records() {
 #[test]
 fn detach_leaves_match_direct_records() {
     use rbr_physics::physics_core::layout as core;
-    replay(0x529e60, "CSolid::E43ClearAcc", true, |mem, a| mem.clear_accumulators(a[0]));
-    replay(0x519bd0, "CEntity::E43_InitBD0", true, |mem, a| layout::init_bd0(mem, a[0]));
-    replay(0x4e6af0, "E34LinkList10::PushItem", true, |mem, a| {
+    replay_eax(VAR, 0x529e60, "CSolid::E43ClearAcc", true, |mem, a| mem.clear_accumulators(a[0]));
+    replay_eax(VAR, 0x519bd0, "CEntity::E43_InitBD0", true, |mem, a| layout::init_bd0(mem, a[0]));
+    replay_eax(VAR, 0x4e6af0, "E34LinkList10::PushItem", true, |mem, a| {
         core::push_item(mem, a[0], a[1]);
         a[1]
     });
-    replay(0x4faeb0, "CBodyLink::MoveToCell", true, |mem, a| {
+    replay_eax(VAR, 0x4faeb0, "CBodyLink::MoveToCell", true, |mem, a| {
         rbr_physics::collision::layout::move_to_cell(mem, a[0], a[1]);
         a[1]
     });

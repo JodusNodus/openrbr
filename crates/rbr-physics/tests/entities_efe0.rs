@@ -9,7 +9,7 @@
 
 mod common;
 
-use common::{check_windows, load, map_windows, Inner};
+use common::{check_windows, load, map_windows, Inner, Window};
 use rbr_physics::entities::hinge_axes::AxesHandles;
 use rbr_physics::entities::hinge_refresh::{self, RefreshCalls, RefreshState};
 use rbr_physics::entities::layout;
@@ -48,8 +48,8 @@ impl<'a> Answers<'a> {
 
     /// The body's bytes before `call`: the port's stores must be the original's.
     fn check_body(&self, index: usize, call: &Inner) {
-        if let Some(pre) = call.windows.iter().find(|w| w.1 == self.this) {
-            for (i, word) in pre.3.chunks_exact(4).enumerate() {
+        if let Some(pre) = call.windows.iter().find(|w| w.at == self.this) {
+            for (i, word) in pre.before.chunks_exact(4).enumerate() {
                 let recorded = u32::from_le_bytes(word.try_into().unwrap());
                 let at = self.this + 4 * i as u32;
                 assert_eq!(self.mem.u32(at), recorded, "call {index}: the body at {at:#x} before the call");
@@ -62,7 +62,7 @@ impl<'a> Answers<'a> {
         let index = self.next;
         let call = self.next_call(addr);
         self.check_body(index, call);
-        for (_, at, _, _, post) in &call.windows {
+        for Window { index: _, at, len: _, before: _, after: post } in &call.windows {
             self.mem.map(*at, post);
         }
         call
@@ -90,7 +90,7 @@ impl RefreshCalls for Answers<'_> {
         assert_eq!(call.args, expected, "VfE070: arguments");
         // the port makes the call on the record's windows (the bytes before it); what it leaves must be the record's
         // after bytes, which then stand as the memory
-        for (_, at, _, pre, _) in &call.windows {
+        for Window { index: _, at, len: _, before: pre, after: _ } in &call.windows {
             self.mem.map(*at, pre);
         }
         let [a, b, c, d, e, f] = args;
@@ -98,7 +98,7 @@ impl RefreshCalls for Answers<'_> {
             &mut self.mem,
             &AxesHandles { origin: a, direction: b, reference: c, inverse_origin: d, axes: e, inverse_axes: f },
         );
-        for (k, at, len, _, post) in &call.windows {
+        for Window { index: k, at, len, before: _, after: post } in &call.windows {
             assert_eq!(self.mem.read(*at, *len), *post, "VfE070 window {k} (the port's product)");
         }
     }
@@ -126,10 +126,10 @@ impl RefreshCalls for Answers<'_> {
         let window = call
             .windows
             .iter()
-            .find(|w| w.1 == at)
+            .find(|w| w.at == at)
             .unwrap_or_else(|| panic!("AddEdge: no window at the vector {at:#x}"));
         for (i, value) in vec.iter().enumerate() {
-            let recorded = f32::from_le_bytes(window.3[4 * i..4 * i + 4].try_into().unwrap());
+            let recorded = f32::from_le_bytes(window.before[4 * i..4 * i + 4].try_into().unwrap());
             assert!(
                 value.to_bits() == recorded.to_bits() || (value.is_nan() && recorded.is_nan()),
                 "AddEdge: vector lane {i}: {value} (port) vs {recorded} (original)"
@@ -160,8 +160,8 @@ fn sim_efe0_matches_original_calls() {
         hinge_refresh::refresh_hinge(&mut answers, &frame);
         assert_eq!(answers.next, call.inner.len(), "call {}: the port's calls", call.index);
         // The fourth lane of the SimD860 copy (+0x5ec) is the original's stack garbage, not ours (hinge_refresh's module doc).
-        let body = call.windows.iter().find(|w| w.0 == 0 && w.1 == this).expect("the body's window");
-        let garbage = u32::from_le_bytes(body.4[0x5EC..0x5F0].try_into().unwrap());
+        let body = call.windows.iter().find(|w| w.index == 0 && w.at == this).expect("the body's window");
+        let garbage = u32::from_le_bytes(body.after[0x5EC..0x5F0].try_into().unwrap());
         answers.mem.set_u32(this + 0x5EC, garbage);
         check_windows(call, &answers.mem, "CHingedRigidBody::SimEFE0");
         answered += answers.next;

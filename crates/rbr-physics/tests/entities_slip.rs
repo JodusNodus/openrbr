@@ -7,7 +7,7 @@
 
 mod common;
 
-use common::{check_windows, load, map_windows, Call, Inner};
+use common::{check_windows, load, map_windows, Call, Inner, Window};
 use rbr_physics::entities::hinge_slip::{self, SlipCalls, SlipHandles};
 use rbr_physics::entities::store::HingeStore;
 use rbr_physics::mem::Mem;
@@ -42,7 +42,7 @@ impl SlipCalls for Answers<'_> {
         assert_eq!(call.addr, WALK_MB560, "walk {}: callee", self.next);
         assert_eq!(call.args, [receiver, a, b, out], "walk {}: arguments", self.next);
         self.next += 1;
-        for (_, at, _, _, post) in &call.windows {
+        for Window { index: _, at, len: _, before: _, after: post } in &call.windows {
             self.mem.map(*at, post);
         }
         [self.mem.f32(out), self.mem.f32(out + 4), self.mem.f32(out + 8)]

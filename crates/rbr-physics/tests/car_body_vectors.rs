@@ -95,7 +95,7 @@ fn same_word(ours: u32, theirs: u32) -> bool {
 
 /// Every window of `call` after the port ran, word by word, NaN-tolerantly (`same_word`): for the float calls.
 fn check_windows_tolerant(call: &Call, mem: &Mem, name: &str) {
-    for (k, at, len, _, post) in &call.windows {
+    for Window { index: k, at, len, before: _, after: post } in &call.windows {
         for (w, bytes) in post.chunks_exact(4).enumerate() {
             let theirs = u32::from_le_bytes(bytes.try_into().unwrap());
             let ours = mem.u32(*at + 4 * w as u32);
@@ -120,7 +120,7 @@ fn to_quat_matches_original_calls() {
         let (this, out) = (call.args[0], call.args[1]);
         let q = quat::to_quat(&mem.load_mat3(this));
         // The out window is compared NaN-tolerantly (`same_word`); the matrix is not written.
-        let (_, _, _, _, out_post) = &call.windows[1];
+        let Window { index: _, at: _, len: _, before: _, after: out_post } = &call.windows[1];
         let ours = [q.x, q.y, q.z, q.w].map(f32::to_bits);
         for (k, word) in ours.into_iter().enumerate() {
             let theirs = u32::from_le_bytes(out_post[4 * k..4 * k + 4].try_into().unwrap());
@@ -132,7 +132,7 @@ fn to_quat_matches_original_calls() {
             mem.set_u32(out + 4 * k as u32, word);
         }
         assert_eq!(call.eax, out, "E34Quat::ToQuat call {}: eax", call.index);
-        let (_, at, len, _, post) = &call.windows[0];
+        let Window { index: _, at, len, before: _, after: post } = &call.windows[0];
         assert_eq!(mem.read(*at, *len), *post, "E34Quat::ToQuat call {} matrix", call.index);
     }
 }
@@ -246,7 +246,7 @@ fn xform_6870_matches_original_calls() {
         assert_eq!(identity[0].args, [body], "Xform6870 call {}: body S30", call.index);
         assert_eq!(identity[1].args, [this], "Xform6870 call {}: car S30", call.index);
         // The output's effect is the recorded one (answered); the port's return value is b.
-        let (_, _, _, _, out_post) = &call.windows[2];
+        let Window { index: _, at: _, len: _, before: _, after: out_post } = &call.windows[2];
         let mut compose = RecordedCompose { call, next: 0 };
         let eax = transform::compose_with_body(&mut compose, this, body, a, b);
         assert_eq!(eax, call.eax, "Xform6870 call {}: eax", call.index);
@@ -258,12 +258,12 @@ fn xform_6870_matches_original_calls() {
 
 /// The window `k` of an inner call: `k` counts the spec's `windows` in order (not the argument index).
 fn inner_window(inner: &Inner, k: usize) -> &Window {
-    inner.windows.iter().find(|w| w.0 == k).unwrap_or_else(|| panic!("inner call {:#x}: no window {k}", inner.addr))
+    inner.windows.iter().find(|w| w.index == k).unwrap_or_else(|| panic!("inner call {:#x}: no window {k}", inner.addr))
 }
 
 /// Writes window `k` of an inner call as it was after the call, at `at`: the external's effect on the car's memory.
 fn write_output(mem: &mut Mem, inner: &Inner, k: usize, at: u32) {
-    let (_, _, _, _, output) = inner_window(inner, k);
+    let Window { index: _, at: _, len: _, before: _, after: output } = inner_window(inner, k);
     for (j, bytes) in output.chunks_exact(4).enumerate() {
         mem.set_u32(at + 4 * j as u32, u32::from_le_bytes(bytes.try_into().unwrap()));
     }
@@ -315,7 +315,7 @@ impl DragCalls for RecordedDrag<'_> {
     fn pre_step(&mut self, mem: &mut Mem, car: u32) {
         let inner = self.nth_inner(PRE_STEP, self.pre_steps);
         assert_eq!(inner.args, [car], "DragAndSpinDamp call {}: S00", self.call.index);
-        let (_, at, _, _, post) = &self.call.windows[0];
+        let Window { index: _, at, len: _, before: _, after: post } = &self.call.windows[0];
         assert_eq!(*at, car, "DragAndSpinDamp: window 0 is the car");
         for (k, bytes) in post.chunks_exact(4).enumerate() {
             mem.set_u32(car + 4 * k as u32, u32::from_le_bytes(bytes.try_into().unwrap()));
@@ -326,9 +326,9 @@ impl DragCalls for RecordedDrag<'_> {
     fn walk_vector(&mut self, a: Vec3, car: u32) -> Vec3 {
         let inner = self.nth_inner(PAIR_WALK, self.walks);
         assert_eq!(inner.args[2], car, "DragAndSpinDamp call {}: walk {}", self.call.index, self.walks);
-        let (_, _, _, input, _) = inner_window(inner, 0);
+        let Window { index: _, at: _, len: _, before: input, after: _ } = inner_window(inner, 0);
         check_lanes("DragAndSpinDamp walk input", self.call.index, a, input);
-        let (_, _, _, _, output) = inner_window(inner, 1);
+        let Window { index: _, at: _, len: _, before: _, after: output } = inner_window(inner, 1);
         self.walks += 1;
         vec3_of(output)
     }
@@ -336,7 +336,7 @@ impl DragCalls for RecordedDrag<'_> {
     fn drag_force(&mut self, _mem: &mut Mem, car: u32, force: Vec3) {
         let inner = self.nth_inner(DRAG_FORCE, self.forces);
         assert_eq!(inner.args[0], car, "DragAndSpinDamp call {}: S70 this", self.call.index);
-        let (_, _, _, vector, _) = inner_window(inner, 0);
+        let Window { index: _, at: _, len: _, before: vector, after: _ } = inner_window(inner, 0);
         check_lanes("DragAndSpinDamp S70", self.call.index, force, vector);
         self.forces += 1;
     }
@@ -344,7 +344,7 @@ impl DragCalls for RecordedDrag<'_> {
     fn spin_damping(&mut self, _mem: &mut Mem, car: u32, damping: Vec3) {
         let inner = self.nth_inner(SPIN_DAMPING, self.dampings);
         assert_eq!(inner.args[0], car, "DragAndSpinDamp call {}: S74 this", self.call.index);
-        let (_, _, _, vector, _) = inner_window(inner, 0);
+        let Window { index: _, at: _, len: _, before: vector, after: _ } = inner_window(inner, 0);
         check_lanes("DragAndSpinDamp S74", self.call.index, damping, vector);
         self.dampings += 1;
     }
@@ -441,15 +441,15 @@ impl ProbeCalls for RecordedProbe<'_> {
 
     fn to_world(&mut self, car: u32, v: Vec3) -> Vec3 {
         let inner = self.inner(TO_WORLD, car);
-        let (_, _, _, input, _) = inner_window(inner, 0);
+        let Window { index: _, at: _, len: _, before: input, after: _ } = inner_window(inner, 0);
         check_lanes("MotionProbe ToWorld input", self.call.index, v, input);
-        let (_, _, _, _, output) = inner_window(inner, 1);
+        let Window { index: _, at: _, len: _, before: _, after: output } = inner_window(inner, 1);
         vec3_of(output)
     }
 
     fn sample_surface(&mut self, car: u32) -> Sample {
         let inner = self.inner(SAMPLER, car);
-        let (_, _, _, _, big) = inner_window(inner, 0);
+        let Window { index: _, at: _, len: _, before: _, after: big } = inner_window(inner, 0);
         let word = |at: usize| u32::from_le_bytes(big[at..at + 4].try_into().unwrap());
         Sample { found: inner.eax, first: word(0x44), second: word(0x48) }
     }
@@ -478,7 +478,7 @@ fn motion_probe_matches_original_calls() {
 /// (the externals' effect, not the port's), and the seed the port reads is checked as ToWorld's input.
 fn check_windows_outside_accumulators(call: &Call, mem: &Mem, name: &str) {
     let car = call.args[0];
-    for (k, at, _, _, post) in &call.windows {
+    for Window { index: k, at, len: _, before: _, after: post } in &call.windows {
         for (w, bytes) in post.chunks_exact(4).enumerate() {
             let addr = *at + 4 * w as u32;
             let force_accumulator =
@@ -526,9 +526,9 @@ impl WallFrictionCalls for RecordedAero<'_> {
             .find(|c| c.addr == TO_WORLD)
             .unwrap_or_else(|| panic!("Sim7AD0 call {}: no ToWorld", self.call.index));
         assert_eq!(inner.args[0], car, "Sim7AD0 call {}: ToWorld this", self.call.index);
-        let (_, _, _, input, _) = inner_window(inner, 0);
+        let Window { index: _, at: _, len: _, before: input, after: _ } = inner_window(inner, 0);
         check_lanes("Sim7AD0 ToWorld input", self.call.index, v, input);
-        let (_, _, _, _, output) = inner_window(inner, 1);
+        let Window { index: _, at: _, len: _, before: _, after: output } = inner_window(inner, 1);
         self.seeds += 1;
         vec3_of(output)
     }
@@ -536,9 +536,9 @@ impl WallFrictionCalls for RecordedAero<'_> {
     fn walk_vector(&mut self, a: Vec3, car: u32) -> Vec3 {
         let inner = self.nth_direct(PAIR_WALK, self.walks);
         assert_eq!(inner.args[2], car, "Sim7AD0 call {}: walk {}", self.call.index, self.walks);
-        let (_, _, _, input, _) = inner_window(inner, 0);
+        let Window { index: _, at: _, len: _, before: input, after: _ } = inner_window(inner, 0);
         check_lanes("Sim7AD0 walk input", self.call.index, a, input);
-        let (_, _, _, _, output) = inner_window(inner, 1);
+        let Window { index: _, at: _, len: _, before: _, after: output } = inner_window(inner, 1);
         self.walks += 1;
         vec3_of(output)
     }
@@ -546,7 +546,7 @@ impl WallFrictionCalls for RecordedAero<'_> {
     fn wall_force(&mut self, _mem: &mut Mem, car: u32, force: Vec3) {
         let inner = self.nth_direct(DRAG_FORCE, self.forces);
         assert_eq!(inner.args[0], car, "Sim7AD0 call {}: S70 this", self.call.index);
-        let (_, _, _, vector, _) = inner_window(inner, 0);
+        let Window { index: _, at: _, len: _, before: vector, after: _ } = inner_window(inner, 0);
         check_lanes("Sim7AD0 S70", self.call.index, force, vector);
         self.forces += 1;
     }
@@ -554,7 +554,7 @@ impl WallFrictionCalls for RecordedAero<'_> {
     fn wall_torque(&mut self, _mem: &mut Mem, car: u32, spin: Vec3) {
         let inner = self.nth_direct(SPIN_DAMPING, self.spins);
         assert_eq!(inner.args[0], car, "Sim7AD0 call {}: S74 this", self.call.index);
-        let (_, _, _, vector, _) = inner_window(inner, 0);
+        let Window { index: _, at: _, len: _, before: vector, after: _ } = inner_window(inner, 0);
         check_lanes("Sim7AD0 S74", self.call.index, spin, vector);
         self.spins += 1;
     }
@@ -680,7 +680,7 @@ impl RetireCheckCalls for RecordedUpdate<'_> {
     fn emit_retire(&mut self, obj: u32, code: u32) {
         let inner = self.until(EMIT_770);
         assert_eq!(inner.args[0], obj, "Update9AF0 call {}: 4e8770 this", self.call.index);
-        let (_, _, _, pre, _) = inner_window(inner, 0);
+        let Window { index: _, at: _, len: _, before: pre, after: _ } = inner_window(inner, 0);
         assert_eq!(
             u32::from_le_bytes(pre[0..4].try_into().unwrap()),
             code,
@@ -715,7 +715,7 @@ impl RetireCheckCalls for RecordedUpdate<'_> {
         let Some(emit) = self.emit_after_cursor() else {
             return (0, 4);
         };
-        let (_, _, _, pre, _) = inner_window(emit, 0);
+        let Window { index: _, at: _, len: _, before: pre, after: _ } = inner_window(emit, 0);
         match u32::from_le_bytes(pre[4..8].try_into().unwrap()) {
             0 => (1, 0),
             4 => (0, 3),
@@ -726,7 +726,7 @@ impl RetireCheckCalls for RecordedUpdate<'_> {
     fn emit_stand_still(&mut self, obj: u32, pair: [u32; 2]) {
         let inner = self.until(EMIT_8F0);
         assert_eq!(inner.args[0], obj, "Update9AF0 call {}: 4e88f0 this", self.call.index);
-        let (_, _, _, pre, _) = inner_window(inner, 0);
+        let Window { index: _, at: _, len: _, before: pre, after: _ } = inner_window(inner, 0);
         let words = [0, 4].map(|at| u32::from_le_bytes(pre[at..at + 4].try_into().unwrap()));
         assert_eq!(words, pair, "Update9AF0 call {}: 4e88f0 pair", self.call.index);
     }
@@ -747,7 +747,7 @@ fn update_9af0_matches_original_calls() {
         retire::check_retire(&mut answers, &mut mem, car, call.args[1]);
         assert_eq!(answers.next, call.inner.len(), "Update9AF0 call {}: records left", call.index);
         // The externals write other car words (not modelled here); the port's own write is the flag at +0x9ec.
-        let (_, _, _, _, post) = &call.windows[0];
+        let Window { index: _, at: _, len: _, before: _, after: post } = &call.windows[0];
         let recorded = u32::from_le_bytes(post[0x9EC..0x9F0].try_into().unwrap());
         assert_eq!(mem.u32(car + 0x9EC), recorded, "Update9AF0 call {}: +0x9ec", call.index);
     }
@@ -801,9 +801,9 @@ impl<'a> RecordedVf64x<'a> {
     fn walk(&mut self, a: Vec3, car: u32) -> Vec3 {
         let inner = self.record(PAIR_WALK);
         assert_eq!(inner.args[2], car, "Vf64x call {}: walk", self.call.index);
-        let (_, _, _, input, _) = inner_window(inner, 0);
+        let Window { index: _, at: _, len: _, before: input, after: _ } = inner_window(inner, 0);
         check_lanes("Vf64x walk input", self.call.index, a, input);
-        let (_, _, _, _, output) = inner_window(inner, 1);
+        let Window { index: _, at: _, len: _, before: _, after: output } = inner_window(inner, 1);
         vec3_of(output)
     }
 
@@ -811,7 +811,7 @@ impl<'a> RecordedVf64x<'a> {
     fn send(&mut self, mem: &mut Mem, addr: u32, car: u32, v: Vec3, offset: u32) {
         let inner = self.record(addr);
         assert_eq!(inner.args[0], car, "Vf64x call {}: send {addr:#x}", self.call.index);
-        let (_, _, _, vector, _) = inner_window(inner, 0);
+        let Window { index: _, at: _, len: _, before: vector, after: _ } = inner_window(inner, 0);
         check_lanes("Vf64x send", self.call.index, v, vector);
         write_output(mem, inner, 1, car + offset);
     }
@@ -840,9 +840,9 @@ impl WallFrictionCalls for RecordedVf64x<'_> {
     fn to_world(&mut self, car: u32, v: Vec3) -> Vec3 {
         let inner = self.record(TO_WORLD);
         assert_eq!(inner.args[0], car, "Vf64x call {}: ToWorld", self.call.index);
-        let (_, _, _, input, _) = inner_window(inner, 0);
+        let Window { index: _, at: _, len: _, before: input, after: _ } = inner_window(inner, 0);
         check_lanes("Vf64x ToWorld input", self.call.index, v, input);
-        let (_, _, _, _, output) = inner_window(inner, 1);
+        let Window { index: _, at: _, len: _, before: _, after: output } = inner_window(inner, 1);
         vec3_of(output)
     }
 
@@ -870,7 +870,7 @@ impl ForcesCalls for RecordedVf64x<'_> {
     fn update_walked_vector(&mut self, mem: &mut Mem, car: u32) {
         let inner = self.record_if(0x52CB20, |c| c.args[0] == car);
         write_output(mem, inner, 0, car + 0x380);
-        let (_, _, _, _, output) = inner_window(inner, 0);
+        let Window { index: _, at: _, len: _, before: _, after: output } = inner_window(inner, 0);
         self.car_380 = output.to_vec();
     }
 
@@ -879,9 +879,9 @@ impl ForcesCalls for RecordedVf64x<'_> {
     fn walk_car_vector(&mut self, car: u32) -> Vec4 {
         let inner = self.record(PAIR_WALK);
         assert_eq!(inner.args[2], car, "Vf64x call {}: walk 380", self.call.index);
-        let (_, _, _, input, _) = inner_window(inner, 0);
+        let Window { index: _, at: _, len: _, before: input, after: _ } = inner_window(inner, 0);
         assert_eq!(input, self.car_380.as_slice(), "Vf64x call {}: walk 380 input", self.call.index);
-        let (_, _, _, _, output) = inner_window(inner, 1);
+        let Window { index: _, at: _, len: _, before: _, after: output } = inner_window(inner, 1);
         vec4_of(output)
     }
 
@@ -915,7 +915,7 @@ fn vf64x_matches_original_calls() {
         let car = call.args[0];
         let mut answers = RecordedVf64x { call, next: 0, car_380: Vec::new() };
         forces::apply_forces(&mut answers, &mut mem, car, rbr_physics::car_body::drag::DRAG_FACTOR);
-        let (_, _, _, _, post) = &call.windows[0];
+        let Window { index: _, at: _, len: _, before: _, after: post } = &call.windows[0];
         for k in 0..4 {
             let theirs = u32::from_le_bytes(post[0x15D0 + 4 * k..0x15D4 + 4 * k].try_into().unwrap());
             let ours = mem.u32(car + 0x15D0 + 4 * k as u32);
@@ -962,7 +962,7 @@ fn step_engine_matches_original_calls() {
             next_record_if(call, &mut next, SET_DIRTY, |c| c.args[0] == car + offset);
         }
         // The demand's value is not checked: the externals add to it after this function clears it (`AddADC`).
-        let (_, _, _, _, post) = &call.windows[0];
+        let Window { index: _, at: _, len: _, before: _, after: post } = &call.windows[0];
         for offset in [0xAF8, 0xAFC, 0xB08, 0xB0C, 0xB18, 0xB1C, 0xAD8] {
             let theirs = u32::from_le_bytes(post[offset..offset + 4].try_into().unwrap());
             let ours = mem.u32(car + offset as u32);
@@ -979,7 +979,7 @@ fn step_engine_matches_original_calls() {
 /// Writes the words of window `k` that the external changed (post differs from pre) at the window's address, so the
 /// words the port wrote before the call stay as they are.
 fn apply_changes(mem: &mut Mem, inner: &Inner, k: usize) {
-    let (_, at, _, pre, post) = inner_window(inner, k);
+    let Window { index: _, at, len: _, before: pre, after: post } = inner_window(inner, k);
     for (j, (before, after)) in pre.chunks_exact(4).zip(post.chunks_exact(4)).enumerate() {
         if before != after {
             mem.set_u32(*at + 4 * j as u32, u32::from_le_bytes(after.try_into().unwrap()));
@@ -989,14 +989,14 @@ fn apply_changes(mem: &mut Mem, inner: &Inner, k: usize) {
 
 /// Applies the wheel's flag words an external wrote (its node window 0, absent when the flag pointer is null).
 fn apply_flag_changes(mem: &mut Mem, inner: &Inner) {
-    if inner.windows.iter().any(|w| w.0 == 0) {
+    if inner.windows.iter().any(|w| w.index == 0) {
         apply_changes(mem, inner, 0);
     }
 }
 
 /// Checks the bytes an external received (window `k`, before the call) against the port's values.
 fn check_input(name: &str, index: usize, k: usize, inner: &Inner, ours: &[u8]) {
-    let (_, _, _, pre, _) = inner_window(inner, k);
+    let Window { index: _, at: _, len: _, before: pre, after: _ } = inner_window(inner, k);
     assert_eq!(pre[..ours.len()], *ours, "Vf6cx call {index}: {name} payload");
 }
 
@@ -1022,9 +1022,9 @@ impl<'a> RecordedVf6cx<'a> {
     fn walk_of(&mut self, a: Vec3, car: u32) -> Vec3 {
         let inner = self.record(PAIR_WALK);
         assert_eq!(inner.args[2], car, "Vf6cx call {}: walk", self.call.index);
-        let (_, _, _, input, _) = inner_window(inner, 0);
+        let Window { index: _, at: _, len: _, before: input, after: _ } = inner_window(inner, 0);
         check_lanes("Vf6cx walk input", self.call.index, a, input);
-        let (_, _, _, _, output) = inner_window(inner, 1);
+        let Window { index: _, at: _, len: _, before: _, after: output } = inner_window(inner, 1);
         let lane = |k: usize| f32::from_le_bytes(output[4 * k..4 * k + 4].try_into().unwrap());
         Vec3 { x: lane(0), y: lane(1), z: lane(2) }
     }
@@ -1059,7 +1059,7 @@ impl StepCalls for RecordedVf6cx<'_> {
     fn raycast(&mut self, _mem: &mut Mem, car: u32, out: &mut step::WallHit) -> u32 {
         let inner = self.record(0x4E4960);
         assert_eq!(inner.args[1], car + 0x140, "Vf6cx call {}: raycast position", self.call.index);
-        let (_, _, _, _, post) = inner_window(inner, 0);
+        let Window { index: _, at: _, len: _, before: _, after: post } = inner_window(inner, 0);
         *out = step::WallHit::from_bytes(post.as_slice().try_into().expect("28-byte hit"));
         inner.eax
     }
@@ -1070,7 +1070,7 @@ impl StepCalls for RecordedVf6cx<'_> {
         assert_eq!(inner.args[3], p, "Vf6cx call {}: impulse p", self.call.index);
         assert_eq!(inner.args[4], dt.to_bits(), "Vf6cx call {}: impulse dt", self.call.index);
         apply_changes(mem, inner, 0);
-        let (_, _, _, _, post) = inner_window(inner, 1);
+        let Window { index: _, at: _, len: _, before: _, after: post } = inner_window(inner, 1);
         *out = step::WallHit::from_bytes(post.as_slice().try_into().expect("28-byte hit"));
     }
 
@@ -1171,7 +1171,7 @@ fn vf6cx_matches_original_calls() {
         let dt = f32::from_bits(call.args[1]);
         let mut answers = RecordedVf6cx { call, next: 0 };
         step::step_car(&mut answers, &mut mem, car, dt);
-        let (_, _, _, _, post) = &call.windows[0];
+        let Window { index: _, at: _, len: _, before: _, after: post } = &call.windows[0];
         for offset in [
             0x15E8, 0x15F4, 0x15F8, 0x15FC, 0x1600, 0x1610, 0x1614, 0x1618, 0x161C, 0x166C, 0x1668, 0x1670, 0x9E8,
             0x9EC,
@@ -1367,14 +1367,14 @@ impl ControlCalls for RecordedSeed<'_> {
         if next.addr == EMIT_DF0 {
             return (1, 0);
         }
-        let (_, _, _, pre, _) = inner_window(next, 0);
+        let Window { index: _, at: _, len: _, before: pre, after: _ } = inner_window(next, 0);
         (0, u32::from_le_bytes(pre[..4].try_into().unwrap()))
     }
 
     fn emit_problem(&mut self, obj: u32, pair: [u32; 2]) {
         let inner = self.until(EMIT_PROBLEM);
         assert_eq!(inner.args[0], obj, "UpdateSeed call {}: 4e8a70 this", self.call.index);
-        let (_, _, _, pre, _) = inner_window(inner, 0);
+        let Window { index: _, at: _, len: _, before: pre, after: _ } = inner_window(inner, 0);
         let words = [0, 4].map(|at| u32::from_le_bytes(pre[at..at + 4].try_into().unwrap()));
         assert_eq!(words, pair, "UpdateSeed call {}: 4e8a70 pair", self.call.index);
     }
@@ -1408,7 +1408,7 @@ fn update_seed_matches_original_calls() {
             nested += 1;
             continue;
         }
-        let (_, _, _, _, post) = &call.windows[0];
+        let Window { index: _, at: _, len: _, before: _, after: post } = &call.windows[0];
         let words = [0x1694, 0x1698, 0x16A4, 0x950, 0x9F0]
             .into_iter()
             .chain((0..4).flat_map(|q| [0x954 + 4 * q, 0x974 + 0x20 * q]));
@@ -1466,7 +1466,7 @@ impl WiringCalls for RecordedMrr<'_> {
     fn emit(&mut self, obj: u32, pair: [u32; 2]) {
         let inner = record_after(self.call, &mut self.next, EMIT_MRR);
         assert_eq!(inner.args[0], obj, "UpdateMrr call {}: 4e8cb0 this", self.call.index);
-        let (_, _, _, pre, _) = inner_window(inner, 0);
+        let Window { index: _, at: _, len: _, before: pre, after: _ } = inner_window(inner, 0);
         let words = [0, 4].map(|at| u32::from_le_bytes(pre[at..at + 4].try_into().unwrap()));
         assert_eq!(words, pair, "UpdateMrr call {}: 4e8cb0 pair", self.call.index);
     }
@@ -1486,7 +1486,7 @@ fn update_mrr_matches_original_calls() {
         let mut answers = RecordedMrr { call, next: 0 };
         wiring::wire_damage(&mut answers, &mut mem, car, UPDATE_MRR_BLOCK);
         assert_eq!(answers.next, call.inner.len(), "UpdateMrr call {}: records left", call.index);
-        let (_, _, _, _, post) = &call.windows[0];
+        let Window { index: _, at: _, len: _, before: _, after: post } = &call.windows[0];
         let recorded = u32::from_le_bytes(post[0x9F4..0x9F8].try_into().unwrap());
         assert_eq!(mem.u32(car + 0x9F4), recorded, "UpdateMrr call {}: +0x9f4", call.index);
     }
@@ -1577,7 +1577,7 @@ impl RecordedVf28x<'_> {
         self.used[k] = true;
         let inner = &self.root.inner[k];
         for w in &inner.windows {
-            apply_changes(mem, inner, w.0);
+            apply_changes(mem, inner, w.index);
         }
         inner.eax
     }
@@ -1602,13 +1602,14 @@ fn vf28x_matches_original_calls() {
     for call in &calls {
         let mut mem = map_windows(call);
         let car = call.args[0];
-        let frame = call.windows.iter().find(|w| w.2 == VF28X_FRAME_LEN).expect("Vf28x: the frame window").1;
+        let frame = call.windows.iter().find(|w| w.len == VF28X_FRAME_LEN).expect("Vf28x: the frame window").at;
         let mut answers = RecordedVf28x { root: call, used: vec![false; call.inner.len()] };
         publish::publish_state(&mut answers, &mut mem, car, frame);
         check_window_list(&call.windows[..2], &mem, "CCar::Vf28x");
         // The frame words the port does not model: the prologue's three pushes (E+0..0xc), the loop counter (E+0x14),
         // the engine pointer the port passes as a value (E+0x1c) and the dead copy of car+0x100 (E+0xc0..0xd0).
-        let (_, _, _, _, post) = call.windows.iter().find(|w| w.2 == VF28X_FRAME_LEN).unwrap();
+        let Window { index: _, at: _, len: _, before: _, after: post } =
+            call.windows.iter().find(|w| w.len == VF28X_FRAME_LEN).unwrap();
         for o in (0..VF28X_FRAME_LEN).step_by(4) {
             if (0..0x18).contains(&o) || o == 0x1C || (0xC0..0xD0).contains(&o) {
                 continue;
@@ -1642,9 +1643,9 @@ impl FrameWalk for RecordedWalk<'_> {
             self.name,
             self.call.index
         );
-        let (_, _, _, input, _) = inner_window(inner, 0);
+        let Window { index: _, at: _, len: _, before: input, after: _ } = inner_window(inner, 0);
         check_lanes(self.name, self.call.index, a, input);
-        let (_, _, _, _, output) = inner_window(inner, 1);
+        let Window { index: _, at: _, len: _, before: _, after: output } = inner_window(inner, 1);
         vec3_of(output)
     }
 }
@@ -1683,12 +1684,12 @@ fn to_world_matches_original_calls() {
     for call in &calls {
         let mut mem = map_windows(call);
         map_frame(&mut mem, call, PAIR_WALK);
-        let (car, a) = (call.args[0], vec3_of(&call.windows[0].3));
+        let (car, a) = (call.args[0], vec3_of(&call.windows[0].before));
         let mut walk = RecordedWalk { call, next: 0, name: "ToWorld" };
         let out = transform::to_world(&mut walk, &mem, car, a);
         assert_eq!(walk.next, call.inner.len(), "ToWorld call {}: records left", call.index);
         assert_eq!(call.eax, call.args[2], "ToWorld call {}: eax", call.index);
-        let (_, _, _, _, b_post) = &call.windows[1];
+        let Window { index: _, at: _, len: _, before: _, after: b_post } = &call.windows[1];
         check_lanes("ToWorld", call.index, out, b_post);
     }
     eprintln!("CCar::ToWorld: {} calls", calls.len());
@@ -1709,7 +1710,7 @@ fn world_compose_matches_original_calls() {
         let eax = transform::world_compose(&mut answers, &mem, car, a, b);
         assert_eq!(eax, call.eax, "WorldCompose call {}: eax", call.index);
         assert_eq!(answers.next, 1, "WorldCompose call {}: FrameCompose", call.index);
-        let (_, _, _, _, out_post) = &call.windows[1];
+        let Window { index: _, at: _, len: _, before: _, after: out_post } = &call.windows[1];
         mem.map(b, out_post);
         check_windows(call, &mem, "CCar::WorldCompose");
     }
@@ -1726,12 +1727,12 @@ fn body_to_world_pair_matches_original_calls() {
     for call in &calls {
         let mut mem = map_windows(call);
         map_body(&mut mem, call);
-        let (car, a) = (call.args[0], vec3_of(&call.windows[0].3));
+        let (car, a) = (call.args[0], vec3_of(&call.windows[0].before));
         let mut walk = RecordedWalk { call, next: 0, name: "BodyToWorldPair" };
         let out = transform::body_to_world_pair(&mut walk, &mem, car, a);
         assert_eq!(walk.next, call.inner.len(), "BodyToWorldPair call {}: records left", call.index);
         assert_eq!(call.eax, call.args[2], "BodyToWorldPair call {}: eax", call.index);
-        let (_, _, _, _, b_post) = &call.windows[1];
+        let Window { index: _, at: _, len: _, before: _, after: b_post } = &call.windows[1];
         check_lanes("BodyToWorldPair", call.index, out, b_post);
     }
     eprintln!("CCar::BodyToWorldPair: {} calls", calls.len());
@@ -1752,7 +1753,7 @@ fn body_compose_matches_original_calls() {
         let eax = transform::body_compose(&mut answers, &mem, car, a, b);
         assert_eq!(eax, call.eax, "BodyCompose call {}: eax", call.index);
         assert_eq!(answers.next, 1, "BodyCompose call {}: FrameCompose", call.index);
-        let (_, _, _, _, out_post) = &call.windows[1];
+        let Window { index: _, at: _, len: _, before: _, after: out_post } = &call.windows[1];
         mem.map(b, out_post);
         check_windows(call, &mem, "CCar::BodyCompose");
     }
@@ -1777,7 +1778,7 @@ fn get_dir_matches_original_calls() {
         let front = mem.wheel(car, 0).map(|w| mem.wheel_direction(w));
         let rear = mem.wheel(car, 1).map(|w| mem.wheel_direction(w));
         let out = accessors::ground_direction(front, rear);
-        let (_, _, _, _, post) = &call.windows[1];
+        let Window { index: _, at: _, len: _, before: _, after: post } = &call.windows[1];
         check_lanes("CCar::GetDir", call.index, out, post);
     }
     eprintln!("CCar::GetDir: {} calls", calls.len());
@@ -1832,16 +1833,16 @@ impl EdgeCalls for RecordedEdge<'_> {
     fn body_compose(&mut self, car: u32, a: Vec4) -> Vec4 {
         let inner = record_after(self.call, &mut self.next, BODY_COMPOSE);
         assert_eq!(inner.args[0], car, "PushGridEdge call {}: BodyCompose this", self.call.index);
-        let (_, _, _, input, _) = inner_window(inner, 0);
+        let Window { index: _, at: _, len: _, before: input, after: _ } = inner_window(inner, 0);
         assert_eq!(vec4_of(input), a, "PushGridEdge call {}: BodyCompose input", self.call.index);
-        let (_, _, _, _, output) = inner_window(inner, 1);
+        let Window { index: _, at: _, len: _, before: _, after: output } = inner_window(inner, 1);
         vec4_of(output)
     }
 
     fn add_edge(&mut self, grid: u32, edge: Vec4) {
         let inner = record_after(self.call, &mut self.next, ADD_EDGE);
         assert_eq!(inner.args[0], grid, "PushGridEdge call {}: AddEdge grid", self.call.index);
-        let (_, _, _, input, _) = inner_window(inner, 0);
+        let Window { index: _, at: _, len: _, before: input, after: _ } = inner_window(inner, 0);
         assert_eq!(vec4_of(input), edge, "PushGridEdge call {}: AddEdge edge", self.call.index);
     }
 
@@ -2055,7 +2056,9 @@ impl RecordedSnap<'_> {
         let inner = &self.call.inner[k];
         assert_eq!((inner.addr, &inner.args[..]), (addr, args), "Snap9360 call {}: inner {k}", self.call.index);
         // The emit's signal object (its window 0) is not the port's memory.
-        for (w, at, len, pre, _) in inner.windows.iter().filter(|w| addr != 0x4E85B0 || w.0 == 1) {
+        for Window { index: w, at, len, before: pre, after: _ } in
+            inner.windows.iter().filter(|w| addr != 0x4E85B0 || w.index == 1)
+        {
             assert_eq!(self.mem.read(*at, *len), *pre, "Snap9360 call {}: inner {k} window {w}", self.call.index);
         }
         inner
@@ -2064,7 +2067,7 @@ impl RecordedSnap<'_> {
 
 impl layout::Snap9360Calls for RecordedSnap<'_> {
     fn compose_body_into_world(&mut self, _mem: &mut Mem, _sp: u32, car: u32, a: u32, out: u32) {
-        let post = self.inner(0, 0x4E8130, &[car, a, out]).windows[1].4.clone();
+        let post = self.inner(0, 0x4E8130, &[car, a, out]).windows[1].after.clone();
         self.mem.map(out, &post);
     }
 
@@ -2086,7 +2089,7 @@ fn snap_9360_matches_original_calls() {
         let (xform, emit) = (&call.inner[0], &call.inner[1]);
         let frame = xform.args[1] - 0x20;
         mem.map(frame, &[0; 0x40]);
-        mem.map(emit.args[1], &emit.windows[1].3);
+        mem.map(emit.args[1], &emit.windows[1].before);
         mem.map(SIGNAL_MANAGER, &(emit.args[0] - 0x9078).to_le_bytes());
         let mut host = RecordedSnap { call, mem: mem.clone() };
         layout::snapshot(&mut mem, &mut host, call.args[0], frame + 0xA4);
@@ -2135,7 +2138,7 @@ fn scale_matches_original_calls() {
         let s = f32::from_bits(inner.args[1]);
         let v = Vec4::load(&mem, a).scale(s);
         v.store(&mut mem, out);
-        for (k, at, _, _, post) in &inner.windows {
+        for Window { index: k, at, len: _, before: _, after: post } in &inner.windows {
             for (w, bytes) in post.chunks_exact(4).enumerate() {
                 let theirs = u32::from_le_bytes(bytes.try_into().unwrap());
                 let ours = mem.u32(*at + 4 * w as u32);
@@ -2400,7 +2403,7 @@ impl LightCalls for RecordedLights<'_> {
         let inner = next_record(self.call, &mut self.next, LIGHT_EMIT);
         self.emitted += 1;
         assert_eq!(inner.args[0], emitter, "light emit call {}: emitter", self.call.index);
-        let (_, _, _, _, post) = inner_window(inner, 0);
+        let Window { index: _, at: _, len: _, before: _, after: post } = inner_window(inner, 0);
         let words: Vec<u32> = post.chunks_exact(4).map(|w| u32::from_le_bytes(w.try_into().unwrap())).collect();
         assert_eq!(&words[..5], &payload, "light emit call {}: payload", self.call.index);
     }
@@ -2489,7 +2492,7 @@ fn check_scatter(addr: u32, name: &str, run: impl Fn(&mut RecordedBody, bool, u3
         run(&mut answers, gate, body, base, &mut points);
         mem.store_points(out, &points);
         assert_eq!(out, call.eax, "{name} call {}: eax", call.index);
-        let (_, _, _, _, post) = &call.windows[1];
+        let Window { index: _, at: _, len: _, before: _, after: post } = &call.windows[1];
         for (i, point) in post.chunks_exact(16).enumerate().take(n as usize) {
             for k in 0..3 {
                 let theirs = u32::from_le_bytes(point[4 * k..4 * k + 4].try_into().unwrap());
@@ -2497,7 +2500,7 @@ fn check_scatter(addr: u32, name: &str, run: impl Fn(&mut RecordedBody, bool, u3
                 assert_eq!(ours, theirs, "{name} call {} point {i} lane {k}", call.index);
             }
         }
-        let (_, _, _, _, body_post) = &call.windows[0];
+        let Window { index: _, at: _, len: _, before: _, after: body_post } = &call.windows[0];
         assert_eq!(mem.read(body, body_post.len()), *body_post, "{name} call {}: body", call.index);
     }
     eprintln!("{name}: {} calls", calls.len());
@@ -2648,7 +2651,7 @@ impl Collide6000Recorded<'_> {
         let call = self.inner.get(self.next).unwrap_or_else(|| panic!("Collide6000 missing nested {addr:#x}"));
         assert_eq!((call.addr, call.args.as_slice()), (addr, args), "Collide6000 nested call {}", self.next);
         self.next += 1;
-        for (_, at, _, _, post) in &call.windows {
+        for Window { index: _, at, len: _, before: _, after: post } in &call.windows {
             self.mem.map(*at, post);
         }
         call.eax
@@ -2713,8 +2716,8 @@ fn lane_test_matches_original_calls() {
         let verdict = layout::lane_test(&mem, call.args[0], |v| {
             let inner = record_after(call, &mut next, TO_WORLD);
             // The inner windows are renumbered from 0 in the spec's order: the input, then the output.
-            assert!(vec3_of(&inner_window(inner, 0).3) == v, "Test7910 call {}: ToWorld input", call.index);
-            vec3_of(&inner_window(inner, 1).4)
+            assert!(vec3_of(&inner_window(inner, 0).before) == v, "Test7910 call {}: ToWorld input", call.index);
+            vec3_of(&inner_window(inner, 1).after)
         });
         assert_eq!(verdict, Some(call.eax), "Test7910 call {}: eax", call.index);
     }
@@ -2739,7 +2742,7 @@ impl AssistCalls for RecordedAssist<'_> {
 
     fn emit_outside(&mut self, _code_at: u32) {
         let inner = record_after(self.call, &mut self.next, EMIT_89B0);
-        let (_, _, _, pre, _) = inner_window(inner, 1);
+        let Window { index: _, at: _, len: _, before: pre, after: _ } = inner_window(inner, 1);
         let code = u32::from_le_bytes(pre[..4].try_into().unwrap());
         let car = self.call.args[0];
         let partial = f32::from_le_bytes(window_at(self.call, car, 0x9E8)) > 1.0;
@@ -2762,7 +2765,8 @@ impl AssistCalls for RecordedAssist<'_> {
 
 /// The four bytes at `car + off` in the call's car window, before (`pre`) the call.
 fn window_at(call: &Call, car: u32, off: u32) -> [u8; 4] {
-    let (_, at, _, pre, _) = call.windows.iter().find(|w| w.0 == 0).expect("the car window");
+    let Window { index: _, at, len: _, before: pre, after: _ } =
+        call.windows.iter().find(|w| w.index == 0).expect("the car window");
     let start = (car + off - at) as usize;
     pre[start..start + 4].try_into().unwrap()
 }
@@ -2780,7 +2784,7 @@ fn assist_8df0_matches_original_calls() {
         let car = call.args[0];
         let mut answers = RecordedAssist { call, next: 0, lane: 0 };
         layout::assist_8df0(&mut answers, &mut mem, car, ENTRY, call.args[1], call.args[2], call.args[3]);
-        let post = call.windows.iter().find(|w| w.0 == 0).map(|w| w.4.clone()).expect("the car window");
+        let post = call.windows.iter().find(|w| w.index == 0).map(|w| w.after.clone()).expect("the car window");
         for off in [0x15E4, 0x1670, 0x1680, 0x1684, 0x1688, 0x168C, 0x9F0, 0xAEC] {
             let theirs = u32::from_le_bytes(window_post(call, car, off, &post));
             assert_eq!(mem.u32(car + off), theirs, "Assist8DF0 call {}: +{off:#x}", call.index);
@@ -2860,7 +2864,7 @@ impl solid_layout::VerySoftHost for RecordedSolidVf158<'_> {
         event: &BodyEvent,
     ) -> Result<u32, rbr_physics::rigid_body::host::HostUnavailable> {
         let inner = record_after(self.call, &mut self.next, 0x51F7C0);
-        let (_, _, _, bytes, _) = inner_window(inner, 0);
+        let Window { index: _, at: _, len: _, before: bytes, after: _ } = inner_window(inner, 0);
         assert_eq!(u32::from_le_bytes(bytes[0..4].try_into().unwrap()), event.kind);
         assert_eq!(u32::from_le_bytes(bytes[4..8].try_into().unwrap()), event.owner);
         for (off, values) in [
@@ -2961,7 +2965,7 @@ fn solid_vf158_matches_original_calls() {
 
 /// The four bytes at `car + off` in the call's car window, after (`post`) the call.
 fn window_post(call: &Call, car: u32, off: u32, post: &[u8]) -> [u8; 4] {
-    let at = call.windows.iter().find(|w| w.0 == 0).unwrap().1;
+    let at = call.windows.iter().find(|w| w.index == 0).unwrap().at;
     let start = (car + off - at) as usize;
     post[start..start + 4].try_into().unwrap()
 }
@@ -2976,7 +2980,7 @@ struct RecordedRetire<'a> {
 impl RetireCalls for RecordedRetire<'_> {
     fn emit_retire(&mut self, _code_at: u32) {
         let inner = record_after(self.call, &mut self.next, EMIT_770);
-        let (_, _, _, pre, _) = inner_window(inner, 1);
+        let Window { index: _, at: _, len: _, before: pre, after: _ } = inner_window(inner, 1);
         assert_eq!(
             u32::from_le_bytes(pre[..4].try_into().unwrap()),
             3,
@@ -3027,7 +3031,12 @@ impl layout::DamageOpsCalls for RecordedSlot4<'_> {
                 let inner = &self.call.inner[self.next];
                 assert_eq!((inner.addr, inner.args[0]), (callee, this), "Slot4 call {}: emit", self.call.index);
                 if callee == 0x4ef350 {
-                    assert_eq!(inner.windows[0].3, mem.read(args[0], 4), "Slot4 call {}: payload", self.call.index);
+                    assert_eq!(
+                        inner.windows[0].before,
+                        mem.read(args[0], 4),
+                        "Slot4 call {}: payload",
+                        self.call.index
+                    );
                 }
                 self.next += 1;
             }
@@ -3115,7 +3124,7 @@ enum Before {
 /// bytes before the call (as `Before` says), and takes its bytes after it.
 fn answer(mem: &mut Mem, inner: &Inner, windows: &[(usize, u32, Before)], index: usize) {
     for &(k, at, before) in windows {
-        let (_, _, len, pre, post) = inner_window(inner, k);
+        let Window { index: _, at: _, len, before: pre, after: post } = inner_window(inner, k);
         let ours = mem.read(at, *len);
         let checked: Vec<usize> = match before {
             Before::All => (0..*len).collect(),

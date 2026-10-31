@@ -10,7 +10,7 @@
 
 mod common;
 
-use common::{load, shared_windows, Inner};
+use common::{load, shared_windows, After, Inner, Window};
 use rbr_physics::entities::layout;
 use rbr_physics::entities::layout::CollideHost;
 use rbr_physics::mem::Mem;
@@ -51,15 +51,15 @@ impl Answers<'_> {
             call.args
         );
         // Every input is checked before any output is written (two windows may be the same bytes).
-        for (_, at, len, pre, _) in &call.windows {
+        for Window { index: _, at, len, before: pre, after: _ } in &call.windows {
             if self.frame.is_some_and(|s| (s..s + FRAME).contains(at)) {
                 assert_eq!(&self.mem.read(*at, *len), pre, "external call {n} ({:#x}) input at {at:#x}", call.addr);
             }
         }
-        for (_, at, _, _, post) in &call.windows {
+        for Window { index: _, at, len: _, before: _, after: post } in &call.windows {
             self.mem.map(*at, post);
         }
-        for (at, _, bytes) in &call.after {
+        for After { at, len: _, bytes } in &call.after {
             self.mem.map(*at, bytes);
         }
         self.next += 1;
@@ -163,14 +163,15 @@ fn collide_init_matches_original_calls() {
     let mut kinds = [0usize; 3];
     for call in &calls {
         let s = call.inner[0].args[0] - SUB_BLOCK;
-        let framed = call.windows.iter().any(|w| w.1 == s);
+        let framed = call.windows.iter().any(|w| w.at == s);
         let mut mem = shared_windows(call);
         let mut answers = Answers { mem: mem.clone(), inner: &call.inner, next: 0, frame: framed.then_some(s) };
         let eax = layout::collide_init(&mut answers, &mut mem, call.args[0], call.args[1], call.args[3], s + FRAME + 4);
         assert_eq!(eax, call.eax, "{NAME} call {}: eax", call.index);
         assert_eq!(answers.next, call.inner.len(), "{NAME} call {}: external calls", call.index);
         // The frame's own words (the loop's locals, the exception record) are not the port's: its window is not checked.
-        for (k, at, len, _, post) in call.windows.iter().filter(|w| !framed || w.1 != s) {
+        for Window { index: k, at, len, before: _, after: post } in call.windows.iter().filter(|w| !framed || w.at != s)
+        {
             assert_eq!(&mem.read(*at, *len), post, "{NAME} call {} window {k}", call.index);
         }
         past_gate += usize::from(call.inner.len() > 3);

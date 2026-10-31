@@ -7,7 +7,8 @@ mod common;
 use std::collections::VecDeque;
 
 use common::{
-    check_window_list, check_windows, load, load_inner, map_window_list, map_windows, shared_windows, Call, Inner,
+    check_window_list, check_windows, load, load_inner, map_window_list, map_windows, replay_eax, shared_windows,
+    After, Call, Inner, Window,
 };
 use rbr_physics::fpu::Precision;
 use rbr_physics::math::table;
@@ -133,34 +134,10 @@ fn host_skip(_: &Call, _: u32, len: usize) -> Vec<(usize, usize)> {
     }
 }
 
-/// Replays every recorded call of `addr` through `port(mem, args)`, which returns eax. The windows are mapped from the
-/// record, the port runs, then eax (when `eax_checked`: the original returns a value) and every window are compared.
-fn replay(addr: u32, name: &str, eax_checked: bool, port: impl Fn(&mut Mem, &[u32]) -> u32) {
-    let Some(calls) = load(VAR, addr) else {
-        eprintln!("skipping {name}: {VAR} not set");
-        return;
-    };
-    if calls.is_empty() {
-        eprintln!("{name}: no calls in the vector files");
-        return;
-    }
-    let mut branches = std::collections::BTreeMap::<String, usize>::new();
-    for call in &calls {
-        let mut mem = map_windows(call);
-        let eax = port(&mut mem, &call.args);
-        if eax_checked {
-            assert_eq!(eax, call.eax, "{name} call {}: eax", call.index);
-        }
-        check_windows(call, &mem, name);
-        *branches.entry(call.branch.clone()).or_default() += 1;
-    }
-    eprintln!("{name}: {} calls match, by branch: {branches:?}", calls.len());
-}
-
 #[test]
 fn table_index_frac_matches() {
     let _pc24 = Precision::Pc24.scope();
-    replay(IDX_WRITE, "E46_IdxWrite", false, |mem, a| {
+    replay_eax(VAR, IDX_WRITE, "E46_IdxWrite", false, |mem, a| {
         let table = layout::floats(mem, a[0], a[2] as usize);
         let hint = layout::table_index_hint(mem, a[3]);
         // the entries outside the table are NaN here (the original reads the words beside it; a NaN value does not
@@ -175,7 +152,7 @@ fn table_index_frac_matches() {
 #[test]
 fn vec4_add_matches() {
     let _pc24 = Precision::Pc24.scope();
-    replay(VEC_ADD, "E46Vec::Add", true, |mem, a| {
+    replay_eax(VAR, VEC_ADD, "E46Vec::Add", true, |mem, a| {
         let this = Vec4::load(mem, a[0]);
         let mut dst = layout::vec4s(mem, a[1], a[2] as usize);
         this.add_each(&mut dst);
@@ -188,7 +165,7 @@ fn vec4_add_matches() {
 #[test]
 fn offset_540_matches() {
     let _pc24 = Precision::Pc24.scope();
-    replay(0x529540, "E46_Offset540", false, |mem, a| {
+    replay_eax(VAR, 0x529540, "E46_Offset540", false, |mem, a| {
         layout::offset_540(mem, a[0], a[1], a[2]);
         0
     });
@@ -209,7 +186,7 @@ impl Vf6cReplay<'_> {
         let call = &self.inner[self.next];
         let name = format!("Vf6c call {} inner {}", self.index, self.next);
         assert_eq!((call.addr, &call.args[..]), (addr, &[signal, sig][..]), "{name}");
-        let (_, at, _, pre, post) = &call.windows[0];
+        let Window { index: _, at, len: _, before: pre, after: post } = &call.windows[0];
         for &(from, len) in written {
             let span = from as usize..from as usize + len;
             assert_eq!(self.mem.read(at + from, len), pre[span], "{name}: payload +{from:#x}");
@@ -225,7 +202,7 @@ impl layout::MountedVf6cHost for Vf6cReplay<'_> {
     fn solid_vf6c(&mut self, _: u32, body: u32, dt: f32) -> u32 {
         let call = self.inner.last().expect("Vf6c: no E43Vf6C record");
         assert_eq!((call.addr, &call.args[..]), (0x52cc30, &[body, dt.to_bits()][..]));
-        self.mem.map(call.windows[0].1, &call.windows[0].4);
+        self.mem.map(call.windows[0].at, &call.windows[0].after);
         self.next = self.inner.len();
         call.eax
     }
@@ -266,7 +243,7 @@ fn mounted_vf6c_matches() {
 #[test]
 fn vec4_sub_matches() {
     let _pc24 = Precision::Pc24.scope();
-    replay(VEC_SUB, "E46Vec::Sub", true, |mem, a| {
+    replay_eax(VAR, VEC_SUB, "E46Vec::Sub", true, |mem, a| {
         let this = Vec4::load(mem, a[0]);
         let mut dst = layout::vec4s(mem, a[1], a[2] as usize);
         this.sub_each(&mut dst);
@@ -297,7 +274,7 @@ fn mat_mul_matches() {
 #[test]
 fn mat_scale_rows_matches() {
     let _pc24 = Precision::Pc24.scope();
-    replay(SCALE_ROWS, "E46Mat::ScaleRows", true, |mem, a| {
+    replay_eax(VAR, SCALE_ROWS, "E46Mat::ScaleRows", true, |mem, a| {
         let m = layout::mat(mem, a[0]);
         let mut rows = layout::vec4s(mem, a[1], a[2] as usize);
         m.scale_rows(&mut rows);
@@ -309,7 +286,7 @@ fn mat_scale_rows_matches() {
 #[test]
 fn mat_xform_rows_matches() {
     let _pc24 = Precision::Pc24.scope();
-    replay(XFORM_ROWS, "E46Mat::XformRows", false, |mem, a| {
+    replay_eax(VAR, XFORM_ROWS, "E46Mat::XformRows", false, |mem, a| {
         let m = layout::mat(mem, a[0]);
         let mut rows = layout::vec4s(mem, a[1], a[2] as usize);
         m.transform_xyz(&mut rows);
@@ -320,7 +297,7 @@ fn mat_xform_rows_matches() {
 
 /// A window's bytes as a memory of their own (the post state of an inner call's window, e.g. a walk's output).
 fn post_mem(window: &common::Window) -> Mem {
-    let (_, at, _, _, post) = window;
+    let Window { index: _, at, len: _, before: _, after: post } = window;
     let mut mem = Mem::new();
     mem.map(*at, post);
     mem
@@ -366,16 +343,16 @@ fn gravity_force_matches() {
         let accum: Option<&Inner> = call.inner.iter().find(|i| i.addr == ACCUM_340);
         let inverse_mass = layout::inverse_mass(&mem, body);
         let walked = walk.map(|w| {
-            let out = w.windows.iter().find(|win| win.0 == 1).expect("MB560 out window");
-            Vec4::load(&post_mem(out), out.1)
+            let out = w.windows.iter().find(|win| win.index == 1).expect("MB560 out window");
+            Vec4::load(&post_mem(out), out.at)
         });
         // The walk and the accumulate come together or not at all.
         assert_eq!(walked.is_some(), accum.is_some(), "E46_Accum250 call {}: walk and accumulate", call.index);
         match (walked, accum) {
             (Some(walked), Some(accum)) => {
                 let got = math::gravity_force(walked, inverse_mass).expect("inverse mass is not 0 when the walk ran");
-                let v = accum.windows.iter().find(|win| win.0 == 1).expect("Vf70 v window");
-                let want = Vec4::load(&post_mem(v), v.1);
+                let v = accum.windows.iter().find(|win| win.index == 1).expect("Vf70 v window");
+                let want = Vec4::load(&post_mem(v), v.at);
                 assert_eq!(bits(got), bits(want), "E46_Accum250 call {}: force", call.index);
                 accumulated += 1;
             }
@@ -396,15 +373,15 @@ fn bits(v: Vec4) -> [u32; 4] {
 #[test]
 fn solid_getters_match() {
     let _pc24 = Precision::Pc24.scope();
-    replay(GET_1DC, "CSolid::E43Vf80", true, |mem, a| layout::cache_1dc(mem, a[0]));
-    replay(GET_1EC, "CSolid::E43Vf8C", true, |mem, a| layout::cache_1ec(mem, a[0]));
+    replay_eax(VAR, GET_1DC, "CSolid::E43Vf80", true, |mem, a| layout::cache_1dc(mem, a[0]));
+    replay_eax(VAR, GET_1EC, "CSolid::E43Vf8C", true, |mem, a| layout::cache_1ec(mem, a[0]));
 }
 
 /// `CPhysics::CState::CState` (load time: from the entry dump's record, `RBR_PHYSICS_CORE_VECTORS`).
 #[test]
 fn state_ctor_matches() {
     let _pc24 = Precision::Pc24.scope();
-    replay(CSTATE_CTOR, "CPhysics::CState::CState", false, |mem, a| {
+    replay_eax(VAR, CSTATE_CTOR, "CPhysics::CState::CState", false, |mem, a| {
         layout::store_state(mem, a[0], &construct::new_state(a[1]));
         0
     });
@@ -425,7 +402,7 @@ fn debug_hook_idle_matches() {
     let (mut idle, mut tools) = (0, 0);
     for call in &calls {
         // window 1 is the CDef's DbgFlags word (see the spec's nodes)
-        let flags = u32::from_le_bytes(call.windows[1].3[..4].try_into().unwrap());
+        let flags = u32::from_le_bytes(call.windows[1].before[..4].try_into().unwrap());
         if debug::is_idle(flags) {
             let mem = map_windows(call);
             check_windows(call, &mem, "CPhysics::Vf10");
@@ -828,11 +805,11 @@ fn replay_calls_expect(
         let mut host = Calls::for_call(call);
         port(&mut mem, call, &mut host);
         assert_eq!(host.calls, expected(call), "{name} call {}: calls", call.index);
-        for (k, at, len, _, post) in &call.windows {
+        for Window { index: k, at, len, before: _, after: post } in &call.windows {
             let label = format!("{name} call {} window {k}", call.index);
             check_except(&mem, *at, post, &skip(call, *at, *len), &label);
         }
-        for (at, _, bytes) in &call.after {
+        for After { at, len: _, bytes } in &call.after {
             let label = format!("{name} call {} after {at:#x}", call.index);
             check_except(&mem, *at, bytes, &skip(call, *at, bytes.len()), &label);
         }
@@ -933,7 +910,7 @@ fn wall_rel_matches() {
         WALL_REL,
         "E43HostRel::WallRel",
         |call, at, len| {
-            if call.windows.get(2).is_some_and(|w| w.1 == at) {
+            if call.windows.get(2).is_some_and(|w| w.at == at) {
                 vec![(0, len)]
             } else {
                 Vec::new()
@@ -941,7 +918,7 @@ fn wall_rel_matches() {
         },
         |mem, call, host| {
             setup::wall_rel(mem, host, call.args[0], call.args[1]);
-            if let Some((_, count_at, _, pre, _)) = call.windows.get(2) {
+            if let Some(Window { at: count_at, before: pre, .. }) = call.windows.get(2) {
                 let before = u32::from_le_bytes(pre[..4].try_into().unwrap());
                 assert_eq!(mem.u32(*count_at), before - 1, "E43HostRel::WallRel: the count");
             }
@@ -1013,12 +990,13 @@ fn passenger_shake_matches() {
     };
     assert_eq!(shakes.len(), emits.len(), "one Emit per shake");
     for (call, emit) in shakes.iter().zip(&emits) {
-        let (_, pay, len, payload, _) = emit.windows.get(2).expect("the payload window");
+        let Window { index: _, at: pay, len, before: payload, after: _ } =
+            emit.windows.get(2).expect("the payload window");
         assert_eq!(*len, 0x64);
         let mut mem = map_windows(emit);
         // `Clear6` also zeroes the words past the payload (up to +0x70 of the payload's address).
         mem.map(*pay + *len as u32, &[0; 0x20]);
-        for (_, at, _, pre, _) in &call.windows {
+        for Window { index: _, at, len: _, before: pre, after: _ } in &call.windows {
             mem.map(*at, pre);
         }
         let mut host = Calls::for_call(call);
@@ -1140,9 +1118,9 @@ fn notify_owner_matches() {
             let mut mem = map_windows(call);
             let mut host = Calls::for_call(call);
             signal_emit::notify_owner(&mut mem, &mut host, call.args[0], call.args[1]);
-            let owner = call.windows[0].3[0x10..0x14].try_into().map(u32::from_le_bytes);
+            let owner = call.windows[0].before[0x10..0x14].try_into().map(u32::from_le_bytes);
             assert_eq!(host.calls, vec![(owner.unwrap(), vec![call.args[1]])], "{name} call {}: owner", call.index);
-            for (k, at, _, _, post) in &call.windows {
+            for Window { index: k, at, len: _, before: _, after: post } in &call.windows {
                 check_except(&mem, *at, post, &[], &format!("{name} call {} window {k}", call.index));
             }
         }
@@ -1389,7 +1367,7 @@ impl detect_calls::EdgeHost for EdgeAnswers<'_> {
 }
 
 fn edge_hit(rec: &Inner) -> detect::EdgeHit {
-    let out = |k: usize| rec.windows[k].4.as_slice();
+    let out = |k: usize| rec.windows[k].after.as_slice();
     let f32_at = |bytes: &[u8], k: usize| f32::from_le_bytes(bytes[k..k + 4].try_into().unwrap());
     let vec4 =
         |bytes: &[u8]| Vec4 { x: f32_at(bytes, 0), y: f32_at(bytes, 4), z: f32_at(bytes, 8), w: f32_at(bytes, 12) };
@@ -1436,7 +1414,7 @@ fn take<'a>(records: &mut VecDeque<&'a Inner>, addr: u32, args: &[u32]) -> &'a I
 
 /// Writes the bytes a recorded callee left in its windows (its effect on the caller's memory).
 fn write_windows(mem: &mut Mem, rec: &Inner) {
-    for (_, at, _, _, post) in &rec.windows {
+    for Window { index: _, at, len: _, before: _, after: post } in &rec.windows {
         mem.map(*at, post);
     }
 }
@@ -1496,7 +1474,7 @@ impl detect_calls::GridBuildHost for GridBuildAnswers<'_> {
         let rec = take(&mut self.records, QUERY_WALL, &[wall]);
         // the out windows are the record's first two, in argument order (min, then max)
         let corner = |k: usize| {
-            let bytes = &rec.windows[k].4;
+            let bytes = &rec.windows[k].after;
             let f32_at = |k: usize| f32::from_le_bytes(bytes[k..k + 4].try_into().unwrap());
             detect::Xy { x: f32_at(0), y: f32_at(4) }
         };

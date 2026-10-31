@@ -7,7 +7,7 @@
 mod common;
 
 use common::Inner;
-use common::{check_windows, load, map_windows, shared_windows, Call};
+use common::{check_windows, load, map_windows, shared_windows, Call, Window};
 use rbr_physics::engine_driveline::store::EngineStore;
 use rbr_physics::engine_driveline::{drive, drive_curve, drive_leaf, drive_worker, engine, layout, sim};
 use rbr_physics::fpu::Precision;
@@ -142,7 +142,7 @@ fn sim410_matches_original_calls() {
 /// `check_windows`, with one allowance: a NaN word matches any NaN. The sign of the default NaN differs between x86 and
 /// arm64 (rbr-recomp `notes/rust-physics.md`, "Platform: default NaN"); the damper steps write one from a 0/0 in `DamperCombine`.
 fn check_windows_nan(call: &Call, mem: &rbr_physics::mem::Mem, name: &str) {
-    for (k, at, len, _, expected) in &call.windows {
+    for Window { index: k, at, len, before: _, after: expected } in &call.windows {
         let actual = mem.read(*at, *len);
         assert_eq!(actual.len(), expected.len(), "{name} call {} window {k}", call.index);
         for (word, (got, want)) in actual.chunks_exact(4).zip(expected.chunks_exact(4)).enumerate() {
@@ -665,7 +665,7 @@ fn m5970_matches_original_calls() {
 
 /// The word at `at` in the windows' pre bytes, if a window maps the whole word.
 fn window_word(call: &Call, at: u32) -> Option<u32> {
-    call.windows.iter().find_map(|(_, base, len, pre, _)| {
+    call.windows.iter().find_map(|Window { at: base, len, before: pre, .. }| {
         let off = at.checked_sub(*base)? as usize;
         (off + 4 <= *len).then(|| u32::from_le_bytes(pre[off..off + 4].try_into().unwrap()))
     })
@@ -691,7 +691,7 @@ fn worker_mem(call: &Call) -> rbr_physics::mem::Mem {
     for (at, len) in zeroed {
         mem.map(at, &vec![0; len]);
     }
-    for (_, at, _, pre, _) in &call.windows {
+    for Window { index: _, at, len: _, before: pre, after: _ } in &call.windows {
         mem.map(*at, pre);
     }
     mem
@@ -839,7 +839,7 @@ impl drive_worker::GearHost for GearCalls<'_> {
     fn emit_gear_change(&mut self, payload: [u32; 4]) {
         let call = self.take(0x506F20);
         let bytes: Vec<u8> = payload.iter().flat_map(|w| w.to_le_bytes()).collect();
-        assert_eq!(call.windows[0].3, bytes, "gear change payload");
+        assert_eq!(call.windows[0].before, bytes, "gear change payload");
     }
 }
 
@@ -913,7 +913,7 @@ fn externals(call: &Call) -> Externals<'_> {
 /// `base` with the windows of an external call mapped, as they were before the call (`after` false) or after it.
 fn window_mem(base: &rbr_physics::mem::Mem, call: &Inner, after: bool) -> rbr_physics::mem::Mem {
     let mut mem = base.clone();
-    for (_, at, _, pre, post) in &call.windows {
+    for Window { index: _, at, len: _, before: pre, after: post } in &call.windows {
         mem.map(*at, if after { post } else { pre });
     }
     mem
@@ -932,8 +932,8 @@ impl<'a> Externals<'a> {
 
 /// The pre and post bytes of the window at `at` of an external call.
 fn inner_window(call: &Inner, at: u32) -> (&[u8], &[u8]) {
-    let (_, _, _, pre, post) =
-        call.windows.iter().find(|w| w.1 == at).unwrap_or_else(|| panic!("no window at {at:#x} in the external call"));
+    let Window { index: _, at: _, len: _, before: pre, after: post } =
+        call.windows.iter().find(|w| w.at == at).unwrap_or_else(|| panic!("no window at {at:#x} in the external call"));
     (pre, post)
 }
 
@@ -1137,7 +1137,7 @@ impl drive_worker::GearHost for Externals<'_> {
     fn emit_gear_change(&mut self, payload: [u32; 4]) {
         let call = self.take(0x506F20);
         let bytes: Vec<u8> = payload.iter().flat_map(|w| w.to_le_bytes()).collect();
-        assert_eq!(call.windows[0].3, bytes, "gear change payload");
+        assert_eq!(call.windows[0].before, bytes, "gear change payload");
     }
 }
 
@@ -1167,7 +1167,7 @@ impl engine::IntakeResetHost for Sim43Externals<'_> {
         let call = self.inner.get(self.next).expect("the port reset an entry the original did not");
         assert_eq!(call.addr, SIM_80D0, "external call {}: callee", self.next);
         assert_eq!(call.args, [this, x], "external call {}: arguments", self.next);
-        for (_, at, _, _, post) in &call.windows {
+        for Window { index: _, at, len: _, before: _, after: post } in &call.windows {
             self.mem.map(*at, post);
         }
         self.next += 1;

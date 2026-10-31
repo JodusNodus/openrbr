@@ -45,7 +45,7 @@ fn hinge_crt_sin_cos_match_original_calls() {
     };
     let (mut exact, mut checked) = (0, 0);
     for call in &calls {
-        let angle_bits = call.windows[0].3[0x3FC..0x400].iter().rev().fold(0u32, |w, b| (w << 8) | *b as u32);
+        let angle_bits = call.windows[0].before[0x3FC..0x400].iter().rev().fold(0u32, |w, b| (w << 8) | *b as u32);
         let angle = f32::from_bits(angle_bits);
         for (addr, port) in [(CRT_SIN, trig::x87_sin as fn(f32) -> f64), (CRT_COS, trig::x87_cos)] {
             let inner = inner_call(call, addr);
