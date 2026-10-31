@@ -53,7 +53,7 @@ use rbr_gameplay::service::{self, ParkState, Rules, ServicePark};
 use rbr_gameplay::setup::SeasonSetup;
 use rbr_gameplay::weather::Season;
 
-use crate::pages::{Issue, WARN};
+use crate::pages::{combo, Issue, Choice, WARN};
 
 /// A stage to drive: the extra `rbr-standalone` arguments (the season's options and the rally's files), the tyre and
 /// the road wear.
@@ -593,7 +593,7 @@ impl RallyPage {
                 egui::RichText::new(format!(
                     "This season: {car_name}, {team}, {}, car damage {}   Clock {hour:02}:{minute:02}",
                     options.skill.label(),
-                    crate::drive_page::damage_label(options.damage)
+                    options.damage.label()
                 ))
                 .color(Color32::GRAY),
             );
@@ -818,13 +818,8 @@ impl RallyPage {
                     let lock = if open { "" } else { "  (locked in a new 1.02 profile)" };
                     format!("{}{lock}", page.team_label(t))
                 };
-                let selected = label(self, self.team);
                 let mut team = self.team;
-                ComboBox::from_id_salt("season-team").width(200.0).selected_text(selected).show_ui(ui, |ui| {
-                    for t in season_model::TEAM_OFFERS {
-                        ui.selectable_value(&mut team, t, label(self, t));
-                    }
-                });
+                combo(ui, "season-team", 200.0, &mut team, &season_model::TEAM_OFFERS, |t| label(self, t));
                 self.team = team;
                 ui.end_row();
                 ui.label("Car");
@@ -832,22 +827,11 @@ impl RallyPage {
                 ui.end_row();
                 ui.label("Skill Level");
                 let skill = &mut self.options.skill;
-                ComboBox::from_id_salt("season-skill").width(200.0).selected_text(skill.label()).show_ui(ui, |ui| {
-                    for s in Skill::ALL {
-                        ui.selectable_value(skill, s, s.label());
-                    }
-                });
+                combo(ui, "season-skill", 200.0, skill, &Skill::ALL, Skill::label);
                 ui.end_row();
                 ui.label("Car Damage");
                 let damage = &mut self.options.damage;
-                ComboBox::from_id_salt("season-damage")
-                    .width(200.0)
-                    .selected_text(crate::drive_page::damage_label(*damage))
-                    .show_ui(ui, |ui| {
-                        for d in DamageLevel::ALL {
-                            ui.selectable_value(damage, d, crate::drive_page::damage_label(d));
-                        }
-                    });
+                combo(ui, "season-damage", 200.0, damage, &DamageLevel::ALL, DamageLevel::label);
                 ui.end_row();
                 ui.label("Outside assistance");
                 ui.label(egui::RichText::new(assistance_note(self.options)).color(Color32::GRAY));

@@ -17,7 +17,7 @@ use crate::browser::{
     block, favourite_button, header_line, items, side_row, top_line, Keys, Line, Nav, DIM, GREY, ROW, STAR,
 };
 use crate::catalog::Map;
-use crate::pages::ACCENT;
+use crate::pages::{combo, ACCENT};
 use crate::preview::{self, Previews};
 
 pub const SURFACES: [&str; 3] = ["Gravel", "Tarmac", "Snow"];
@@ -550,14 +550,7 @@ impl StageBrowser {
             }
             ui.add_space(10.0);
             ui.label(RichText::new("Length").color(GREY));
-            egui::ComboBox::from_id_salt("length").width(80.0).selected_text(self.filter.length.label()).show_ui(
-                ui,
-                |ui| {
-                    for length in Length::ALL {
-                        ui.selectable_value(&mut self.filter.length, length, length.label());
-                    }
-                },
-            );
+            combo(ui, "length", 80.0, &mut self.filter.length, &Length::ALL, Length::label);
         });
         let count = self.lines.iter().filter(|l| matches!(l, Line::Row(_))).count();
         ui.horizontal(|ui| {
@@ -576,11 +569,7 @@ impl StageBrowser {
             };
             ui.label(RichText::new(format!("{count} {what}")).color(GREY));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                egui::ComboBox::from_id_salt("sort").width(120.0).selected_text(self.sort.label()).show_ui(ui, |ui| {
-                    for sort in Sort::ALL {
-                        ui.selectable_value(&mut self.sort, sort, sort.label());
-                    }
-                });
+                combo(ui, "sort", 120.0, &mut self.sort, &Sort::ALL, Sort::label);
                 ui.label(RichText::new("Sort").color(GREY));
             });
         });

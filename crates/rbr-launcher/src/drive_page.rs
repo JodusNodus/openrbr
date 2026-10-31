@@ -10,7 +10,7 @@ use crate::browser::{self, Pick};
 use crate::car_browser::{self, Target};
 use crate::catalog::{self, TyreChoice};
 use crate::ghosts::{self, GhostChoice};
-use crate::pages::{fields, section, Choice, ACCENT, DRIVE_FIELDS, FIELD, WARN};
+use crate::pages::{combo, fields, section, Choice, ACCENT, DRIVE_FIELDS, FIELD, WARN};
 use crate::settings::{clock_text, or_folder, Clouds, Fog, Precipitation, SEQUENTIAL};
 use crate::stage_browser::{self, Action, Collection, StageRow};
 use crate::Form;
@@ -99,12 +99,7 @@ impl Form {
     fn fog_row(&mut self, ui: &mut egui::Ui) {
         let tip = "Ours, over any weather (needs the Sky addition in Graphics), not the game's: off, light, moderate or heavy";
         ui.label("Fog").on_hover_text(tip);
-        let selected_text = self.fog.unwrap_or(Fog::Off).label();
-        ComboBox::from_id_salt("fog").width(FIELD).selected_text(selected_text).show_ui(ui, |ui| {
-            for fog in [Fog::Off, Fog::Light, Fog::Heavy] {
-                ui.selectable_value(&mut self.fog, Some(fog), fog.label());
-            }
-        });
+        combo(ui, "fog", FIELD, &mut self.fog, &Fog::ALL.map(Some), |fog| fog.unwrap_or(Fog::Off).label());
         ui.end_row();
     }
 }
@@ -263,11 +258,8 @@ impl Form {
                 ui.end_row();
                 if self.weather_adjust {
                     ui.label("Clouds");
-                    let selected = self.clouds.map_or("Clear", Clouds::label);
-                    ComboBox::from_id_salt("clouds").width(FIELD).selected_text(selected).show_ui(ui, |ui| {
-                        for clouds in Clouds::ALL {
-                            ui.selectable_value(&mut self.clouds, Some(clouds), clouds.label());
-                        }
+                    combo(ui, "clouds", FIELD, &mut self.clouds, &Clouds::ALL.map(Some), |clouds| {
+                        clouds.map_or("Clear", Clouds::label)
                     });
                     ui.end_row();
                     let (falls, tip) = if self.snowy() {
@@ -276,18 +268,13 @@ impl Form {
                         ("Rain", "What falls and is heard; snow on a snow stage")
                     };
                     ui.label(falls).on_hover_text(tip);
-                    let rain = self.precipitation.unwrap_or(Precipitation::None);
-                    ComboBox::from_id_salt("precipitation").width(FIELD).selected_text(rain.label()).show_ui(
+                    combo(
                         ui,
-                        |ui| {
-                            for precipitation in Precipitation::ALL {
-                                ui.selectable_value(
-                                    &mut self.precipitation,
-                                    Some(precipitation),
-                                    precipitation.label(),
-                                );
-                            }
-                        },
+                        "precipitation",
+                        FIELD,
+                        &mut self.precipitation,
+                        &Precipitation::ALL.map(Some),
+                        |rain| rain.unwrap_or(Precipitation::None).label(),
                     );
                     ui.end_row();
                     self.fog_row(ui);
@@ -363,11 +350,8 @@ impl Form {
                 ui.end_row();
             } else if self.custom() {
                 ui.label("Road wetness").on_hover_text(tip);
-                let selected_text = ["Dry", "Damp", "Wet"][self.wetness.unwrap_or(0).min(2) as usize];
-                ComboBox::from_id_salt("wetness").width(FIELD).selected_text(selected_text).show_ui(ui, |ui| {
-                    for (wetness, name) in [(0, "Dry"), (1, "Damp"), (2, "Wet")] {
-                        ui.selectable_value(&mut self.wetness, Some(wetness), name);
-                    }
+                combo(ui, "wetness", FIELD, &mut self.wetness, &[Some(0), Some(1), Some(2)], |wetness| {
+                    ["Dry", "Damp", "Wet"][wetness.unwrap_or(0).min(2) as usize]
                 });
                 ui.end_row();
             }
@@ -380,29 +364,18 @@ impl Form {
                 ui.end_row();
             } else if self.custom() || self.weather_row.is_some() || self.options.weather == Preset::Bad {
                 ui.label("Road wear").on_hover_text(wear_tip);
-                ComboBox::from_id_salt("wear")
-                    .width(FIELD)
-                    .selected_text(catalog::WEARS[self.wear.min(2) as usize])
-                    .show_ui(ui, |ui| {
-                        for (wear, name) in catalog::WEARS.into_iter().enumerate() {
-                            ui.selectable_value(&mut self.wear, wear as u32, name);
-                        }
-                    });
+                combo(ui, "wear", FIELD, &mut self.wear, &[0, 1, 2], |wear| {
+                    catalog::WEARS[wear.min(2) as usize]
+                });
                 ui.end_row();
             }
 
             let default_tyre = self.selection().ok().and_then(|(_, weather)| self.tyre_id(&weather).ok());
-            let tyre_label = match self.tyre {
+            ui.label("Tyre").on_hover_text("Auto takes the game's tyre for the surface and the road's wetness");
+            combo(ui, "tyre", FIELD, &mut self.tyre, &TYRES, |tyre| match tyre {
                 TyreChoice::Auto => default_tyre
                     .map_or_else(|| "Auto".to_owned(), |tyre| format!("Auto — {}", catalog::tyre_label(tyre))),
-                TyreChoice::Fixed(tyre) => catalog::tyre_label(tyre).to_owned(),
-            };
-            ui.label("Tyre").on_hover_text("Auto takes the game's tyre for the surface and the road's wetness");
-            ComboBox::from_id_salt("tyre").width(FIELD).selected_text(tyre_label).show_ui(ui, |ui| {
-                ui.selectable_value(&mut self.tyre, TyreChoice::Auto, "Auto (game default)");
-                for tyre in 0..=6 {
-                    ui.selectable_value(&mut self.tyre, TyreChoice::Fixed(tyre), catalog::tyre_label(tyre));
-                }
+                TyreChoice::Fixed(fixed) => catalog::tyre_label(fixed).to_owned(),
             });
             ui.end_row();
 
@@ -410,11 +383,7 @@ impl Form {
                 "The wiper switch at the start; auto follows the rain and the mud on the glass. I steps it while \
                        driving";
             ui.label("Wipers").on_hover_text(tip);
-            ComboBox::from_id_salt("wipers").width(FIELD).selected_text(self.wipers.name()).show_ui(ui, |ui| {
-                for switch in Switch::ALL {
-                    ui.selectable_value(&mut self.wipers, switch, switch.name());
-                }
-            });
+            combo(ui, "wipers", FIELD, &mut self.wipers, &Switch::ALL, Switch::name);
             ui.end_row();
         });
 
@@ -428,16 +397,7 @@ impl Form {
             ui.label("Car damage").on_hover_text(&tip);
             ui.horizontal(|ui| {
                 let damage = &mut self.options.damage;
-                ComboBox::from_id_salt("damage")
-                    .width(160.0)
-                    .selected_text(damage_label(*damage))
-                    .show_ui(ui, |ui| {
-                        for level in DamageLevel::ALL {
-                            ui.selectable_value(damage, level, damage_label(level));
-                        }
-                    })
-                    .response
-                    .on_hover_text(&tip);
+                combo(ui, "damage", 160.0, damage, &DamageLevel::ALL, DamageLevel::label).on_hover_text(&tip);
                 ui.colored_label(Color32::GRAY, format!("help costs {penalty} s"));
             });
             ui.end_row();
@@ -479,11 +439,7 @@ impl Form {
                    wider range of revs than synchro ones";
         ui.label("Gearbox").on_hover_text(tip);
         let mut gearbox = self.gearboxes.of(&car);
-        ComboBox::from_id_salt("gearbox").width(FIELD).selected_text(gearbox_label(gearbox)).show_ui(ui, |ui| {
-            for choice in GEARBOXES {
-                ui.selectable_value(&mut gearbox, choice, gearbox_label(choice));
-            }
-        });
+        combo(ui, "gearbox", FIELD, &mut gearbox, &GEARBOXES, gearbox_label);
         if gearbox != self.gearboxes.of(&car) {
             self.gearboxes.set(&car, gearbox);
         }
@@ -650,21 +606,11 @@ impl Form {
         };
         let tip = "Best: race the fastest finished drive on this stage, replaced when you beat it";
         ui.label("Ghost").on_hover_text(tip);
-        ComboBox::from_id_salt("ghost")
-            .width(FIELD)
-            .selected_text(ghost_label(&self.ghost))
-            .show_ui(ui, |ui| {
-                let choices: Vec<GhostChoice> = [GhostChoice::Off, GhostChoice::Best]
-                    .into_iter()
-                    .chain(ghosts::ghost_files(&self.records(), map).into_iter().map(GhostChoice::File))
-                    .collect();
-                for choice in choices {
-                    let label = ghost_label(&choice);
-                    ui.selectable_value(&mut self.ghost, choice, label);
-                }
-            })
-            .response
-            .on_hover_text(tip);
+        let choices: Vec<GhostChoice> = [GhostChoice::Off, GhostChoice::Best]
+            .into_iter()
+            .chain(ghosts::ghost_files(&self.records(), map).into_iter().map(GhostChoice::File))
+            .collect();
+        combo(ui, "ghost", FIELD, &mut self.ghost, &choices, |choice| ghost_label(&choice)).on_hover_text(tip);
     }
 }
 
@@ -683,14 +629,17 @@ fn gearbox_label(gearbox: CarBox) -> &'static str {
     }
 }
 
-pub(crate) fn damage_label(level: DamageLevel) -> &'static str {
-    match level {
-        DamageLevel::Off => "Off",
-        DamageLevel::Safe => "Safe",
-        DamageLevel::Reduced => "Reduced",
-        DamageLevel::Realistic => "Realistic",
-    }
-}
+/// The Tyre row's choices: the game's tyre, or one of 0 through 6.
+const TYRES: [TyreChoice; 8] = [
+    TyreChoice::Auto,
+    TyreChoice::Fixed(0),
+    TyreChoice::Fixed(1),
+    TyreChoice::Fixed(2),
+    TyreChoice::Fixed(3),
+    TyreChoice::Fixed(4),
+    TyreChoice::Fixed(5),
+    TyreChoice::Fixed(6),
+];
 
 /// A race weather in a few words: the stage letter, the surface wetness and the tyre wear.
 fn weather_label(weather: &Weather) -> String {
