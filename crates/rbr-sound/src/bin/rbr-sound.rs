@@ -548,7 +548,7 @@ mod tests {
                          --volumes 0.5,1,2,0 --standalone BIN --log L --from 5 --events E --car 5 \
                          --ngp-physics N --solo engine --codriver-mod P --codriver-voice V \
                          --codriver-style S --codriver-ranges R --pacenotes PN")
-            .unwrap();
+        .unwrap();
         assert_eq!(args.stage.as_deref(), Some("S"));
         assert_eq!((args.seconds, args.volume, args.from), (10.0, 0.5, 5.0));
         assert!(matches!(args.camera, Camera::Inside));
@@ -560,13 +560,7 @@ mod tests {
         let custom = args.codriver_mod.unwrap();
         assert_eq!(
             (custom.plugin, custom.voice, custom.style, custom.ranges, custom.notes),
-            (
-                PathBuf::from("P"),
-                Some("V".to_owned()),
-                "S".to_owned(),
-                "R".to_owned(),
-                Some(PathBuf::from("PN"))
-            )
+            (PathBuf::from("P"), Some("V".to_owned()), "S".to_owned(), "R".to_owned(), Some(PathBuf::from("PN")))
         );
         // An RSF car runs in its slot, and `--camera` picks the listener.
         let args = run("--recording R --out O --ngp-physics N --rsf-car PACK --car 2 --camera chase").unwrap();
@@ -585,13 +579,10 @@ mod tests {
             ("--recording R --out O", "--ngp-physics is required (ReRBR steps NGP physics only)"),
             ("--recording R --out O --ngp-physics N --warp x", "unknown argument --warp"),
             ("--recording R --out O --ngp-physics N --camera warp", "--camera warp: inside, chase or trackside"),
-            (
-                "--recording R --out O --ngp-physics N --volumes 1,1,1",
-                "--volumes 1,1,1: engine,codriver,effects,tyres"
-            ),
+            ("--recording R --out O --ngp-physics N --volumes 1,1,1", "--volumes 1,1,1: engine,codriver,effects,tyres"),
             (
                 "--recording R --out O --ngp-physics N --solo warp",
-                "--solo warp: one of engine, reflections, loops, tyres, wheel, fmod, rain, shots, speech"
+                "--solo warp: one of engine, reflections, loops, tyres, wheel, fmod, rain, shots, speech",
             ),
         ];
         for (argv, want) in &bad {
