@@ -470,7 +470,7 @@ impl CarStore for Mem {
 
     /// The direction input of a wheel: the vector at +0x9e0 (lanes 0 to 2; `GetDir` sums them).
     fn wheel_direction(&self, wheel: u32) -> Vec3 {
-        Vec3 { x: self.f32(wheel + 0x9E0), y: self.f32(wheel + 0x9E4), z: self.f32(wheel + 0x9E8) }
+        Vec3::load(self, wheel + 0x9E0)
     }
 
     /// The grid object the car pushes its edge to (`CCar` +0x64, an `E37GridOps`); zero when there is none.
@@ -640,11 +640,7 @@ impl CarStore for Mem {
     /// word at +0x120 is null: the original faults then.
     fn body_base(&self, body: u32) -> Option<Vec3> {
         let owner = self.u32(body + 0x34);
-        (self.u32(owner + 0x120) != 0).then(|| Vec3 {
-            x: self.f32(owner + 0x130),
-            y: self.f32(owner + 0x134),
-            z: self.f32(owner + 0x138),
-        })
+        (self.u32(owner + 0x120) != 0).then(|| Vec3::load(self, owner + 0x130))
     }
 
     /// The `n` points at `out` (sixteen bytes each, lanes 0 to 3).
@@ -677,15 +673,14 @@ impl CarStore for Mem {
     }
 
     fn load_quat(&self, at: u32) -> Quat {
-        let v = Vec4::load(self, at);
-        Quat { x: v.x, y: v.y, z: v.z, w: v.w }
+        Quat::load(self, at)
     }
 
     fn store_quat(&mut self, at: u32, q: Quat) {
-        (Vec4 { x: q.x, y: q.y, z: q.z, w: q.w }).store(self, at);
+        q.store(self, at);
     }
 
     fn zero_vec4(&mut self, at: u32) {
-        (Vec4 { x: 0.0, y: 0.0, z: 0.0, w: 0.0 }).store(self, at);
+        Vec4::default().store(self, at);
     }
 }

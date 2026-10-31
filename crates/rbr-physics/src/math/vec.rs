@@ -119,7 +119,18 @@ pub fn clear_vec4() -> Vec4 {
     Vec4::default()
 }
 
+impl From<[f32; 4]> for Vec4 {
+    fn from(v: [f32; 4]) -> Vec4 {
+        Vec4 { x: v[0], y: v[1], z: v[2], w: v[3] }
+    }
+}
+
 impl Vec4 {
+    /// The three first lanes.
+    pub fn xyz(self) -> Vec3 {
+        Vec3 { x: self.x, y: self.y, z: self.z }
+    }
+
     /// `E01Vec4::Length` (0x473b30, also called `CFloat3::Length`): the length of the three first lanes,
     /// summed as `((x*x + y*y) + z*z)`. Every copy summed in this order.
     pub fn length3(self) -> f32 {

@@ -8,7 +8,7 @@ use crate::entities::ground::Contact;
 use crate::entities::store::{EntityStore, SlotLookup};
 use crate::entities::transform::Transform;
 use crate::entities::walk::Node;
-use crate::math::vec::Vec3;
+use crate::math::vec::{Vec3, Vec4};
 use crate::mem::Mem;
 use crate::stage;
 
@@ -169,9 +169,7 @@ impl EntityStore for Mem {
     }
 
     fn store_vec4(&mut self, at: u32, value: [f32; 4]) {
-        for (i, v) in value.into_iter().enumerate() {
-            self.set_f32(at + 4 * i as u32, v);
-        }
+        Vec4::from(value).store(self, at);
     }
 
     fn store_vec3(&mut self, at: u32, value: Vec3) {

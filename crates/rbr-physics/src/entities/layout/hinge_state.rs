@@ -2,7 +2,6 @@
 //! inputs and stores, the limit update, `SimF950` and the sequence functions over the frames.
 
 use super::collide_init::IDENTITY_GLOBAL;
-use super::entity_slots::load_vec4;
 use crate::car_body;
 use crate::entities::hinge_axes::{self, AxesHandles};
 use crate::entities::hinge_frame_walks::FrameWalkInput;
@@ -17,6 +16,7 @@ use crate::entities::hinge_solve::{ContactHandles, EntryTerms, SolveTerms};
 use crate::entities::hinge_stops::Limits;
 use crate::entities::store::{AdvanceInput, HingeStore, StatePayload};
 use crate::math::Mat3;
+use crate::math::vec::Vec4;
 use crate::mem::Mem;
 use crate::physics_core;
 
@@ -151,7 +151,7 @@ fn set_mat3(mem: &mut Mem, at: u32, m: &Mat3) {
 /// second call's is `e[0]`, which that store has just written), and stores `f` and `d`. The asm stores `f` before it reads
 /// `f[9]` and reads `a` after that; `a` is read here before `f` is stored, which changes nothing: the windows don't overlap.
 pub fn vf_e070(mem: &mut Mem, frame: &AxesHandles) {
-    let axes = hinge_axes::axes(load_vec4(mem, frame.direction), vec3(mem, frame.reference));
+    let axes = hinge_axes::axes(mem.f32s(frame.direction), vec3(mem, frame.reference));
     set_mat3(mem, frame.axes, &axes);
     let tail = mem.f32(frame.inverse_axes + 36);
     let (inverse_origin, inverse_axes) = hinge_axes::inverse(vec3(mem, frame.origin), &axes, tail);
@@ -194,12 +194,6 @@ const HINGE_SETTLE_HIT: u32 = 0x610;
 const RATE_TWEAK: u32 = 0x400;
 const ANGLE_TWEAK: u32 = 0x3F0;
 const STATE_SIGNAL: u32 = 0xE438;
-
-fn store_vec4(mem: &mut Mem, at: u32, v: [f32; 4]) {
-    for (i, value) in v.into_iter().enumerate() {
-        mem.set_f32(at + 4 * i as u32, value);
-    }
-}
 
 /// Stores the walk vector `SimE1D0` builds in the frame (`PivotCalls::store_vector`): three words.
 pub fn store_walk_vector(mem: &mut Mem, at: u32, words: [u32; 3]) {
@@ -414,10 +408,10 @@ impl HingeStore for Mem {
             hinge_point_bf: definition + DEF_CONTEXT,
             key: self.u32(this + HINGE_KEY),
             owner: self.u32(this + HINGE_OWNER),
-            orientation: load_vec4(self, this + HINGE_BODY_ROTATION),
-            linear_velocity: load_vec4(self, this + HINGE_FIRST),
-            angular_velocity: load_vec4(self, this + HINGE_SECOND),
-            hinge_point_rf: load_vec4(self, definition + DEF_POSE),
+            orientation: self.f32s(this + HINGE_BODY_ROTATION),
+            linear_velocity: self.f32s(this + HINGE_FIRST),
+            angular_velocity: self.f32s(this + HINGE_SECOND),
+            hinge_point_rf: self.f32s(definition + DEF_POSE),
             body_id: self.u32(definition + DEF_VALUE),
             angle: self.f32(this + HINGE_ANGLE),
             default_angle: self.f32(definition + DEF_REFERENCE),
@@ -579,7 +573,7 @@ impl HingeStore for Mem {
                 frame_matrix: mat3(self, this + HINGE_MATRIX),
                 hinge_rotation: mat3(self, this + HINGE_ROTATION),
             },
-            position: load_vec4(self, this + HINGE_POSITION),
+            position: self.f32s(this + HINGE_POSITION),
         }
     }
 
@@ -635,7 +629,7 @@ impl HingeStore for Mem {
     }
 
     fn clear_linear_velocity(&mut self, this: u32) {
-        store_vec4(self, this + HINGE_FIRST, [0.0; 4]);
+        Vec4::from([0.0; 4]).store(self, this + HINGE_FIRST);
     }
 
     /// The payload's reads: the key, the rotation block's vector (+0x100, or 0 when `this` is -0xf0) and the position
@@ -644,8 +638,8 @@ impl HingeStore for Mem {
         let orientation_at = if this.wrapping_add(0xF0) != 0 { this + HINGE_BODY_ROTATION } else { 0 };
         StatePayload {
             key: self.u32(this + HINGE_KEY),
-            orientation: load_vec4(self, orientation_at),
-            position: load_vec4(self, this + HINGE_POSITION),
+            orientation: self.f32s(orientation_at),
+            position: self.f32s(this + HINGE_POSITION),
         }
     }
 
@@ -653,8 +647,8 @@ impl HingeStore for Mem {
     /// orientation's first lane (+0x20). The padding words are not written, as the original does not write them.
     fn store_state_payload(&mut self, sig: u32, payload: &StatePayload) {
         self.set_u32(sig, payload.key);
-        store_vec4(self, sig + 0x20, payload.orientation);
-        store_vec4(self, sig + 0x14, payload.position);
+        Vec4::from(payload.orientation).store(self, sig + 0x20);
+        Vec4::from(payload.position).store(self, sig + 0x14);
     }
 
     fn state_signal(&self) -> u32 {
