@@ -802,13 +802,7 @@ fn import_archive(home: &Path, src: &Path, cancel: &AtomicBool) -> Result<Vec<St
         return Err(format!("{}: no co-driver files in it, only executables", src.display()));
     }
     let name = pack_name(src);
-    let extract = |dest: &Path, wanted: &[(Vec<String>, Vec<String>)]| {
-        let progress = &mut |_| cancelled(cancel);
-        match src.to_string_lossy().to_ascii_lowercase().ends_with(ZIP) {
-            true => crate::archive::extract_zip(src, dest, wanted, progress),
-            false => crate::archive::extract_seven(src, dest, wanted, progress),
-        }
-    };
+    let extract = |dest: &Path, wanted: &[(Vec<String>, Vec<String>)]| extract_from(src, dest, wanted, cancel);
     let root = archive_plugin_root(&entries);
     let voice: Vec<(Vec<String>, Vec<String>)> = root
         .clone()
@@ -862,13 +856,23 @@ fn import_archive(home: &Path, src: &Path, cancel: &AtomicBool) -> Result<Vec<St
 /// does not parse as a note file.
 fn extract_notes(src: &Path, dest: &Path, notes: &[Vec<String>], cancel: &AtomicBool) -> Result<(), Fail> {
     let wanted: Vec<(Vec<String>, Vec<String>)> = notes.iter().map(|p| (p.clone(), p.clone())).collect();
-    let progress = &mut |_| cancelled(cancel);
-    match src.to_string_lossy().to_ascii_lowercase().ends_with(ZIP) {
-        true => crate::archive::extract_zip(src, dest, &wanted, progress),
-        false => crate::archive::extract_seven(src, dest, &wanted, progress),
-    }?;
+    extract_from(src, dest, &wanted, cancel)?;
     prune_not_notes(dest);
     cancelled(cancel)
+}
+
+/// Extracts the ZIP's or 7z's `wanted` (raw entry path to pack-relative path) into `dest`, stopping on cancel.
+fn extract_from(
+    src: &Path,
+    dest: &Path,
+    wanted: &[(Vec<String>, Vec<String>)],
+    cancel: &AtomicBool,
+) -> Result<(), Fail> {
+    let progress = &mut |_| cancelled(cancel);
+    match src.to_string_lossy().to_ascii_lowercase().ends_with(ZIP) {
+        true => crate::archive::extract_zip(src, dest, wanted, progress),
+        false => crate::archive::extract_seven(src, dest, wanted, progress),
+    }
 }
 
 /// Deletes the staged INIs that do not parse as note files.

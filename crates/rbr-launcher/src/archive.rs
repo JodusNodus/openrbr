@@ -24,6 +24,11 @@ pub fn safe_folder(name: &str) -> Option<String> {
     (!name.is_empty() && !name.starts_with('.') && safe_path(name)?.len() == 1).then(|| name.to_owned())
 }
 
+/// [`safe_path`] as owned parts.
+fn owned_path(name: &str) -> Option<Vec<String>> {
+    safe_path(name).map(|p| p.into_iter().map(str::to_owned).collect())
+}
+
 /// One file or folder entry of a zip or 7z download: its raw name, its safe path parts below the top (`None` when
 /// the path is unsafe), and its size (folders: 0).
 pub struct Entry {
@@ -47,7 +52,7 @@ pub fn zip_entries(path: &Path) -> Result<Vec<Entry>, Fail> {
     for k in 0..zip.len() {
         let name = zip.name_for_index(k).and_then(Result::ok).ok_or("a bad entry")?.into_owned();
         let dir = name.ends_with(['/', '\\']);
-        let parts = safe_path(&name).map(|p| p.iter().map(|p| p.to_string()).collect());
+        let parts = owned_path(&name);
         let size = match dir {
             true => 0,
             false => zip.by_index_raw(k).map_err(|e| e.to_string())?.size(),
@@ -64,12 +69,7 @@ pub fn seven_entries(path: &Path) -> Result<Vec<Entry>, Fail> {
         .archive()
         .files
         .iter()
-        .map(|f| Entry {
-            name: f.name.clone(),
-            parts: safe_path(&f.name).map(|p| p.iter().map(|p| p.to_string()).collect()),
-            size: f.size,
-            dir: f.is_directory,
-        })
+        .map(|f| Entry { name: f.name.clone(), parts: owned_path(&f.name), size: f.size, dir: f.is_directory })
         .collect())
 }
 
@@ -94,13 +94,9 @@ pub fn extract_zip(
     let error = |e: String| format!("{}: {e}", src.display());
     let mut zip = rbz::open(src).map_err(|e| error(e.to_string()))?;
     progress(0)?;
-    for (from, to) in wanted {
-        let found = (0..zip.len()).find(|&k| {
-            zip.name_for_index(k)
-                .and_then(Result::ok)
-                .is_some_and(|n| safe_path(&n).is_some_and(|p| p == from.as_slice()))
-        });
-        let Some(k) = found else { continue };
+    for k in 0..zip.len() {
+        let Some(parts) = zip.name_for_index(k).and_then(Result::ok).and_then(|n| owned_path(&n)) else { continue };
+        let Some((_, to)) = wanted.iter().find(|(from, _)| *from == parts) else { continue };
         let mut file = zip.by_index(k).map_err(|e| error(e.to_string()))?;
         let n = write_file(dest, to, &mut file).map_err(|e| format!("{}: {e}", to.join("/")))?;
         progress(n)?;
@@ -127,8 +123,7 @@ pub fn extract_seven(
             if entry.is_directory() {
                 return Ok(true);
             }
-            let Some(parts) = safe_path(entry.name()) else { return Ok(true) };
-            let parts: Vec<String> = parts.iter().map(|p| p.to_string()).collect();
+            let Some(parts) = owned_path(entry.name()) else { return Ok(true) };
             let Some((_, to)) = wanted.iter().find(|(from, _)| *from == parts) else { return Ok(true) };
             match write_file(dest, to, reader) {
                 Err(e) => {

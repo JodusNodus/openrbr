@@ -156,22 +156,22 @@ impl Archive {
             let name = name.to_lowercase();
             name.ends_with(end) && !name.ends_with(".strings.bank")
         };
-        let mut mains: Vec<Vec<&str>> = listed
+        let mut mains: Vec<&Vec<String>> = listed
             .iter()
             .filter(|f| !f.dir && main(&f.name))
-            .filter_map(|f| f.parts.as_ref().map(|p| p.iter().map(String::as_str).collect::<Vec<&str>>()))
+            .filter_map(|f| f.parts.as_ref())
             .filter(|p| p.len() >= depth)
             .collect();
         mains.sort_by_key(|p| (p.len(), p.join("/")));
         let first = mains.first().ok_or_else(|| error(missing.into()))?;
-        let prefix: Vec<String> = first[..first.len() - 1].iter().map(|p| p.to_string()).collect();
-        let name = first[first.len() - 1];
+        let prefix = first[..first.len() - 1].to_vec();
+        let name = &first[first.len() - 1];
         let filename = name[..name.len() - end.len()].to_owned();
-        let below = |parts: &[String]| {
-            let p: Vec<&str> = parts.iter().map(String::as_str).collect();
-            p.len() > prefix.len() && within(&p, &prefix)
-        };
-        let size = listed.iter().filter(|f| !f.dir && f.parts.as_ref().is_some_and(|p| below(p))).map(|f| f.size).sum();
+        let size = listed
+            .iter()
+            .filter(|f| !f.dir && f.parts.as_ref().is_some_and(|p| within(p, &prefix)))
+            .map(|f| f.size)
+            .sum();
         Ok(Archive { path: path.to_owned(), prefix, filename, size })
     }
 
@@ -187,22 +187,17 @@ impl Archive {
         let wanted: Vec<(Vec<String>, Vec<String>)> = listed
             .into_iter()
             .filter(|e| !e.dir)
-            .filter_map(|e| {
-                let parts = e.parts?;
-                let below: Vec<&str> = parts.iter().map(String::as_str).collect();
-                (below.len() > self.prefix.len() && within(&below, &self.prefix)).then(|| {
-                    let to = parts[self.prefix.len()..].to_vec();
-                    (parts, to)
-                })
-            })
+            .filter_map(|e| e.parts)
+            .filter(|parts| within(parts, &self.prefix))
+            .map(|parts| (parts.clone(), parts[self.prefix.len()..].to_vec()))
             .collect();
         crate::archive::extract_seven(&self.path, dest, &wanted, &mut |n| count.add(n))
     }
 }
 
 /// Whether `path` lies below the folder `prefix` (its names ignoring case).
-fn within(path: &[&str], prefix: &[String]) -> bool {
-    path.iter().zip(prefix).all(|(a, b)| a.eq_ignore_ascii_case(b))
+fn within(path: &[String], prefix: &[String]) -> bool {
+    path.len() > prefix.len() && path.iter().zip(prefix).all(|(a, b)| a.eq_ignore_ascii_case(b))
 }
 
 /// The added cars' list in `cars` (none without one).
