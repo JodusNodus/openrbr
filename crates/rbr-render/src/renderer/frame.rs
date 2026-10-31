@@ -689,10 +689,12 @@ impl Renderer {
             }
             // The reflection cube draws what lies in the cells near its centre, and no interactive props, as the
             // game's (`visibility::near_cube`); the meshes without a cell keep the surroundings cube's reach (ours).
-            // Nor the grass's tiles (`Lod::Close`): under a texel of the cubes.
+            // Nor the grass's tiles (`Lod::Close`): under a texel of the cubes. A tile mesh not given a tile yet
+            // (`Renderer::stream_grass`) has no bounds and draws nothing: its cards' vertices are zero.
+            let grass = mesh.draws.iter().all(|draw| draw.lod == Lod::Close);
             if (view == View::Reflection && mesh.cell_far_from(eye))
                 || (matches!(view, View::Reflection | View::Probe) && mesh.interactive.is_some())
-                || (!with_car && mesh.draws.iter().all(|draw| draw.lod == Lod::Close))
+                || (grass && (!with_car || mesh.bounds.is_none()))
             {
                 stats.meshes_culled += 1;
                 continue;
