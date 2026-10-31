@@ -328,7 +328,7 @@ fn load_scene<'scope, 'env>(
                             if wheel.is_none() {
                                 eprintln!("viewer: {car_name} has no i_steeringwheel, its wheel stays");
                             }
-                            loaded.hidden_wheel = wheel;
+                            loaded.hide_wheel = wheel.is_some();
                         }
                         loaded.set_mirrors(mirrors.unwrap_or_default());
                         loaded.add_flares(&stage, &flares)?;

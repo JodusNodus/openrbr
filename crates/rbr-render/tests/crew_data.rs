@@ -18,14 +18,19 @@ fn the_crew_sits_in_every_retail_car_and_its_wheel_is_found() {
     let mut stage = stage::load(&data.install().join("Maps"), "track-54_E", Selection::default()).expect("stage");
     for name in CARS {
         let crew = Crew::load(&data, name, &mut stage).unwrap_or_else(|e| panic!("{name}: {e}"));
-        let (at, within, _) = crew.wheel_turn().unwrap_or_else(|| panic!("{name}: no i_steeringwheel"));
+        let node = car::node_place(&data, name, "i_steeringwheel")
+            .expect("node place")
+            .unwrap_or_else(|| panic!("{name}: no i_steeringwheel"));
+        let turn = crew.wheel_turn().unwrap_or_else(|| panic!("{name}: no i_steeringwheel"));
+        // The wheel turns about its node: the node stays where it is (steer 0, so the turn is the identity).
+        assert!((turn.transform_point3(node) - node).length() < 1e-4, "{name}: the wheel leaves its node");
         let interior = car::load_interior(&data, name, glam::Mat4::IDENTITY).expect("interior");
         let wheels: Vec<_> = interior
             .meshes
             .iter()
-            .filter_map(|m| {
-                m.bounds.filter(|b| b.center.distance(at) < within).map(|b| (b.half_extent, m.vertices.len()))
-            })
+            .zip(&interior.damage)
+            .filter(|(_, effect)| effect.steering)
+            .filter_map(|(m, _)| m.bounds.map(|b| (b.half_extent, m.vertices.len())))
             .collect();
         eprintln!("{name}: gear stick {}, wheel meshes {wheels:?}", crew.has_stick());
         // The rim (36 cm across), and in LANCER_EVO_VII a 14 cm part at the hub that turns with it.
