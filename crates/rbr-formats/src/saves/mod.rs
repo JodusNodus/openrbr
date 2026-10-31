@@ -14,6 +14,7 @@ pub mod results;
 pub mod season;
 pub mod setup_slots;
 
+use crate::le::{self, Truncated};
 use std::path::{Path, PathBuf};
 use std::{fmt, fs, io};
 
@@ -185,7 +186,7 @@ fn unseal(bytes: &[u8], size: usize) -> Result<Reader<'_>, Error> {
     if bytes.len() != size {
         return Err(Error::Size { len: bytes.len(), size });
     }
-    let mut r = Reader { bytes, at: 0 };
+    let mut r = Reader::new(bytes);
     let stored = r.u32()?;
     let crc = checksum(&bytes[4..]);
     if stored != crc {
@@ -232,49 +233,21 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-/// A cursor over the game's stream of words.
-pub(crate) struct Reader<'a> {
-    bytes: &'a [u8],
-    at: usize,
+/// Bounds failures are end-of-file at the read's offset.
+impl From<Truncated> for Error {
+    fn from(t: Truncated) -> Self {
+        Error::Eof { at: t.offset }
+    }
 }
 
+/// A cursor over the game's stream of words.
+pub(crate) type Reader<'a> = le::Reader<'a, Error>;
+
+/// The save tags and the unread tail, on top of the shared little-endian cursor.
 impl<'a> Reader<'a> {
-    pub(crate) fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, at: 0 }
-    }
-
-    pub(crate) fn at(&self) -> usize {
-        self.at
-    }
-
-    pub(crate) fn bytes(&mut self, n: usize) -> Result<&'a [u8], Error> {
-        let s = self.bytes.get(self.at..self.at + n).ok_or(Error::Eof { at: self.at })?;
-        self.at += n;
-        Ok(s)
-    }
-
-    pub(crate) fn array<const N: usize>(&mut self) -> Result<[u8; N], Error> {
-        Ok(self.bytes(N)?.try_into().unwrap())
-    }
-
-    pub(crate) fn u32(&mut self) -> Result<u32, Error> {
-        Ok(u32::from_le_bytes(self.array()?))
-    }
-
-    pub(crate) fn f32(&mut self) -> Result<f32, Error> {
-        Ok(f32::from_bits(self.u32()?))
-    }
-
-    pub(crate) fn words<const N: usize>(&mut self) -> Result<[u32; N], Error> {
-        let mut w = [0; N];
-        for v in &mut w {
-            *v = self.u32()?;
-        }
-        Ok(w)
-    }
-
+    /// The next four bytes, checked against the game's tag word.
     pub(crate) fn tag(&mut self, want: [u8; 4]) -> Result<(), Error> {
-        let at = self.at;
+        let at = self.pos();
         let found = self.array()?;
         if found != want {
             return Err(Error::Tag { at, found, want });
@@ -282,10 +255,15 @@ impl<'a> Reader<'a> {
         Ok(())
     }
 
+    /// The next `N` bytes.
+    pub(crate) fn array<const N: usize>(&mut self) -> Result<[u8; N], Error> {
+        Ok(self.take(N)?.try_into().unwrap())
+    }
+
+    /// The bytes the cursor has not read yet.
     pub(crate) fn rest(&mut self) -> &'a [u8] {
-        let s = &self.bytes[self.at..];
-        self.at = self.bytes.len();
-        s
+        let n = self.remaining();
+        self.take(n).expect("what remains in scope is there")
     }
 }
 
@@ -339,11 +317,11 @@ mod tests {
         let bytes = [1, 0, 0, 0, 0x50, 0x41];
         let mut r = Reader::new(&bytes);
         assert_eq!(r.u32().unwrap(), 1);
-        assert_eq!(r.at(), 4);
-        assert_eq!(r.bytes(2).unwrap(), b"PA");
+        assert_eq!(r.pos(), 4);
+        assert_eq!(r.take(2).unwrap(), b"PA");
         // A failed read leaves the position: every short read names it.
-        assert_eq!(r.bytes(1), Err(Error::Eof { at: 6 }));
-        assert_eq!(r.at(), 6);
+        assert_eq!(r.take(1), Err(Error::Eof { at: 6 }));
+        assert_eq!(r.pos(), 6);
         assert_eq!(r.u32(), Err(Error::Eof { at: 6 }));
         assert_eq!(r.words::<2>(), Err(Error::Eof { at: 6 }));
         assert_eq!(r.array::<4>(), Err(Error::Eof { at: 6 }));
@@ -355,9 +333,9 @@ mod tests {
         let mut r = Reader::new(b"TESQextra");
         r.tag(*b"TESQ").unwrap();
         assert_eq!(r.tag(*b"ITPO"), Err(Error::Tag { at: 4, found: *b"extr", want: *b"ITPO" }));
-        assert_eq!(r.at(), 8);
+        assert_eq!(r.pos(), 8);
         assert_eq!(r.rest(), b"a");
-        assert_eq!(r.at(), 9);
+        assert_eq!(r.pos(), 9);
     }
 
     #[test]

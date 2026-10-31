@@ -108,8 +108,8 @@ impl ActionMap {
                 Ok(Record { devices, bindings })
             })
             .collect::<Result<_, Error>>()?;
-        if r.at() != bytes.len() {
-            return Err(Error::TooLarge { len: bytes.len(), size: r.at() });
+        if r.pos() != bytes.len() {
+            return Err(Error::TooLarge { len: bytes.len(), size: r.pos() });
         }
         Ok(Self { records })
     }

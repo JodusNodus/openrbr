@@ -133,7 +133,7 @@ impl AfterSeason {
         }
         r.tag(STORES_END)?;
         if r.u32()? != MARK {
-            return Err(Error::Tag { at: r.at() - 4, found: [0; 4], want: MARK.to_le_bytes() });
+            return Err(Error::Tag { at: r.pos() - 4, found: [0; 4], want: MARK.to_le_bytes() });
         }
         let setup_slot = r.u32()?;
         r.tag(DAMAGE)?;
@@ -146,7 +146,7 @@ impl AfterSeason {
         r.tag(DAMAGE)?;
         r.tag(SETUP)?;
         let n = r.u32()? as usize;
-        let setup = r.bytes(n)?.to_vec();
+        let setup = r.take(n)?.to_vec();
         r.tag(END)?;
         Ok(Self { stores: Stores { drivers, cars, teams }, setup_slot, damage, setup })
     }
