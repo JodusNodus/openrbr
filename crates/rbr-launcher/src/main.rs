@@ -125,6 +125,7 @@
 // No console window on Windows: stderr goes to the log file (`rbr_render::console`).
 #![windows_subsystem = "windows"]
 
+mod archive;
 mod browser;
 mod capture;
 mod car_browser;

@@ -141,10 +141,10 @@ impl Tree {
     }
 
     /// The path for `rel` below the game folder: the names already written kept, its new folders made. The entry
-    /// goes through `car_packs::safe_path`, so a `.7z` path cannot escape the folder (`C:/x/y`, `..` and absolute
+    /// goes through `archive::safe_path`, so a `.7z` path cannot escape the folder (`C:/x/y`, `..` and absolute
     /// paths stay inside or fail, and `\` is a separator).
     fn path(&mut self, rel: &str, dir: bool) -> io::Result<PathBuf> {
-        let parts = crate::car_packs::safe_path(rel)
+        let parts = crate::archive::safe_path(rel)
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, format!("a bad path {rel}")))?;
         let mut written = String::new();
         for (k, part) in parts.iter().enumerate() {
@@ -504,7 +504,7 @@ pub fn add_ngp(
     reporter.total = files.iter().map(|(_, b)| b.len() as u64).sum::<u64>() + physics.len() as u64;
     reporter.step("Writing NGP")?;
     let below = |rel: &str| {
-        let parts = crate::car_packs::safe_path(rel).ok_or_else(|| format!("a bad path in the package: {rel}"))?;
+        let parts = crate::archive::safe_path(rel).ok_or_else(|| format!("a bad path in the package: {rel}"))?;
         Ok::<_, Fail>(parts.iter().fold(game.to_owned(), |p, part| p.join(part)))
     };
     for dir in &dirs {
@@ -1021,7 +1021,7 @@ mod tests {
         fs::remove_dir_all(&dir).unwrap();
     }
 
-    /// `Tree::path` through `car_packs::safe_path`: drive letters, parent climbs and stray separators fail, and
+    /// `Tree::path` through `archive::safe_path`: drive letters, parent climbs and stray separators fail, and
     /// backslash-separated and absolute-looking entries land below the folder instead of escaping it.
     #[test]
     fn the_tree_keeps_unsafe_entries_inside() {
