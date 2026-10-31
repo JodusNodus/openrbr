@@ -85,6 +85,16 @@ pub struct Precipitation {
 }
 
 impl Precipitation {
+    /// How hard the rain reads on the glass and in the air (ours): light rain falls as drizzle, sparser and
+    /// fainter than linear (the square of the amount), heavy rain as it is. Snow is unchanged.
+    pub fn shower(self) -> f32 {
+        if self.snow {
+            self.intensity
+        } else {
+            self.intensity * self.intensity
+        }
+    }
+
     /// The game's rule: the `TrackSettings.ini` section's weather preset (weather ids 3, 4, 6 and 7:
     /// `lightrain`, `heavyrain`, `lightsnow`, `heavysnow`) gives rain or snow at amount 50 or 100
     /// (`E23SndParam::Update`); the stage's particle file must have its emitter (`SetWheelEmitter` finds none

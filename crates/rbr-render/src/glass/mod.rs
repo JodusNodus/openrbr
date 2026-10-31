@@ -585,8 +585,7 @@ impl Drawn {
             .flat_map(|(_, wipers)| wipers)
             .map(|(_, centre)| playback.parts_at(*centre, false))
             .collect();
-        let (rain, snow) = amounts(precipitation);
-        let wiping = switch.wiping(rain, snow, 0);
+        let wiping = switch.wiping(falling(precipitation), amounts(precipitation).1, 0);
         eprintln!(
             "glass: windscreen {:.2} m², {} side windows, {} wipers ({} meshes, {} outside), {:?}, wipers {} ({:?})",
             car.windscreen.area,
@@ -624,6 +623,8 @@ impl Drawn {
             }
         };
         let (rain, snow) = amounts(self.precipitation);
+        // The wipers read the raw fall, not the shower's share: drizzle wipes now and then, heavier rain always.
+        let falling = falling(self.precipitation);
         let windscreen = &self.car.windscreen;
         // The wipers run on the game's clock: the drive's steps (NGP's 1/720 s in a live NGP run).
         let step = playback.step_clock().step;
@@ -640,7 +641,7 @@ impl Drawn {
             let time = sample.step as f32 * step;
             // The switch takes effect at the park, so the blades never jump.
             if self.wiping.phase(time) == 0.0 {
-                self.wiping = self.switch.wiping(rain, snow, self.glass.mud());
+                self.wiping = self.switch.wiping(falling, snow, self.glass.mud());
             }
             self.glass.step(STEP, conditions, self.wiping.phase(time), |at| windscreen.inside(at));
             for (side, glass) in self.car.sides.iter().zip(&mut self.sides) {
@@ -925,13 +926,19 @@ fn hash(k: u32) -> f32 {
     (x >> 8) as f32 / (1u32 << 24) as f32
 }
 
-/// Rain and snow intensity of a precipitation.
+/// Rain and snow intensity of a precipitation: the rain's shower share, so drizzle wets the glass slowly and
+/// heavy rain as it is; snow unchanged ([`Precipitation::shower`]).
 fn amounts(p: Option<Precipitation>) -> (f32, f32) {
     match p {
         Some(p) if p.snow => (0.0, p.intensity),
-        Some(p) => (p.intensity, 0.0),
+        Some(p) => (p.shower(), 0.0),
         None => (0.0, 0.0),
     }
+}
+
+/// The raw rain of a precipitation (no snow), for the wipers' switch: drizzle wipes now and then.
+fn falling(p: Option<Precipitation>) -> f32 {
+    p.filter(|p| !p.snow).map_or(0.0, |p| p.intensity)
 }
 
 #[cfg(test)]
