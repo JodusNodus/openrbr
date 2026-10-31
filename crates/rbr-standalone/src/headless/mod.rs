@@ -304,7 +304,7 @@ pub fn run(
     // stops at a trailing all-zero run instead of emitting them.
     let controls_end = frames.iter().rposition(|f| f.control != [0; CONTROL_BYTES]).map_or(frames.len(), |k| k + 1);
     let dt = image_dt.unwrap_or(DT);
-    let values = stage.track.iter().map(|r| r.value).collect();
+    let values = stage.track_values.clone();
     let mut game = Game::new(
         Stage::quick_race(stage.number, stage.car).load_ready_with(load_substeps(&playback.pure.mem)),
         Grid::from_settings(&Ini::parse("")),

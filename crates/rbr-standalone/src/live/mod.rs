@@ -234,7 +234,7 @@ impl<'a> Live<'a> {
             detach,
             dampers,
         );
-        let track: Vec<f32> = stage.track.iter().map(|r| r.value).collect();
+        let track = stage.track_values.clone();
         // The countdown's frames repeat this one: its dash is the car's as it stands (not an empty record, whose
         // zero battery and engine would light the warnings).
         last.dash = dash(&playback.pure.mem, &stage.track, &track, game.markers().keys(), (None, None), &[], 0, None)
@@ -260,7 +260,7 @@ impl<'a> Live<'a> {
         let initial = playback.pure.snapshot();
         let initial_game = game.clone();
         let last = Self::first_picture(&playback, &game, stage, &detach);
-        let track: Vec<f32> = stage.track.iter().map(|r| r.value).collect();
+        let track = stage.track_values.clone();
         Self {
             playback,
             game,
@@ -856,7 +856,7 @@ fn settle(playback: &Playback, game: &mut Game, stage: &StageData, camera_go: bo
 /// wheel without its speed fade, [`Grid::without_wheel_fade`]) and NGP's control path; a profile's grid replaces it
 /// ([`Live::set_saves`]).
 fn new_game(start: Stage, stage: &StageData, dt: f32, settings: MarkerSettings) -> Game {
-    let values = stage.track.iter().map(|r| r.value).collect();
+    let values = stage.track_values.clone();
     let grid = Grid::from_settings(&install_filter_ini()).without_wheel_fade();
     Game::new(start, grid, &stage.markers, values, dt, 0.0, settings)
         .with_finish_zone(stage.finish_zone)

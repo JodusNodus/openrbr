@@ -32,7 +32,7 @@ impl<'a> Pilot<'a> {
     /// `autopilot` for `live`'s car, or the recording at `path`.
     pub fn new(what: &str, stage: &'a StageData, live: &Live) -> Result<Self, String> {
         if what == "autopilot" {
-            let driver = Driver::new(&stage.track, TOP_SPEED, None)
+            let driver = Driver::new(&stage.track, stage.track_values.clone(), TOP_SPEED, None)
                 .with_step(live.step_clock().step)
                 .with_limit(rev_limit(live))
                 .with_obstacles(&stage.obstacles);
@@ -151,7 +151,7 @@ pub fn drive(
     );
     let limit = rev_limit(&live);
     eprintln!("autopilot: rev limit {limit} rpm");
-    let mut driver = Driver::new(&stage.track, top.unwrap_or(TOP_SPEED), aim)
+    let mut driver = Driver::new(&stage.track, stage.track_values.clone(), top.unwrap_or(TOP_SPEED), aim)
         .with_step(live.step_clock().step)
         .with_limit(limit)
         .with_obstacles(&stage.obstacles);
