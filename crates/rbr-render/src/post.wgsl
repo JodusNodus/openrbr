@@ -40,6 +40,10 @@ override SHAFTS: bool = false;
 // The in-car view's cabin exposure (`Exposure::cabin`, `CABIN_STOPS`): a pipeline override, so the composite outside
 // the car is built as before.
 override CABIN: bool = false;
+// What `viewer --debug-view` passes through (`renderer::DebugView`, `cabin_debug` in `cabin.wgsl`): 0 the shaded
+// scene, else the cabin's debug grey, already in display grey. A pipeline override, so the composite without it is
+// built as before.
+override DEBUG_VIEW: u32 = 0u;
 
 // `cs_histogram`'s and `cs_meter`'s, with the scene in `source`. `cs_meter` empties the histogram for the next frame.
 // `meter` is the composite's too.
@@ -371,6 +375,12 @@ fn sharpened(uv: vec2<f32>) -> vec3<f32> {
 
 @fragment
 fn fs_composite(v: Out) -> @location(0) vec4<f32> {
+    // The cabin debug view (`viewer --debug-view`): the cabin's pixels carry their debug grey (`cabin_debug` in
+    // `cabin.wgsl`), already in display grey, so they bypass the sharpening, the bloom, the shafts, the exposure,
+    // the rod vision, the local exposure and the tone curve, and read as drawn. Every other pixel draws as normal.
+    if (DEBUG_VIEW != 0u && in_cabin(v.uv)) {
+        return vec4<f32>(max(textureSampleLevel(source, linear_sampler, v.uv, 0.0).rgb, vec3<f32>(0.0)), 1.0);
+    }
     let scene = sharpened(v.uv);
     let glow = textureSampleLevel(bloom, linear_sampler, v.uv, 0.0).rgb / LEVELS;
     // The cabin's exposure (`CABIN_STOPS`). The glow and the shafts (the light scattered on the way, mostly the

@@ -43,7 +43,7 @@ mod sun_mask;
 mod textures;
 mod uniforms;
 
-pub use enhance::{AntiAliasing, Detail, Enhance, Reflections};
+pub use enhance::{AntiAliasing, DebugView, Detail, Enhance, Reflections};
 pub use frame::FrameStats;
 pub use gpu::{instance, request_gpu, Gpu, GpuError};
 pub(crate) use meshes::mesh_bounds;
@@ -428,6 +428,7 @@ impl Renderer {
             ground: enhance.ground,
             grass: enhance.grass,
             lighting: enhance.lighting,
+            debug_view: enhance.debug_view.code(),
             cube_shift: u32::from(ultra),
             taa,
         };
@@ -700,7 +701,15 @@ impl Renderer {
                 ultra,
             )
         });
-        let post = Post::new(&device, output_format, depth_size, &depth_view, enhance.lighting, taa);
+        let post = Post::new(
+            &device,
+            output_format,
+            depth_size,
+            &depth_view,
+            enhance.lighting,
+            taa,
+            enhance.debug_view.code(),
+        );
         let light_shafts = enhance.lighting.then(|| {
             let clouds = cloud_volume.shadow_map();
             crate::light_shafts::LightShafts::new(&device, &post.scene, depth_size, &depth_view, &sun_view, clouds)

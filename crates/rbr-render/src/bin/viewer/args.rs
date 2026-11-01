@@ -12,7 +12,7 @@ use rbr_render::glass;
 use rbr_render::hud::pause::Nav;
 use rbr_render::hud::Parts;
 use rbr_render::present::Present;
-use rbr_render::renderer::{AntiAliasing, Detail, Enhance, Reflections};
+use rbr_render::renderer::{AntiAliasing, DebugView, Detail, Enhance, Reflections};
 use rbr_render::shifter::CarBox;
 use rbr_render::stage::{Selection, Sky, Wear, Weather};
 use rbr_render::views::CarView;
@@ -208,7 +208,7 @@ pub const USAGE: &str = "usage: RBR_DATA=<install> [RBR_PATCH=<patch>] viewer [S
               --car-gearbox synchro|dog|sequential  --grind-sound WAV  --car-lock DEG
               --save-replay FILE (with --live)  --replay FILE [ARGS...] (watches a replay, extras override)
   view:       --view NAME  --cameras INI  --fov DEG  --camera EX,EY,EZ,FX,FY,FZ  --flyby AHEAD,SIDE,HEIGHT  --size WxH  --fullscreen  --look-back
-              --title TEXT  --pause-menu MOVES
+              --title TEXT  --pause-menu MOVES  --debug-view MODE
   look:       --weather dry|damp|wet  --wear new|normal|worn  --sky SECTION  --fog off|light|heavy  --wipers off|intermittent|continuous|auto
               --clouds clear|partly|light|heavy  --precipitation none|light|moderate|heavy
               --present mailbox|fifo|immediate  --max-fps N
@@ -288,6 +288,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
     let mut hud = HudOptions { show: true, mph: false, fps: false, stack: 0, parts: Parts::default() };
     let mut at_drive = None;
     let (mut car_gearbox, mut grind_sound, mut car_lock) = (None, None, None);
+    let mut debug_view = DebugView::default();
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--help" | "-h" => {
@@ -414,6 +415,11 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
                 car_lock = Some(value.parse().map_err(|_| format!("--car-lock {value}: degrees"))?);
             }
             "--grind-sound" => grind_sound = Some(PathBuf::from(args.next().ok_or("--grind-sound needs a WAV")?)),
+            "--debug-view" => {
+                let value = args.next().ok_or("--debug-view needs a mode")?;
+                debug_view = DebugView::parse(&value)
+                    .ok_or(format!("--debug-view {value}: use {}", DebugView::MODES.join(", ")))?;
+            }
             "--damage" => {
                 let value = args.next().ok_or("--damage needs zone:value pairs")?;
                 damage = Some(damage::parse_zones(&value).map_err(|e| format!("--damage: {e}"))?);
@@ -645,7 +651,7 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
         cracks,
         textures,
         upscale,
-        enhance: Enhance { mirrors, anti_aliasing, reflections, detail, ..enhance },
+        enhance: Enhance { mirrors, anti_aliasing, reflections, detail, debug_view, ..enhance },
         clock,
         relight,
         fog,
@@ -706,6 +712,25 @@ mod tests {
 
     fn parse(line: &str) -> Result<Args, String> {
         parse_args(line.split_whitespace().map(str::to_owned))
+    }
+
+    #[test]
+    fn debug_view_defaults_to_off_and_names_its_modes() {
+        assert_eq!(parse("track-54_E").unwrap().enhance.debug_view, DebugView::default());
+        assert_eq!(parse("track-54_E --debug-view cabin-sky").unwrap().enhance.debug_view, DebugView::Sky);
+        assert_eq!(parse("--debug-view cabin-near").unwrap().enhance.debug_view, DebugView::Near);
+        assert_eq!(parse("--debug-view cabin-contact").unwrap().enhance.debug_view, DebugView::Contact);
+        assert_eq!(parse("--debug-view cabin-light").unwrap().enhance.debug_view, DebugView::Light);
+        for bad in ["--debug-view sky", "--debug-view 1"] {
+            let error = match parse(bad) {
+                Ok(_) => panic!("{bad} parsed"),
+                Err(error) => error,
+            };
+            for mode in DebugView::MODES {
+                assert!(error.contains(mode), "{error}");
+            }
+        }
+        assert!(parse("--debug-view").is_err());
     }
 
     #[test]

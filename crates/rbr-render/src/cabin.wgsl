@@ -20,6 +20,10 @@ const CABIN_GAUGE: f32 = 2.0;
 // Whether the draw's faces are all the interior set's (1) or none are (0), as its pipeline knows them
 // (`renderer::pipelines::PipelineKey::cabin_set`); past 1 each fragment's `specular.y` says.
 override CABIN_SET: u32 = 2u;
+// What `viewer --debug-view` draws on the cabin's interior-set faces (`cabin_debug`, `renderer::DebugView`):
+// 0 the shaded colour, 1 the sky share, 2 the near openness, 3 the contact shading, 4 the irradiance as a grey.
+// A pipeline override, so that the frame without it is built as before.
+override DEBUG_VIEW: u32 = 0u;
 
 fn cabin_set(v: VertexOut) -> bool {
     if (CABIN_SET > 1u) {
@@ -123,6 +127,37 @@ const CABIN_NEAR: f32 = 1.0;
 const CABIN_NEAR_BOUNCE: f32 = 0.5;
 
 fn cabin_day_lit(colour: vec3<f32>, v: VertexOut, n: vec3<f32>, shadowed: f32, under_cloud: f32, outside: vec4<f32>) -> vec3<f32> {
+    let e = cabin_irradiance(v, n, shadowed, under_cloud, outside);
+    let albedo = min(pow(colour * CAR_ALBEDO, vec3<f32>(2.2)), vec3<f32>(ALBEDO_MOST));
+    return pow(albedo * e, vec3<f32>(1.0 / 2.2));
+}
+
+// One term of the cabin's light (`DEBUG_VIEW`) as a display grey 0..1: the vertex's open sky share (1), its near
+// openness (2), the screen-space contact shading it reads (3; 1 without `LIGHTING`), or its irradiance (4) as a
+// luminance, mapped so a face lit like open sky reads mid-grey: half of its share of the open sky's light
+// (`frame.day_sky`). `post.wgsl` passes the grey through unexposed and untonemapped, so it reads as drawn.
+fn cabin_debug(v: VertexOut, n: vec3<f32>, shadowed: f32, under_cloud: f32, outside: vec4<f32>) -> f32 {
+    if (DEBUG_VIEW == 1u) {
+        return clamp(1.0 - v.specular.z, 0.0, 1.0);
+    }
+    if (DEBUG_VIEW == 2u) {
+        return clamp(1.0 - v.sky.z, 0.0, 1.0);
+    }
+    if (DEBUG_VIEW == 3u) {
+        var contact = 1.0;
+        if (LIGHTING) {
+            contact = cabin_contact();
+        }
+        return clamp(contact, 0.0, 1.0);
+    }
+    let luma = vec3<f32>(0.2126, 0.7152, 0.0722);
+    let e = cabin_irradiance(v, n, shadowed, under_cloud, outside);
+    return clamp(dot(e, luma) / max(dot(frame.day_sky.rgb, luma), 1e-4) * 0.5, 0.0, 1.0);
+}
+
+// The cabin's irradiance (pre-albedo light) `cabin_day_lit` shades with: the window and bounce light, less what the
+// cabin's faces close off nearby, plus the sun past the glass, the headlights' bounce and the paint's outside light.
+fn cabin_irradiance(v: VertexOut, n: vec3<f32>, shadowed: f32, under_cloud: f32, outside: vec4<f32>) -> vec3<f32> {
     let sky = 1.0 - v.specular.z;
     let to_sun = -frame.sun.xyz;
     let cloud = 1.0 - CLOUD_CAR_SHADE * under_cloud;
@@ -162,8 +197,7 @@ fn cabin_day_lit(colour: vec3<f32>, v: VertexOut, n: vec3<f32>, shadowed: f32, u
     if (v.specular.y >= CABIN_GAUGE) {
         e = max(e, frame.day_sky.rgb * CABIN_GAUGE_LEAST);
     }
-    let albedo = min(pow(colour * CAR_ALBEDO, vec3<f32>(2.2)), vec3<f32>(ALBEDO_MOST));
-    return pow(albedo * e, vec3<f32>(1.0 / 2.2));
+    return e;
 }
 
 // The contact shading at the pixel (`contact_light`) over the 3 x 3 half-size texels about it: one texel's 12 taps
