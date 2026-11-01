@@ -7,11 +7,11 @@ JPEGs of the 34 shots of [`data/shots.json`](../../data/shots.json), made by
 
 ## Day
 
-### day-gabiria-escort-cockpit
+### day-gabiria-131-cockpit
 
-Ford Escort Mk II RS Grp4, Gabiria Legazpi (RSF 450), cockpit view, 17:00
+Fiat 131 Abarth Grp4, Gabiria Legazpi (RSF 450), cockpit view, 17:00
 
-![day-gabiria-escort-cockpit](day-gabiria-escort-cockpit.jpg)
+![day-gabiria-131-cockpit](day-gabiria-131-cockpit.jpg)
 
 ### day-gabiria-m3-flyby
 
