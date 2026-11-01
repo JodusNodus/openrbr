@@ -18,6 +18,11 @@ const NEAR_BELOW: f32 = 6.0;
 const FAR_BELOW: f32 = 12.0;
 const NEAR_FADE: vec4<f32> = vec4<f32>(0.6, 1.5, 8.0, 11.5);
 const FAR_FADE: vec4<f32> = vec4<f32>(8.0, 11.5, 26.0, 38.0);
+// In the in-car views (the cabin's reach, `effects.ambient.w`, over 0) no rain within `IN_CAR_CLEAR.x` of the eye,
+// fading in by `IN_CAR_CLEAR.y`: from a seat the fall within a few car lengths is a blur too fast to see, and it drew
+// long bright streaks across the windscreen (within 3 m only a sixth of them). The far rain stays, and the rain in the
+// headlights at night. Snow, slow enough to see, keeps out of the cabin alone; outside, half a metre off the eye.
+const IN_CAR_CLEAR: vec2<f32> = vec2<f32>(6.0, 10.0);
 // Instances in the near layer at full rain or snow (`effects.rs`' `NEAR_COUNT`, which draws the rest as the far layer).
 override NEAR_COUNT: u32;
 
@@ -89,8 +94,10 @@ fn vs_rain(@builtin(vertex_index) corner: u32, @builtin(instance_index) index: u
     let reach = distance(world, effects.eye.xyz);
     // Fading toward the box's top and bottom, where drops wrap.
     let edge = min(local.y, size.y - local.y);
+    let cabin = select(vec2<f32>(effects.ambient.w, effects.ambient.w + 0.5), IN_CAR_CLEAR, !snow);
+    let clear = select(vec2<f32>(0.0, 0.5), cabin, effects.ambient.w > 0.0);
     let alpha_fade = smoothstep(fade.x, fade.y, reach) * (1.0 - smoothstep(fade.z, fade.w, reach))
-        * smoothstep(0.0, 2.0, edge) * smoothstep(effects.ambient.w, effects.ambient.w + 0.5, reach);
+        * smoothstep(0.0, 2.0, edge) * smoothstep(clear.x, clear.y, reach);
     if (alpha_fade <= 0.0) {
         return hidden();
     }

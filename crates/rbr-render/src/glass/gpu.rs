@@ -69,11 +69,28 @@ struct FrameUniform {
     /// The way to the sun, stage space, w 1 by day; and its light on the glass, rgb.
     sun: [f32; 4],
     sun_light: [f32; 4],
-    /// The windscreen's wipers for the pane (kind 6): [`Pass::set_wipers`].
-    wipers: [[f32; 4]; 4],
+    /// The windscreen's wipers ([`Pass::set_wipers`]), in `glass.wgsl`'s `Frame` as four fields.
+    wipers: Wipers,
     /// The sun's first cascade (`sun::Cascades`), and x 1 when there are cascades.
     sun_matrix: [[f32; 4]; 4],
     shadow: [f32; 4],
+}
+
+/// The windscreen's wipers for the shader (`glass.wgsl`).
+#[derive(Debug, Clone, Copy, PartialEq, Default, Pod, Zeroable)]
+#[repr(C)]
+pub struct Wipers {
+    /// At most two, each two rows: its pivot in the chart (metres) and its reach, then its park angle, its signed
+    /// sweep and 1 (0: no wiper).
+    pub wipers: [[f32; 4]; 4],
+    /// Their last strokes, newest first ([`super::model::Stroke`]): the angle fraction each went from and to, and the
+    /// seconds since it began and since it ended (0 while under way); none where from and to are equal.
+    pub strokes: [[f32; 4]; super::model::STROKES],
+    /// x the newest stroke's number; y how fast the film builds per second and z the most it holds
+    /// ([`super::model::Glass::wetting`]).
+    pub wiping: [f32; 4],
+    /// The windscreen's film cells: the low corner of the first and a cell's size, chart metres.
+    pub film: [f32; 4],
 }
 
 /// Ours: the glass takes the stage's ambient light and this much of its diffuse.
@@ -95,7 +112,7 @@ pub struct Pass {
     capacity: usize,
     count: u32,
     scene: Option<((u32, u32), wgpu::TextureView)>,
-    wipers: [[f32; 4]; 4],
+    wipers: Wipers,
 }
 
 impl Pass {
@@ -247,7 +264,7 @@ impl Pass {
             capacity: FIRST_CAPACITY,
             count: 0,
             scene: None,
-            wipers: [[0.0; 4]; 4],
+            wipers: Wipers::default(),
         }
     }
 
@@ -268,9 +285,9 @@ impl Pass {
         self.count = drops.len() as u32;
     }
 
-    /// The windscreen's wipers for the pane seen from inside (`glass.wgsl` kind 6), at most two, each two rows: its
-    /// pivot in the chart (metres) and its reach, then its park angle, its signed sweep and 1 (0: no wiper).
-    pub fn set_wipers(&mut self, wipers: [[f32; 4]; 4]) {
+    /// The windscreen's wipers: the pane's swept areas seen from inside (kind 6), and where and when the blades last
+    /// passed over the film (kind 4).
+    pub fn set_wipers(&mut self, wipers: Wipers) {
         self.wipers = wipers;
     }
 

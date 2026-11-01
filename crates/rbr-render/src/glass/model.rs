@@ -51,7 +51,8 @@ pub struct Conditions {
     pub snow: f32,
     /// The car's speed, m/s.
     pub speed: f32,
-    /// Gravity along the glass's chart (`y` down the slope is negative), m/s².
+    /// Gravity as the glass feels it, less the car's acceleration (braking throws the water forward, a bend
+    /// sideways), along the glass's chart (`y` down the slope is negative), m/s².
     pub gravity: Vec2,
     /// What the step's tyre spray throws at the glass (`crate::dirt::Spray::thrown`).
     pub spray: Thrown,
@@ -197,28 +198,42 @@ impl Wiping {
     }
 }
 
-/// New raindrops' radius, metres, mostly small with a few large ones (the cube of a uniform number across the range).
-const RAIN_RADIUS: [f32; 2] = [0.0012, 0.0070];
+/// New raindrops' radius, metres, mostly small with a few large ones (the cube of a uniform number across the range):
+/// what a raindrop leaves where it lands. The big drops on the glass are these run together.
+const RAIN_RADIUS: [f32; 2] = [0.0007, 0.0035];
 /// New flakes' radius.
 const SNOW_RADIUS: [f32; 2] = [0.0025, 0.0065];
 /// Drops hitting a square metre of glass per second at full intensity: standing, and more per m/s of speed (the glass
 /// sweeps through the rain).
-const RAIN_STILL: f32 = 800.0;
-const RAIN_PER_SPEED: f32 = 30.0;
+const RAIN_STILL: f32 = 1400.0;
+const RAIN_PER_SPEED: f32 = 50.0;
 const SNOW_STILL: f32 = 25.0;
 const SNOW_PER_SPEED: f32 = 4.0;
-/// A drop sticks until the pull on it is more than this (m/s²) times `PIN_RADIUS / radius`: small drops hold, big
-/// ones run.
-const PIN: f32 = 8.0;
+/// The rain and snow come in gusts (ours): their rate is up to [`GUSTS`] more or less, changing over about
+/// [`GUST_TIME`] seconds.
+const GUSTS: f32 = 0.5;
+const GUST_TIME: f32 = 2.0;
+/// A drop sticks until the pull on it is more than this (m/s²) times `(PIN_RADIUS / radius)²` (its edge holds it by
+/// its width, the pull moves its mass): small drops hold, big ones run. Gravity alone runs drops from about 4 mm on a
+/// windscreen laid back 25 degrees, from 2.5 mm on a side window.
+const PIN: f32 = 16.0;
 const PIN_RADIUS: f32 = 0.002;
+/// The glass grips unevenly (ours: dirt and wear): the pin is up to [`PATCHY`] more or less over patches about
+/// [`PATCH`] metres across, so that a running drop stops on a grippy patch until it grows or the pull rises.
+const PATCHY: f32 = 0.6;
+const PATCH: f32 = 0.004;
 /// The airflow's push up and out of the glass per (m/s)² over the radius in millimetres, m/s².
 const AIR: f32 = 0.025;
 /// The share of the airflow's push that goes sideways, outward from the glass's middle.
 const AIR_SIDEWAYS: f32 = 0.35;
 /// The sliding speed per m/s² of pull beyond the pin.
-const MOBILITY: f32 = 0.025;
+const MOBILITY: f32 = 0.006;
 /// The fastest a drop slides, m/s: bigger drops slide quicker, by the square of their radius over 2 mm.
-const MOST_SPEED: f32 = 0.6;
+const MOST_SPEED: f32 = 0.2;
+/// Seconds a sliding drop takes to follow its pull (ours: it gathers speed and slows down, the car's jolts damped),
+/// and the speed, m/s, under which a slowing one holds.
+const SLIDE_RESPONSE: f32 = 0.15;
+const HOLD_SPEED: f32 = 0.004;
 /// Seconds a flake takes to melt into a drop, and the drop's radius over the flake's.
 const MELT: f32 = 14.0;
 const MELT_SHRINK: f32 = 0.55;
@@ -279,7 +294,7 @@ const TRAIL_MOST: usize = 3500;
 /// Drops grip the glass by this much more or less than the mean (the pin's factor), a running drop's pin falls to
 /// [`RUNNING_PIN`] of it, and drops under [`TOO_SMALL`] metres are gone.
 const GRIP: [f32; 2] = [0.7, 1.5];
-const RUNNING_PIN: f32 = 0.6;
+const RUNNING_PIN: f32 = 0.85;
 const TOO_SMALL: f32 = 0.0004;
 /// Drops touch when their centres are closer than this share of their radii's sum, checked every [`MERGE_EVERY`]
 /// seconds; [`MOST_RADIUS`] the largest radius a drop reaches to look for one.
@@ -295,21 +310,29 @@ const FILM_WETS: f32 = 0.6;
 const FILM_DRIES: f32 = 0.02;
 const FILM_AIRFLOW: f32 = 20.0;
 const FILM_BLOWN: f32 = 0.5;
-/// How far from the blade's swept angles water is cleared, metres (the blade's half width and the wipe's lag).
-const BLADE_PAD: f32 = 0.02;
+/// How far from the blade's swept angles water is cleared, metres (the blade's half width).
+const BLADE_PAD: f32 = 0.008;
 /// What a blade leaves of the film it sweeps: a thin smear.
 const FILM_SMEAR: f32 = 0.1;
+/// The wipers' strokes the glass keeps ([`Glass::strokes`]): two sweeps out and back, so that an intermittent
+/// wipe's pause lies within them.
+pub const STROKES: usize = 4;
 /// Snow on the blades (ours): each blade carries what it sweeps, in flakes, at most [`BLADE_MOST`], and loses
 /// [`BLADE_MELTS`] of it a second (the blade is outside the heated glass).
 pub const BLADE_MOST: f32 = 60.0;
 const BLADE_MELTS: f32 = 0.01;
+/// The water a blade pushes it leaves where it turns or parks (ours): [`BLADE_LEAVES`] of what it swept (the rest
+/// runs off its ends and over the glass's edge), as up to [`LEFT_MOST`] drops of [`LEFT_RADIUS`] along the blade,
+/// mostly small (the cube of a uniform number across the range), [`LEFT_AHEAD`] metres ahead of it, mostly close
+/// (its square): a broken line of beads, not a bank of water.
+const BLADE_LEAVES: f32 = 0.05;
+const LEFT_MOST: usize = 24;
+const LEFT_RADIUS: [f32; 2] = [0.0006, 0.0025];
+const LEFT_AHEAD: [f32; 2] = [0.001, 0.014];
 /// A side window's share of the rain the windscreen takes, and of the tyre spray (ours: it faces neither the rain
 /// the car drives into nor, as squarely, the spray), which lands mostly low on it.
 const SIDE_RAIN: f32 = 0.3;
 const SIDE_SPRAY: f32 = 0.1;
-/// A side window's drops hold this many times harder (ours: on the vertical pane the windscreen's pin lets every drop
-/// run; with it, drops under about 2.5 mm stay).
-const SIDE_PIN: f32 = 3.0;
 /// `[Effect Bug Splash]`'s four colours, 0 to 1.
 pub const BUG_COLORS: [[f32; 3]; 4] = [
     [166.0 / 255.0, 153.0 / 255.0, 54.0 / 255.0],
@@ -330,6 +353,17 @@ pub fn settled_mud(thrown: f32) -> usize {
     }
 }
 
+/// One stroke of the wipers (ours): their angle fraction from `from` to `to`, at a constant rate from `began` to
+/// `ended` on the glass's clock ([`Glass::clock`]). The shader finds from them when a blade last passed over each
+/// point (`last_wipe` in `glass.wgsl`).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Stroke {
+    pub from: f32,
+    pub to: f32,
+    pub began: f32,
+    pub ended: f32,
+}
+
 /// The glass's drops and wipers.
 #[derive(Debug, Clone)]
 pub struct Glass {
@@ -337,6 +371,16 @@ pub struct Glass {
     pub wipers: Vec<Wiper>,
     /// The wipers' angle fraction after the last step.
     pub phase: f32,
+    /// The wipers' last strokes, newest first (none: `from == to`), and the strokes begun so far.
+    pub strokes: [Stroke; STROKES],
+    pub stroke_count: u32,
+    /// Seconds stepped.
+    pub clock: f32,
+    /// The way the wipers moved in the last step: 1 out, -1 back, 0 still.
+    moving: f32,
+    /// How fast the film built in the last step, per second, and the most it held (ours: the shader's film behind a
+    /// blade, which builds from nothing).
+    pub wetting: [f32; 2],
     /// The glass's chart: `inside` says whether a point is on the glass, `area` its square metres, `centre_x` its
     /// middle across.
     area: f32,
@@ -352,6 +396,8 @@ pub struct Glass {
     pub film: Vec<f32>,
     /// The snow each blade carries, in flakes.
     pub blade_snow: Vec<f32>,
+    /// The water each blade pushes: its drops' cubed radii summed.
+    blade_water: Vec<f32>,
     /// A side window's (ours): the way the airflow runs along it in the chart, toward the car's back. `None` for the
     /// windscreen, whose airflow runs up and out and which takes the bugs.
     back: Option<Vec2>,
@@ -363,6 +409,11 @@ impl Glass {
         Glass {
             drops: Vec::new(),
             phase: 0.0,
+            strokes: [Stroke::default(); STROKES],
+            stroke_count: 0,
+            clock: 0.0,
+            moving: 0.0,
+            wetting: [0.0; 2],
             area,
             bounds,
             centre_x: (bounds[0].x + bounds[1].x) * 0.5,
@@ -372,6 +423,7 @@ impl Glass {
             merge_clock: 0.0,
             film: vec![0.0; FILM_CELLS[0] * FILM_CELLS[1]],
             blade_snow: vec![0.0; wipers.len()],
+            blade_water: vec![0.0; wipers.len()],
             wipers,
             back: None,
         }
@@ -390,6 +442,9 @@ impl Glass {
         self.mud_carry = [0.0; 3];
         self.film.fill(0.0);
         self.blade_snow.fill(0.0);
+        self.blade_water.fill(0.0);
+        self.strokes = [Stroke::default(); STROKES];
+        self.moving = 0.0;
     }
 
     /// The chart point at the middle of film cell `index`, and a cell's size.
@@ -420,16 +475,19 @@ impl Glass {
             },
             None => c,
         };
+        self.clock += dt;
         self.spawn(dt, c, &inside);
         self.spatter(c, &inside);
         self.flow(dt, c);
         self.merge(dt);
         // The film thickens to the rain's amount, less with the airflow.
         let most = c.rain.min(1.0) / (1.0 + c.speed.max(0.0) / FILM_AIRFLOW);
+        let rate = c.rain * FILM_WETS - FILM_DRIES;
         for f in &mut self.film {
-            let wetted = *f + (c.rain * FILM_WETS - FILM_DRIES) * dt;
+            let wetted = *f + rate * dt;
             *f = wetted.min(most.max(*f - FILM_BLOWN * dt)).clamp(0.0, 1.0);
         }
+        self.wetting = [rate.max(0.0), most];
         for b in &mut self.blade_snow {
             *b = (*b * (1.0 - BLADE_MELTS * dt)).max(0.0);
         }
@@ -454,7 +512,7 @@ impl Glass {
                 }
             }
         });
-        self.wipe(phase, c.rain > 0.0 || c.snow > 0.0);
+        self.wipe(dt, phase, c.rain > 0.0 || c.snow > 0.0, &inside);
         // Past the most kept, the oldest go first (they are in spawn order, merges aside); trails count apart.
         let trails = self.drops.iter().filter(|d| d.kind == Kind::Trail).count();
         let mut extra = [(self.drops.len() - trails).saturating_sub(MOST), trails.saturating_sub(TRAIL_MOST)];
@@ -470,8 +528,9 @@ impl Glass {
 
     fn spawn(&mut self, dt: f32, c: Conditions, inside: &impl Fn(Vec2) -> bool) {
         let speed = c.speed.max(0.0);
-        let rain = c.rain * (RAIN_STILL + RAIN_PER_SPEED * speed);
-        let snow = c.snow * (SNOW_STILL + SNOW_PER_SPEED * speed);
+        let gust = 1.0 + GUSTS * noise(Vec2::new(self.clock / GUST_TIME, 0.5));
+        let rain = c.rain * (RAIN_STILL + RAIN_PER_SPEED * speed) * gust;
+        let snow = c.snow * (SNOW_STILL + SNOW_PER_SPEED * speed) * gust;
         let bugs = if self.back.is_none() && c.rain <= 0.0 && c.snow <= 0.0 && speed > BUG_SPEEDS[0] {
             BUG_RATE * ((speed - BUG_SPEEDS[0]) / (BUG_SPEEDS[1] - BUG_SPEEDS[0])).min(1.0)
         } else {
@@ -606,23 +665,31 @@ impl Glass {
         self.drops.iter().filter(|d| d.kind == Kind::Mud).count()
     }
 
-    /// The pull on each water drop: gravity down the glass and the airflow up and out of it. A drop holds until the pull
-    /// passes its pin (each drop grips its own: contact angles differ), then runs, and keeps running down to a lower
-    /// pull; it lays a ribbon of water behind it every [`RIBBON_MIN`] or four radii and a bead now and then, from its own
-    /// volume, so it shrinks as it runs and stops when it is too small to run.
+    /// The pull on each water drop: gravity down the glass and the airflow up and out of it, the more so the farther
+    /// from the middle. A drop holds until the pull passes its pin (each drop grips its own: contact angles differ, and
+    /// the glass grips in patches), then gathers speed, slows down to a lower pull and holds again; it lays a ribbon of
+    /// water behind it every [`RIBBON_MIN`] or four radii and a bead now and then, from its own volume, so it shrinks as
+    /// it runs and stops when it is too small to run.
     fn flow(&mut self, dt: f32, c: Conditions) {
         let speed2 = c.speed * c.speed;
+        let half_width = ((self.bounds[1].x - self.bounds[0].x) * 0.5).max(1e-3);
+        let follow = 1.0 - (-dt / SLIDE_RESPONSE).exp();
         let mut laid = Vec::new();
         for d in self.drops.iter_mut().filter(|d| d.kind == Kind::Water) {
             let air = AIR * speed2 / (d.radius * 1000.0);
-            let outward = if d.at.x >= self.centre_x { 1.0 } else { -1.0 };
+            let outward = ((d.at.x - self.centre_x) / half_width).clamp(-1.0, 1.0);
             let pull = c.gravity + self.back.map_or(Vec2::new(outward * air * AIR_SIDEWAYS, air), |back| back * air);
-            let grip = GRIP[0] + (GRIP[1] - GRIP[0]) * (d.seed * 13.7).fract();
-            let pin = PIN * PIN_RADIUS / d.radius * grip * if self.back.is_some() { SIDE_PIN } else { 1.0 };
-            let beyond = pull.length() - pin * if d.velocity == Vec2::ZERO { 1.0 } else { RUNNING_PIN };
+            let grip = (GRIP[0] + (GRIP[1] - GRIP[0]) * (d.seed * 13.7).fract()) * (1.0 + PATCHY * noise(d.at / PATCH));
+            let pin = PIN * (PIN_RADIUS / d.radius).powi(2) * grip;
+            let holding = d.velocity == Vec2::ZERO;
+            let beyond = pull.length() - pin * if holding { 1.0 } else { RUNNING_PIN };
             let mobility = MOBILITY * (d.radius * 500.0).powi(2);
-            d.velocity =
+            let towards =
                 if beyond > 0.0 { pull.normalize_or_zero() * (beyond * mobility).min(MOST_SPEED) } else { Vec2::ZERO };
+            d.velocity += (towards - d.velocity) * follow;
+            if towards == Vec2::ZERO && d.velocity.length() < HOLD_SPEED {
+                d.velocity = Vec2::ZERO;
+            }
             if d.velocity == Vec2::ZERO {
                 d.span = Vec2::ZERO;
                 continue;
@@ -710,38 +777,108 @@ impl Glass {
         });
     }
 
-    /// Moves the wipers to `phase` and clears the water and snow in the area each blade swept since the last step.
-    /// Bugs stay (the blades smear them, ours: they are left as they are); on `wet` glass the mud goes too, on dry
-    /// glass [`MUD_SMEAR`] of it stays. A blade gathers the snow it sweeps and clears the film.
-    fn wipe(&mut self, phase: f32, wet: bool) {
+    /// Moves the wipers to `phase` over the step's `dt` seconds and clears the water and snow in the area each blade
+    /// swept since the last step. Bugs stay (the blades smear them, ours: they are left as they are); on `wet` glass
+    /// the mud goes too, on dry glass [`MUD_SMEAR`] of it stays. A blade gathers the snow it sweeps and clears the
+    /// film. The move carries on the newest stroke, or begins one when the wipers turn or start; where they turn or
+    /// stop the blades leave some of the water they pushed ([`Glass::leave`]).
+    fn wipe(&mut self, dt: f32, phase: f32, wet: bool, inside: &impl Fn(Vec2) -> bool) {
         let from = self.phase;
         self.phase = phase;
-        if from == phase {
-            return;
+        let way = if phase == from { 0.0 } else { (phase - from).signum() };
+        let turned = self.moving != 0.0 && way != self.moving;
+        let came = self.moving;
+        if way != 0.0 && way == self.moving {
+            self.strokes[0].to = phase;
+            self.strokes[0].ended = self.clock;
+        } else if way != 0.0 {
+            self.strokes.rotate_right(1);
+            self.strokes[0] = Stroke { from, to: phase, began: self.clock - dt, ended: self.clock };
+            self.stroke_count += 1;
         }
-        let (wipers, blade_snow) = (&self.wipers, &mut self.blade_snow);
-        self.drops.retain(|d| {
-            let stays = match d.kind {
-                Kind::Bug => true,
-                Kind::Mud => !wet && d.seed < MUD_SMEAR,
-                Kind::Water | Kind::Snow | Kind::Trail => false,
-            };
-            // The blade has a width: water under it or just behind it goes too (a drop landing there this step lies
-            // outside the angles it swept).
-            let pad = d.radius + if matches!(d.kind, Kind::Water | Kind::Trail) { BLADE_PAD } else { 0.0 };
-            let by = wipers.iter().position(|w| w.swept(d.at, from * w.sweep, phase * w.sweep, pad));
-            if let (Some(k), Kind::Snow, false) = (by, d.kind, stays) {
-                blade_snow[k] = (blade_snow[k] + d.left.max(0.3)).min(BLADE_MOST);
+        self.moving = way;
+        if from != phase {
+            let (wipers, blade_snow, blade_water) = (&self.wipers, &mut self.blade_snow, &mut self.blade_water);
+            self.drops.retain(|d| {
+                let stays = match d.kind {
+                    Kind::Bug => true,
+                    Kind::Mud => !wet && d.seed < MUD_SMEAR,
+                    Kind::Water | Kind::Snow | Kind::Trail => false,
+                };
+                // The blade has a width: the water under it goes too.
+                let pad = d.radius + if matches!(d.kind, Kind::Water | Kind::Trail) { BLADE_PAD } else { 0.0 };
+                let by = wipers.iter().position(|w| w.swept(d.at, from * w.sweep, phase * w.sweep, pad));
+                match (by, d.kind, stays) {
+                    (Some(k), Kind::Snow, false) => blade_snow[k] = (blade_snow[k] + d.left.max(0.3)).min(BLADE_MOST),
+                    (Some(k), Kind::Water, _) => blade_water[k] += d.radius.powi(3),
+                    _ => {}
+                }
+                stays || by.is_none()
+            });
+            for index in 0..self.film.len() {
+                let at = self.film_cell(index).0;
+                if self.wipers.iter().any(|w| w.swept(at, from * w.sweep, phase * w.sweep, 0.0)) {
+                    self.film[index] = self.film[index].min(FILM_SMEAR);
+                }
             }
-            stays || by.is_none()
-        });
-        for index in 0..self.film.len() {
-            let at = self.film_cell(index).0;
-            if self.wipers.iter().any(|w| w.swept(at, from * w.sweep, phase * w.sweep, 0.0)) {
-                self.film[index] = self.film[index].min(FILM_SMEAR);
+        }
+        if turned {
+            self.leave(from, came, inside);
+        }
+    }
+
+    /// Each blade, turning or stopping at `phase` after moving `way` (1 out, -1 back), leaves [`BLADE_LEAVES`] of the
+    /// water it pushed as drops along it, just ahead of it, outside what it swept.
+    fn leave(&mut self, phase: f32, way: f32, inside: &impl Fn(Vec2) -> bool) {
+        for (wiper, water) in self.wipers.iter().zip(&mut self.blade_water) {
+            let angle = wiper.park + wiper.turn * wiper.sweep * phase;
+            let along = Vec2::from_angle(angle);
+            let ahead = Vec2::new(-along.y, along.x) * wiper.turn * way;
+            let mut left = std::mem::take(water) * BLADE_LEAVES;
+            for _ in 0..LEFT_MOST {
+                if left <= TOO_SMALL.powi(3) {
+                    break;
+                }
+                let radius =
+                    (LEFT_RADIUS[0] + (LEFT_RADIUS[1] - LEFT_RADIUS[0]) * self.rng.unit().powi(3)).min(left.cbrt());
+                left -= radius.powi(3);
+                let reach = wiper.reach[0] + (wiper.reach[1] - wiper.reach[0]) * self.rng.unit();
+                let gap = LEFT_AHEAD[0] + (LEFT_AHEAD[1] - LEFT_AHEAD[0]) * self.rng.unit().powi(2);
+                let at = wiper.pivot + along * reach + ahead * (gap + radius);
+                let seed = self.rng.unit();
+                if inside(at) {
+                    self.drops.push(Drop {
+                        at,
+                        radius,
+                        kind: Kind::Water,
+                        velocity: Vec2::ZERO,
+                        span: Vec2::ZERO,
+                        age: 0.0,
+                        left: 0.0,
+                        seed,
+                    });
+                }
             }
         }
     }
+}
+
+/// Smooth value noise over the unit grid, -1 to 1: the glass's grip ([`PATCHY`]) and the gusts ([`GUSTS`]).
+fn noise(p: Vec2) -> f32 {
+    let cell = p.floor();
+    let f = p - cell;
+    let s = f * f * (Vec2::splat(3.0) - 2.0 * f);
+    let corner = |dx: i32, dy: i32| {
+        let (x, y) = (cell.x as i32 + dx, cell.y as i32 + dy);
+        let mut h = (x as u32).wrapping_mul(0x8da6_b343) ^ (y as u32).wrapping_mul(0xd816_3841);
+        h ^= h >> 15;
+        h = h.wrapping_mul(0x2c1b_3c6d);
+        h ^= h >> 12;
+        (h >> 8) as f32 / (1u32 << 24) as f32
+    };
+    let low = corner(0, 0) + (corner(1, 0) - corner(0, 0)) * s.x;
+    let high = corner(0, 1) + (corner(1, 1) - corner(0, 1)) * s.x;
+    (low + (high - low) * s.y) * 2.0 - 1.0
 }
 
 #[cfg(test)]
@@ -763,15 +900,29 @@ mod tests {
     fn rain_falls_on_the_glass_faster_when_driving() {
         let count = |speed| {
             let mut g = glass(Vec::new());
-            for _ in 0..100 {
+            for _ in 0..50 {
                 g.step(0.01, Conditions { rain: 1.0, speed, gravity: SLOPE, ..Default::default() }, 0.0, ALL);
             }
             g.drops.iter().filter(|d| d.kind != Kind::Trail).count()
         };
         let (still, fast) = (count(0.0), count(25.0));
-        assert!(still > 600 && still < 900, "{still}");
+        // 1.12 square metres for half a second, in its gust, less the drops that ran together.
+        let gust = 1.0 + GUSTS * noise(Vec2::new(0.125 / GUST_TIME, 0.5));
+        let expected = 1.12 * RAIN_STILL * 0.5 * gust;
+        assert!(still as f32 > 0.8 * expected && still as f32 <= expected, "{still} of {expected}");
         assert!(fast * 2 > still * 3, "{fast} vs {still}");
         assert_eq!(count(0.0), still, "deterministic");
+    }
+
+    #[test]
+    fn the_rain_comes_in_gusts() {
+        let gust = |t: f32| 1.0 + GUSTS * noise(Vec2::new(t / GUST_TIME, 0.5));
+        let seconds: Vec<f32> =
+            (0..600).map(|s| (0..10).map(|k| gust(s as f32 + k as f32 * 0.1)).sum::<f32>() / 10.0).collect();
+        let mean = seconds.iter().sum::<f32>() / seconds.len() as f32;
+        assert!((mean - 1.0).abs() < 0.05, "{mean}");
+        assert!(seconds.iter().any(|&g| g < 0.75) && seconds.iter().any(|&g| g > 1.25));
+        assert!(seconds.iter().all(|g| (1.0 - GUSTS..=1.0 + GUSTS).contains(g)));
     }
 
     #[test]
@@ -810,8 +961,9 @@ mod tests {
             g.drops[0].at - at
         };
         assert_eq!(run(0.0008, 0.0), Vec2::ZERO);
-        assert!(run(0.004, 0.0).y < -0.01);
-        let pushed = run(0.0015, 30.0);
+        assert_eq!(run(0.0015, 30.0), Vec2::ZERO);
+        assert!(run(0.005, 0.0).y < -0.01);
+        let pushed = run(0.005, 45.0);
         assert!(pushed.y > 0.01 && pushed.x > 0.0, "{pushed}");
     }
 
@@ -837,9 +989,9 @@ mod tests {
             }
             g.drops[0].at - at
         };
-        assert_eq!(run(0.002, 0.0), Vec2::ZERO, "held on the vertical pane");
+        assert_eq!(run(0.0012, 0.0), Vec2::ZERO, "held on the vertical pane");
         assert!(run(0.006, 0.0).y < -0.01, "a big one runs down");
-        assert!(run(0.003, 30.0).x < -0.01, "the airflow takes it back");
+        assert!(run(0.004, 30.0).x < -0.01, "the airflow takes it back");
         let mut g = Glass::side([Vec2::new(-0.5, -0.25), Vec2::new(0.5, 0.25)], 0.5, back, 9);
         for _ in 0..3000 {
             g.step(0.01, Conditions { speed: 30.0, gravity: down, ..Default::default() }, 0.0, ALL);
@@ -956,11 +1108,69 @@ mod tests {
     }
 
     #[test]
+    fn a_blade_leaves_some_of_the_water_it_pushed_where_it_turns() {
+        let w = wiper();
+        let mut g = glass(vec![w]);
+        g.drops = (0..40)
+            .map(|k| Drop {
+                at: w.pivot + Vec2::from_angle(0.8) * (0.25 + 0.008 * k as f32),
+                radius: 0.002,
+                kind: Kind::Water,
+                velocity: Vec2::ZERO,
+                span: Vec2::ZERO,
+                age: 0.0,
+                left: 0.0,
+                seed: 0.5,
+            })
+            .collect();
+        let swept: f32 = g.drops.iter().map(|d| d.radius.powi(3)).sum();
+        let still = Conditions { gravity: SLOPE, ..Default::default() };
+        for phase in [0.25, 0.5, 0.75, 1.0] {
+            g.step(0.1, still, phase, ALL);
+        }
+        assert!(g.drops.is_empty(), "the stroke out took them");
+        g.step(0.1, still, 0.75, ALL);
+        let left: f32 = g.drops.iter().map(|d| d.radius.powi(3)).sum();
+        assert!(left > 0.0 && left <= swept * BLADE_LEAVES * 1.0001, "{left} of {swept}");
+        // Along the blade where it turned, just past the angles it swept.
+        let end = w.park + w.turn * w.sweep;
+        for d in &g.drops {
+            let r = d.at - w.pivot;
+            let past = r.perp_dot(Vec2::from_angle(end)) * -w.turn;
+            assert!(past > 0.0 && past < LEFT_AHEAD[1] + LEFT_RADIUS[1] + 1e-4, "{d:?}");
+            assert!(r.length() >= w.reach[0] - 1e-4 && r.length() <= w.reach[1] + LEFT_AHEAD[1] + 1e-4);
+        }
+    }
+
+    #[test]
     fn the_wiper_turns_either_way() {
         let w = Wiper { pivot: Vec2::ZERO, reach: [0.1, 0.5], park: std::f32::consts::PI, turn: -1.0, sweep: 1.6 };
         // Parked pointing left, it sweeps up clockwise.
         assert!(w.swept(Vec2::new(-0.2, 0.2), 0.0, 1.0, 0.0));
         assert!(!w.swept(Vec2::new(-0.2, -0.2), 0.0, 1.0, 0.0));
+    }
+
+    #[test]
+    fn the_glass_keeps_the_wipers_last_strokes() {
+        let mut g = glass(vec![wiper()]);
+        let rain = Conditions { rain: 1.0, gravity: SLOPE, ..Default::default() };
+        let wiping = Wiping::Intermittent;
+        let steps = ((STROKE + PAUSE + STROKE * 0.75) / 0.01) as usize;
+        for k in 1..=steps {
+            g.step(0.01, rain, wiping.phase(k as f32 * 0.01), ALL);
+        }
+        // Out, back, out again and on its way back: each a straight run at the blade's rate.
+        assert_eq!(g.stroke_count, 4);
+        let [back, out, before, first] = g.strokes;
+        assert!(first.from == 0.0 && before.from > 0.99 && before.to == 0.0, "{first:?} {before:?}");
+        assert!(out.from == 0.0 && out.to > 0.99 && back.from == out.to && back.to < out.to, "{out:?} {back:?}");
+        assert!((back.ended - g.clock).abs() < 1e-4, "under way");
+        let rate = (out.to - out.from) / (out.ended - out.began);
+        assert!((rate - 2.0 / STROKE).abs() < 0.03, "{rate}");
+        assert!((out.began - (STROKE + PAUSE)).abs() < 0.02, "{}", out.began);
+        assert!(g.wetting[0] > 0.5 && g.wetting[1] == 1.0, "{:?}", g.wetting);
+        g.clear();
+        assert!(g.strokes.iter().all(|s| s.from == s.to));
     }
 
     #[test]

@@ -24,7 +24,7 @@ pub mod model;
 
 use std::collections::BTreeMap;
 
-use glam::{Mat4, Vec2, Vec3};
+use glam::{Mat3, Mat4, Quat, Vec2, Vec3};
 use rbr_formats::data::Data;
 use rbr_formats::sgc;
 
@@ -51,10 +51,14 @@ const SIDES: [(&str, &str, f32); 4] = [
     ("i_window_rf", "e_window_rf", -1.0),
     ("i_window_rb", "e_window_rb", -1.0),
 ];
-/// The physics step of one frame, seconds.
+/// A payload period, seconds: the warm-up counts frames in it, and the glass takes it for a first frame.
 const STEP: f32 = rbr_recording::STEP_SECONDS;
 /// Frames replayed before a jump in the drive (a screenshot, a seek): 8 s, so that the glass has its water.
 pub const WARM_UP: usize = (8.0 / STEP) as usize;
+/// The car's acceleration the water feels (ours), smoothed over this many seconds (a frame's change of velocity
+/// jitters over every bump) and at most [`FELT_MOST`] m/s² (a restart's jump is no crash).
+const FELT_SMOOTHING: f32 = 0.25;
+const FELT_MOST: f32 = 30.0;
 /// The height grid's cells across and up.
 const GRID: [usize; 2] = [64, 32];
 /// Each wiper's sweep from its park, radians, in [`WIPERS`]' order (`E88Wiper::InitTable` 0x5f8a50: blade 1 from
@@ -241,6 +245,39 @@ impl Windscreen {
     pub fn point(&self, at: Vec2, lift: f32) -> Vec3 {
         let h = self.height(at).unwrap_or(0.0) + lift;
         self.origin + self.axes[0] * at.x + self.axes[1] * at.y + self.axes[2] * h
+    }
+
+    /// The model-space axis wiper `wiper` turns about (ours): the normal of the plane that best fits the glass over
+    /// its sweep, so that the blade keeps to the curved glass. About the chart's normal, the GC8's blades left it by up
+    /// to 7 cm at the top of their sweep, and the water they push, on the glass, showed off the blade.
+    pub fn turning_axis(&self, wiper: &Wiper) -> Vec3 {
+        // The glass's height over the fan as `a + b x + c y`, least squares.
+        let (mut normal, mut sums) = (Mat3::ZERO, Vec3::ZERO);
+        for i in 0..=8 {
+            for j in 0..=8 {
+                let r = wiper.reach[0] + (wiper.reach[1] - wiper.reach[0]) * i as f32 / 8.0;
+                let angle = wiper.park + wiper.turn * wiper.sweep * j as f32 / 8.0;
+                let at = wiper.pivot + Vec2::from_angle(angle) * r;
+                let Some(h) = self.height(at) else { continue };
+                let row = Vec3::new(1.0, at.x, at.y);
+                normal += Mat3::from_cols(row * row.x, row * row.y, row * row.z);
+                sums += row * h;
+            }
+        }
+        if normal.determinant().abs() < 1e-9 {
+            return self.axes[2];
+        }
+        let [_, b, c] = (normal.inverse() * sums).to_array();
+        (self.axes[2] - self.axes[0] * b - self.axes[1] * c).normalize()
+    }
+
+    /// The frame `wiper` turns in, model space: its pivot on the glass at the origin, its [`Windscreen::turning_axis`]
+    /// along `z`.
+    pub fn wiper_node(&self, wiper: &Wiper) -> Mat4 {
+        Mat4::from_rotation_translation(
+            Quat::from_rotation_arc(Vec3::Z, self.turning_axis(wiper)),
+            self.point(wiper.pivot, 0.0),
+        )
     }
 }
 
@@ -544,6 +581,8 @@ pub struct Drawn {
     sides: Vec<Glass>,
     /// The last frame followed, and its step.
     last: Option<(usize, u32)>,
+    /// The car's acceleration the water feels, physics frame ([`felt_acceleration`]).
+    felt: Vec3,
 }
 
 impl Drawn {
@@ -554,12 +593,12 @@ impl Drawn {
 
     /// The glass of car `name` in `precipitation`, with the wiper meshes found among `playback`'s interior parts and
     /// what its windows' faces let through, `tints`. `None` (reported on stderr) when the car has no windscreen part.
-    /// The wipers start at `switch`.
+    /// The wipers start at `switch`; `playback` turns their meshes ([`Playback::set_turning`]).
     pub fn load(
         data: &Data,
         name: &str,
         precipitation: Option<Precipitation>,
-        playback: &Playback,
+        playback: &mut Playback,
         switch: Switch,
         tints: &Tints,
     ) -> Option<Drawn> {
@@ -585,6 +624,14 @@ impl Drawn {
             .flat_map(|(_, wipers)| wipers)
             .map(|(_, centre)| playback.parts_at(*centre, false))
             .collect();
+        let nodes = |w: &Windscreen, wipers: &[(Wiper, Vec3)], parts: &[Vec<usize>]| {
+            wipers.iter().zip(parts).map(|((wiper, _), parts)| (parts.clone(), w.wiper_node(wiper))).collect::<Vec<_>>()
+        };
+        let mut turning = nodes(&car.windscreen, &car.wipers, &parts);
+        if let Some((outside, wipers)) = &car.exterior {
+            turning.extend(nodes(outside, wipers, &exterior_parts));
+        }
+        playback.set_turning(&turning);
         let wiping = switch.wiping(falling(precipitation), amounts(precipitation).1, 0);
         eprintln!(
             "glass: windscreen {:.2} m², {} side windows, {} wipers ({} meshes, {} outside), {:?}, wipers {} ({:?})",
@@ -597,7 +644,20 @@ impl Drawn {
             switch.name(),
             wiping
         );
-        Some(Drawn { car, glass, corners, precipitation, switch, wiping, parts, exterior_parts, sides, last: None })
+        let felt = Vec3::ZERO;
+        Some(Drawn {
+            car,
+            glass,
+            corners,
+            precipitation,
+            switch,
+            wiping,
+            parts,
+            exterior_parts,
+            sides,
+            last: None,
+            felt,
+        })
     }
 
     /// Follows the drive to its current frame (each frame one physics step, with its tyre `spray`), turns the wiper
@@ -611,6 +671,7 @@ impl Drawn {
             Some((last, step)) if last <= index && index - last <= WARM_UP && samples[last].step == step => last + 1,
             _ => {
                 self.glass.clear();
+                self.felt = Vec3::ZERO;
                 let first = index.saturating_sub(WARM_UP);
                 let before = spray.map_or_else(Default::default, |s| s.before(first));
                 let windscreen = &self.car.windscreen;
@@ -629,8 +690,14 @@ impl Drawn {
         // The wipers run on the game's clock: the drive's steps (NGP's 1/720 s in a live NGP run).
         let step = playback.step_clock().step;
         for (i, sample) in samples.iter().enumerate().take(index + 1).skip(first) {
+            // The frame's time on the same clock, so that the water keeps pace with the blades.
+            let dt = i.checked_sub(1).map_or(STEP, |p| sample.step.saturating_sub(samples[p].step) as f32 * step);
+            if let Some(p) = i.checked_sub(1).filter(|_| dt > 0.0) {
+                let change = Vec3::from(sample.car.velocity) - Vec3::from(samples[p].car.velocity);
+                self.felt = felt_acceleration(self.felt, change, dt);
+            }
             let to_model = playback.model_to_physics(sample).inverse();
-            let gravity = to_model.transform_vector3(Vec3::new(0.0, 0.0, -9.81));
+            let gravity = to_model.transform_vector3(Vec3::new(0.0, 0.0, -9.81) - self.felt);
             let conditions = Conditions {
                 rain,
                 snow,
@@ -643,11 +710,11 @@ impl Drawn {
             if self.wiping.phase(time) == 0.0 {
                 self.wiping = self.switch.wiping(falling, snow, self.glass.mud());
             }
-            self.glass.step(STEP, conditions, self.wiping.phase(time), |at| windscreen.inside(at));
+            self.glass.step(dt, conditions, self.wiping.phase(time), |at| windscreen.inside(at));
             for (side, glass) in self.car.sides.iter().zip(&mut self.sides) {
                 let [across, up, _] = side.inside.axes;
                 let gravity = Vec2::new(gravity.dot(across), gravity.dot(up));
-                glass.step(STEP, Conditions { gravity, ..conditions }, 0.0, |at| side.inside.inside(at));
+                glass.step(dt, Conditions { gravity, ..conditions }, 0.0, |at| side.inside.inside(at));
             }
         }
         self.last = Some((index, samples[index].step));
@@ -657,7 +724,7 @@ impl Drawn {
                 for ((wiper, _), parts) in wipers.iter().zip(parts) {
                     let pivot = windscreen.point(wiper.pivot, 0.0);
                     let motion = Mat4::from_translation(pivot)
-                        * Mat4::from_axis_angle(windscreen.axes[2], wiper.turn * wiper.sweep * phase)
+                        * Mat4::from_axis_angle(windscreen.turning_axis(wiper), wiper.turn * wiper.sweep * phase)
                         * Mat4::from_translation(-pivot);
                     for &part in parts {
                         playback.set_motion(part, motion);
@@ -675,9 +742,16 @@ impl Drawn {
             (false, Some((outside, _))) => self.drops(playback, Some(outside), lit, effects),
             (false, None) => Vec::new(),
         };
-        // The pane's wipers (kind 6), the windscreen's seen from inside.
-        let mut wipers = [[0.0; 4]; 4];
-        for ((w, _), rows) in self.car.wipers.iter().zip(wipers.chunks_exact_mut(2)) {
+        // The windscreen's wipers: the pane's swept areas (kind 6), and the strokes that cleared the film (kind 4).
+        let g = &self.glass;
+        let (corner, size) = g.film_cell(0);
+        let mut wipers = gpu::Wipers {
+            strokes: g.strokes.map(|s| [s.from, s.to, g.clock - s.began, g.clock - s.ended]),
+            wiping: [g.stroke_count as f32, g.wetting[0], g.wetting[1], 0.0],
+            film: [corner.x - size.x * 0.5, corner.y - size.y * 0.5, size.x, size.y],
+            ..Default::default()
+        };
+        for ((w, _), rows) in self.car.wipers.iter().zip(wipers.wipers.chunks_exact_mut(2)) {
             rows[0] = [w.pivot.x, w.pivot.y, w.reach[0], w.reach[1]];
             rows[1] = [w.park, w.turn * w.sweep, 1.0, 0.0];
         }
@@ -700,15 +774,7 @@ impl Drawn {
         // The film's streaks along the airflow, longer with speed: up the windscreen, back along the side windows.
         let streak = 1.0 + (Vec3::from(playback.sample().car.velocity).length() / FILM_STREAK_SPEED).min(2.0);
         let [across, up, _] = outside.unwrap_or(w).axes.map(|a| to_stage.transform_vector3(a));
-        // The panes themselves seen from inside, under all else on them.
-        let mut drops = Vec::new();
-        if outside.is_none() && effects {
-            drops.extend(pane_cells(&self.glass, w, to_stage, 0.0, &self.corners[0]));
-            for ((side, glass), corners) in self.car.sides.iter().zip(&self.sides).zip(&self.corners[1..]) {
-                drops.extend(pane_cells(glass, &side.inside, to_stage, 1.0, corners));
-            }
-        }
-        drops.extend(pane_drops(&self.glass, w, outside, to_stage, streak, lit));
+        let mut drops = pane_drops(&self.glass, w, outside, to_stage, streak, lit);
         for (side, glass) in self.car.sides.iter().zip(&self.sides) {
             // Outside, on the exterior pane over it, when the car has one.
             let on = match outside {
@@ -743,6 +809,14 @@ impl Drawn {
                     tint: [0; 4],
                     edge: [0; 4],
                 });
+            }
+        }
+        // The panes themselves seen from inside, over all that lies on them: their inner face's reflection and loss
+        // are nearer the eye than the water on the outer one.
+        if outside.is_none() && effects {
+            drops.extend(pane_cells(&self.glass, w, to_stage, 0.0, &self.corners[0]));
+            for ((side, glass), corners) in self.car.sides.iter().zip(&self.sides).zip(&self.corners[1..]) {
+                drops.extend(pane_cells(glass, &side.inside, to_stage, 1.0, corners));
             }
         }
         drops
@@ -955,6 +1029,13 @@ fn amounts(p: Option<Precipitation>) -> (f32, f32) {
     }
 }
 
+/// The car's acceleration the water feels after a frame of `dt` seconds whose velocity changed by `change` (m/s), from
+/// `felt` before: smoothed over [`FELT_SMOOTHING`], at most [`FELT_MOST`].
+fn felt_acceleration(felt: Vec3, change: Vec3, dt: f32) -> Vec3 {
+    let now = (change / dt).clamp_length_max(FELT_MOST);
+    felt + (now - felt) * (1.0 - (-dt / FELT_SMOOTHING).exp())
+}
+
 /// The raw rain of a precipitation (no snow), for the wipers' switch: drizzle wipes now and then.
 fn falling(p: Option<Precipitation>) -> f32 {
     p.filter(|p| !p.snow).map_or(0.0, |p| p.intensity)
@@ -1020,6 +1101,34 @@ mod tests {
         assert!((wiper.pivot.x + 0.15).abs() < 0.01, "{:?}", wiper.pivot);
         assert!(wiper.park.abs() < 0.1 && wiper.turn == 1.0);
         assert!(wiper.reach[0] > 0.3 && wiper.reach[1] > 0.8);
+    }
+
+    #[test]
+    fn a_wiper_turns_about_the_glass_it_sweeps() {
+        // The flat windscreen's halves swept back 12 cm at the sides; a wiper over the right half (chart +x).
+        let up = Vec3::new(0.0, 0.53, 0.85) * 0.8;
+        let (a, c, b) = (Vec3::new(0.7, 0.72, -2.01), Vec3::new(0.0, 0.72, -2.13), Vec3::new(-0.7, 0.72, -2.01));
+        let w = Windscreen::new(&[[c, a, a + up], [c, a + up, c + up], [b, c, c + up], [b, c + up, b + up]]).unwrap();
+        let pivot = Vec2::new(0.15, w.bounds[0].y + 0.05);
+        let wiper = Wiper { pivot, reach: [0.05, 0.4], park: 0.0, turn: 1.0, sweep: 0.5 };
+        let right = (c - b).cross(up).normalize();
+        let axis = w.turning_axis(&wiper);
+        assert!(axis.dot(right).abs() > 0.9999, "the right half's normal, {axis} {right}");
+        assert!(axis.dot(w.axes[2]).abs() < 0.999, "not the chart's, 5 degrees off it");
+    }
+
+    #[test]
+    fn the_water_feels_the_car_brake_but_not_a_restart() {
+        // Braking at 1 g, a 1/60 s frame at a time: in a second and a half the water feels nearly all of it.
+        let dt = 1.0 / 60.0;
+        let mut felt = Vec3::ZERO;
+        for _ in 0..90 {
+            felt = felt_acceleration(felt, Vec3::new(-9.81 * dt, 0.0, 0.0), dt);
+        }
+        assert!((felt.x + 9.81).abs() < 0.1 && felt.y == 0.0, "{felt}");
+        // A restart's jump from 30 m/s to a stand in one frame: a nudge, not 1800 m/s².
+        let jump = felt_acceleration(Vec3::ZERO, Vec3::new(-30.0, 0.0, 0.0), dt);
+        assert!(jump.length() < FELT_MOST * 0.2, "{jump}");
     }
 
     #[test]

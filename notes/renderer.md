@@ -53,7 +53,7 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   forest chase 251 / 136 / 230, cockpit 174 / 95 / 120 (TAA roughly halves the aliasing, sharpening restores about
   half; dry, wet, rain and night scenes similar). `--anti-aliasing off` frames are byte-identical to before in
   13 scenes. Tried and removed: a negative texture mip bias (0 to -1; 201 to 205, no change).
-  The steering wheel's pixels move by its turn since the last frame (`taa::Wheel`, `Playback::set_wheel_node`): its
+  The steering wheel's pixels move by its turn since the last frame (`taa::Room`, `Playback::set_wheel_node`): its
   room is measured from its meshes in its node's frame, radius and depth along the column per 8 bands of radius (rims
   sit 0-13 cm up the column from the node, some meshes take the column down to -0.9 m). Before, a fast turn left
   translucent spokes and dark smears behind the rim's mark (Delta HF, M3 E30). Stills unchanged (34 shots
@@ -61,6 +61,12 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   on too (Delta cockpit 1080p, M3 Pro, 2026-10-31). The turn is undone on the model-space point before the car's
   motion: a separate wheel-to-previous matrix changed Metal's fast-math code for the car's pixels (a chase still by
   up to 2/255).
+  The wipers' pixels likewise (2026-11-01; `Playback::set_turning`, `Windscreen::wiper_node`): each wiper's room is
+  measured from its meshes at rest about its turning axis, per band the depth along the axis and the angles about it
+  the arm and blade fill (1 cm margin), tested on the point turned back to rest; up to 4 rooms (the wheel's fills every
+  angle). Before, a blade turning at 3.4 rad/s was carried by the car's motion and drew as a pale see-through ghost
+  with a ladder of its old places (GC8 Luceram heavy rain); now as solid as with `--anti-aliasing off`. TAA 0.71 to
+  0.76 ms (GC8 cockpit 1080p, M3 Pro, 5 runs).
   Glass over the car (the dash below the windscreen, the cabin behind the windows, lamp lenses) gathers as the rest:
   the mask takes the frame new only where the stage is behind the glass (2026-10-31). The lower windscreen (alpha about
   0.9 at its grazing angle) was taken new every frame, its dash edges and reflected cabin never smoothed; its
@@ -553,20 +559,57 @@ not ported.
   3 to 45 % of the light behind through in the mud's hue, its core dark (2026-10-27; glass pass 0.14 ms before and
   after, off frames byte-identical). Tried and dropped: a dashboard reflection in the windscreen (user's call).
 - Water redone (ours, 2026-10-31; `lens`, `film_cell`, `ribbon` in `glass.wgsl`; `flow`, `merge` in `model.rs`): a drop, bead or
-  ribbon is clear water, not a white cap: it lays 0.75 (0.55 for a ribbon's weight) of a lens over what is drawn behind it
-  (the pane's haze included; replacing the pixel left drops darker than the hazy glass), the frame seen mirrored through
-  its centre 3x its offset, a thin dark outline (darker below), a lit upper-left side and a small highlight. Pixel offsets
+  ribbon is clear water, not a white cap: it lays 0.85 (0.55 for a ribbon's weight) of a lens over what is drawn behind it
+  (replacing the pixel left drops darker than the hazy glass), the frame seen mirrored through its centre 5x its offset,
+  a thin dark outline and a small highlight (the lens's up as of the wipers below). Pixel offsets
   come from the quad's screen axes (`Out::pixels`). Beads: two layers a film cell (5 and 2 squares a side), shown for
-  `film^0.3`; under two pixels a bead has no outline. Film: the frame through a wavy sheet (noise slope, 2 px), 4 taps
-  streaked along the airflow, patchy; no flat veil. Sim: rain radius 1.2 to 7 mm (cubed), 800/m2/s still; each drop grips its
-  own (0.7 to 1.5), runs down to 0.6 of its pin, slides faster as r^2 (at most 0.6 m/s); drops that touch merge (volume kept,
-  every 1/60 s, swept by x); drops from 2.2 mm lay a ribbon (kind 7, 2.5 s) every four radii from their own volume and a
-  bead beside it (5 s), so they shrink and stop; a blade leaves 0.1 of the film and clears water within `BLADE_PAD` (2 cm)
-  of the angles it swept, so none shows over the moving blade. Wiper schedule and drizzle mapping unchanged.
+  `1 - exp(-2.5 film)`; under two pixels a bead has no outline. Film: the frame through a wavy sheet (noise slope, 2 px), 4 taps
+  streaked along the airflow, patchy; no flat veil. Sim (as of the bullet on drops at rest below): drops that touch merge
+  (volume kept, every 1/60 s, swept by x); drops from 2.2 mm lay a ribbon (kind 7, 2.5 s) every four radii from their own
+  volume and a bead beside it (5 s), so they shrink and stop; a blade leaves 0.1 of the film and clears water within
+  `BLADE_PAD` (8 mm) of the angles it swept. Wiper schedule and drizzle mapping unchanged.
   Cost at 1080p heavy rain (GC8 Luceram, `--profile --frames 120`): "particles, rain" 1.12 to 1.18 ms, drawn-only frame 7.88 to
   7.98 ms. Dry and snow cockpits and chases byte-identical. Open: heavy rain at a stop reads less speckled than before (fewer
   tiny white specks, by design); the 131 Abarth shows no windscreen water at night (its glass is not charted, as before);
   `--sequence` with `--live` now ends on `--at` (the car moves between frames; before it started there and stood still).
+- The wipers on the water (ours, 2026-10-31; `last_wipe`, `bead_share`, `smear`, `ridge` in `glass.wgsl`,
+  `model::Stroke`): the glass keeps the blades' last 4 strokes and each pixel finds when a blade last passed it. Behind
+  a blade the film and its beads build again from nothing at the rain's rate, in a new layout each stroke; a smear of
+  fine arcs dries in 0.5 s; the gathered water rides along the leading edge as a lumpy ridge, left lying where a stroke
+  turns (0.1 s, then the drops the blade leaves). The glass steps by the step clock's time between frames, as the blades do (a payload period a frame
+  ran it at half the blades' pace in a 6.9 ms sequence). The blades turn about the normal of the plane that best fits
+  the glass over their sweep (`Windscreen::turning_axis`): about the chart's normal the GC8's blades sank 7 cm into it
+  or rose 10 cm off it at the top of the sweep, 70 px off the line they wiped as seen from the seat; now within 2 cm.
+  Lens: the sky's light (0.7 of `Frame::light`, at most 0.45) below an upturned line, a crescent in the lower rim, the
+  outline darker on top, its up the screen's (a running drop's lens was upside down). The drops feel gravity less the
+  car's acceleration (`felt_acceleration`: the velocity's change, smoothed over 0.25 s, at most 30 m/s²): braking runs
+  them down the glass, a bend sideways (GC8 Luceram: 4 to 5 m/s² braking, 2 to 4 cornering). Dry M3 621 cockpit within
+  0.2 of 255 on the glass. `--sequence` with `--live` showed the last frame each time (`Playback::step` is relative).
+  Open: with `windscreen` the cabin's reflection, now over the water, lifted the dark view about 30 of 255, the
+  heavy-rain look's main haze (now drawn at half, below); the blade meshes' frames stand 1 to 5 cm off the glass.
+- Drops at rest and on the move (ours, 2026-11-01, user: "the drops move around too fast/aggressively"; `flow`, `leave`
+  in `model.rs`): drops land 0.7 to 3.5 mm (cubed; 1400/m2/s still, 50 more per m/s), bigger ones only by merging. The
+  pin goes as `16 (2 mm / r)^2` m/s² (the edge holds by its width, the pull moves the mass; was `8 (2 mm / r)`): on the
+  GC8's glass (gravity 4.1 m/s² along it) drops run from about 4 mm, on a side window from 2.5 mm (no side factor now),
+  small ones hold through the car's 3 to 6 m/s² of felt acceleration (p50, p90 on Luceram, as large as gravity along the
+  glass). Grip 0.7 to 1.5 a drop, times 1 +- 0.6 over 4 mm noise patches; a running drop holds at 0.85 of its pin, so
+  it stops on grippy patches until it grows. It follows its pull over 0.15 s (holds under 4 mm/s) at
+  `0.006 (r / 2 mm)^2` m/s per m/s² beyond the pin, at most 0.2 m/s. The airflow's sideways share grows from the
+  middle out. Where a blade turns or parks it leaves 0.05 of the water it swept, up to 24 drops of 0.6 to 2.5 mm (cubed),
+  1 to 14 mm ahead of it (squared). Luceram heavy rain, 8 s in at three points: drops sliding 29-38 % to 6-10 %, their median speed 12-16 to
+  2-3 cm/s (90th 60 cap to 7-12); over the 75 s drive 0-9 % slide. Frame cost within noise (drawn-only 20.4 to
+  20.6 ms, glass pass 3.75 to 3.78 ms, 2000 to 2500 drops on the glass against 600 to 800). User: "looks pretty
+  realistic now".
+- Softer and less alike (ours, 2026-11-01, user: "the culmination effect from the wipers is a bit too harsh", "more
+  natural and random", "real drops aren't that perfectly round", "the interior a bit less reflective"): the blade's
+  ridge 2 to 7 mm wide (was 3 to 12), 0.6 of a lens, sheen 0.08 of the sky (0.35), left lying 0.1 s (0.25): where the
+  blades turned it read as blocks of white foam. Each lens its own (`vary`): 0.3 to all of the sky share and of the
+  crescent (now 0.2 from 0.3), its outline 0.75 to 1 as dark, its highlight shifted. Outlines (`outline`): ragged 0.12
+  to 0.28 (was 0.04 to 0.2; beads 0.15, were round), up to 0.35 longer one way, each its own way. Beads patchy over
+  4 cm (0.25 to 1.5 of their share); rain and snow in gusts, +-0.5 over about 2 s (`GUSTS`). The cabin's reflection
+  in the windscreen at 0.5 (`CABIN_REFLECTED`). The pale shapes high in the GC8's windscreen at Luceram's hairpin are
+  the stage (they stay with the pane and the film off). Cost within noise (GC8 Luceram heavy rain, drawn-only 20.38 to
+  20.41 ms).
 - Beads (ours, 2026-10-26): the film's cells draw the small drops too many to be drops of their own. The film builds to the rain's amount, less with the airflow, and the wipers clear
   the beads with it (drops alone covered 1.3-2.1% after 12 s; more drops cost ~5 ms a step at 100 km/h). Shows with
   additions off too (user-approved); cockpit heavy 13.1 ms before and after.
@@ -578,7 +621,8 @@ not ported.
 - Side windows (ours): each side window its own glass (drops, trails, film, mud; no wipers, no bugs), drawn on its
   exterior pane; 0.3 of the windscreen's rain and 0.1 of its spray, landing low.
 - The pane itself from inside (ours, 2026-10-30, with `windscreen`; kind 6, `pane` in `glass.wgsl`): a cell per film
-  cell, drawn under the drops: Schlick loss through both faces, a patchy dust film scattering the sun (forward and broad
+  cell, drawn over the water (its inner face is nearer the eye; under it, drops hid the cabin's reflection): Schlick
+  loss through both faces, a patchy dust film scattering the sun (forward and broad
   lobes, the stage's shade from sun cascade 0) and the sky, thinner in the wipers' sweep, specks, dried water spots, and
   arc scratches that glint where `dot(t, sun - view) = 0`; side windows half the dust. Dropped: dust in arcs along the
   blade (noise stretched along the arc read as even concentric rings). The cabin reflected in it (2026-10-30): the
@@ -691,7 +735,7 @@ byte-identical before and after (chase, cockpit, heavy rain, 1920x1080).
 | `lighting` | our lighting in place of the game's look (2026-10-27: one flag for the former `sky`, `sun`, `occlusion` and `clouds`; the half-on looks, the 2D cloud layer and its cloud-face lighting went): the physically based sky with aerial perspective, height fog, light shafts and volumetric clouds with their shadows; sun shadow cascades and sunlit foliage in place of the baked light maps; ambient occlusion and bounced light computed at load; reflection probes; the day's exposure. Details below |
 | ~~`hdr`~~ (always on) | float targets, bloom, histogram exposure, AgX (`post.rs`); the exposure's limits follow the clock's light, heavy rain or snow a fifth darker, heavy cloud 15% more saturated. Local exposure: where the bloom blur is over 2 stops above middle grey, 0.6 off, so the night beam keeps the road's texture (45O cockpit 23:00: 24% clipped, now none); post pass 2.91-2.94 ms; additions off byte-identical (2026-10-25). Tried and dropped: a 97th-percentile cap (blacked out everything around the beam). Daytime exposure under our sun lighting (`Enhance::lighting`, 2026-10-27; `post::SUN_EXPOSURE` 1.5, `DayLight::sun_share`): 41M chase noon lit grass (188 207 141) to (166 184 124), road 190 to 137; 45O noon grass green 165 to 121, road 178 to 115. 1.5 keeps sunlit grass above a photo's 120-140 green; 2 crushes the shadows (31 to 24). AgX contrast follows the adapting light (Stevens effect): day p95/p99 up ~10 levels, p5 down ~6; post pass 3.34 to 3.35 ms; additions off byte-identical |
 | `marks` | our tyre marks in place of the skid marks (Skid marks; launcher default off) |
-| `particles` | GPU rain and snow, rain rings, lit soft particles, chimney smoke, wheel spray. The rain or snow is decided once (`Scene::precipitation` in the viewer; `Rain::of_weather`, `Precipitation::of`): `--precipitation`, else with `particles` ours by the road, else the game's by the preset. Rings only in standing water, gone past 60 m over the view's cosine (2026-10-25). Rain looks (2026-10-26): 196000 faint streaks at full rain in place of 56000 bright needles, plus a fullscreen rain mist (a fifth of the lamps' light at night); no drop falls inside the cabin; zero without rain or `particles`, so additions off stay byte-identical. Streak look (2026-10-28): `--flyby`/`--camera` eyes take zero eye velocity (they took the car's ~25 m/s, slanting streaks ~40 degrees); `SHUTTER` 1/30 to 1/60 s; dry and damp shots byte-identical. About +0.5 to 1 ms on 45O chase wet, the denser drops another +1 ms on heavy; 30 chase frames without flicker. Drizzle (2026-10-31): `Precipitation::shower()`, the intensity squared, sets the streak count and the glass rates (light rain 0.25, heavy 1) |
+| `particles` | GPU rain and snow, rain rings, lit soft particles, chimney smoke, wheel spray. The rain or snow is decided once (`Scene::precipitation` in the viewer; `Rain::of_weather`, `Precipitation::of`): `--precipitation`, else with `particles` ours by the road, else the game's by the preset. Rings only in standing water, gone past 60 m over the view's cosine (2026-10-25). Rain looks (2026-10-26): 196000 faint streaks at full rain in place of 56000 bright needles, plus a fullscreen rain mist (a fifth of the lamps' light at night); no drop falls inside the cabin; zero without rain or `particles`, so additions off stay byte-identical. Streak look (2026-10-28): `--flyby`/`--camera` eyes take zero eye velocity (they took the car's ~25 m/s, slanting streaks ~40 degrees); `SHUTTER` 1/30 to 1/60 s; dry and damp shots byte-identical. About +0.5 to 1 ms on 45O chase wet, the denser drops another +1 ms on heavy; 30 chase frames without flicker. Drizzle (2026-10-31): `Precipitation::shower()`, the intensity squared, sets the streak count and the glass rates (light rain 0.25, heavy 1). In-car rain (2026-10-31, `IN_CAR_CLEAR`): none within 6 m of the eye, fading in by 10 m (the cabin alone left long bright streaks across the windscreen; clearing 3 m took a sixth of them, 6 m half, GC8 Luceram heavy); the far rain and the rain in the headlights stay; snow keeps the cabin's 2 m; outside views and the game's own rain unchanged |
 | `snow` | the snow (`Vertex::wet` -1, `puddles::SNOW_MARK`, takes no film) takes the snow scan the same way (Poly Haven Snow 02, CC0, 1024 packed, layer 2, every 2 m; the factor no darker than 0.88). Launcher "Surfaces", default on |
 | `ground` | the off-road ground (`puddles::mark_ground`, `Vertex::edge` -1) takes a scanned grass-and-earth ground (Poly Haven Grass Ground, CC0, 1024 packed, layers 3 and 4 of the road scans; `ground_scan` in `shader.wgsl`) triplanar at 1.7 m and a 5.1 m tiling turned 30 degrees; bright grey ground takes only brightness, no darker than 0.88. Round 2 (2026-10-29): `ground_patches` adds earth and grass in patches 2 to 6 m across and stones of 0.3 and 0.9 m cells. Launcher "Surfaces", default on |
 | `grass` | not in `all` (launcher "Dense grass", default off; the reference shots take it): crossed cards of drawn grass blades over the green and straw ground within 20 m of the driveline (`grass.rs`), streamed by 8 m tile about the eye into 550 fixed tile meshes in 9 pools by card count (a tile takes the smallest free one holding its cards, bare ground none), drawn within 118 m (`Lod::Close`), full within 50 m then halving every 25 m, flattened into the ground from 100 to 110 m; each tile holds 1.5x its density (by its nearest point) on 24 steps and the vertex shader shrinks each card by its rank against the density where it stands (`GRASS_THIN`), so the field glides instead of popping; swayed by the wind in the vertex shader (`grass_sway`). Tiles are made on a worker thread (the near 24 m on the frame itself, uploads capped; tiles ahead of the motion built early). Lit as a dense canopy (`GRASS_*` in `shader.wgsl`): tighter wrap, sky and sun shut out down the blades, a low sun more; the ground's computed sky occlusion, sky direction and bounce read back once at load (`Renderer::grass_light`). 580 chase 1080p scene 5.05 to 5.14 ms (+39k triangles), Gabiria fly-by 3.76 to 3.62 ms (-77k triangles); ~280 MB video memory (2026-10-30; ~540 MB since the reach below). Look (2026-10-30): cards 0.07 to 0.14 m (were 0.1 to 0.2), their foot lighter (`GRASS_BASE` 0.6, `GRASS_SUN_BASE` 0.4 to 0.6), so the field reads as a low meadow, not dark fur; the retail tufts toned to sit with it (`TUFT_TRANSMIT` 0.35). Snow shots unchanged (RMSE under 0.005). Retail tufts lit as our grass (2026-10-30): the stage's tufts and ferns take our grass's light (`GRASS_*`: wrap 0.3, sun and sky shut out down them, no warm tips), keep 0.4 of the sky's colour (`TUFT_SKY_TINT`: their grey-green textures read bluish), no dark-leaf lift, green leaves at most 0.09 linear (`TUFT_GREEN_MOST`, was 0.15; 580's lime ferns read as lit card). Their luma over our grass's in the same 48-pixel tiles: 580 Evo chase 2.4-2.5 to 1.2-1.3, 580 shot 3.7 to 1.5, 532 1.34 to 0.89, Gabiria's pale straw 2.1 to 1.9 (its texels sit in the snow test's range: a straw cap missed them, and moving the range changed Pian's snow tufts). Snow shots RMSE under 0.0035, night Sardian identical. The tile meshes not yet given a tile (no bounds, zeroed cards: 306 of 560 at the Luceram shot) drew their whole capacity in the main view and the mirrors until skipped (2026-10-31): scene 0.5-0.7 ms less (580 chase 5.09 to 4.59, Luceram rain fly-by 3.83 to 3.18), mirrors 0.45-1.0 ms less in the cockpit, the 34 shots byte-identical. Their zeroed vertices no longer go through the load's vertex prep (2026-10-31): all in one place, they made `foliage::with_plants`'s tree grouping quadratic; 580 load 28 to 22 s, the 34 shots 594 to 441 s, byte-identical. Tried and dropped: lighting our blades as upright on banks (no visible change; 580's dark bank is the hill's own shadow). Thatch (2026-10-30): with a field (`GRASS`) the ground under the grass is darker (0.82) and fuller in colour (1.1) by the grass's own test, slope and density by the eye's distance (`thatch` in `shader.wgsl`; not the 20 m band, so the near ground past it is thatched too), so its pale and pink texels no longer show between the blades; the blades brighter (`SHADE` 0.62 to 0.9), less saturated (`SATURATION` 1.15 to 0.85, `LUSH_SHARE` 0.25 to 0.15: lit, 580's came out at blue over green 0.26 against the ground's 0.63, now 0.37 against 0.57) and fuller (240, 180, 180, 140 blades a picture, were 170, 130, 130, 100; the same cards). Blades over the ground between them (median of 32 px tiles): 580 Evo chase 0.51 to 1.12 and 0.31 to 0.86, Gabiria fly-by 0.79 to 1.29, 532 0.48 to 0.90; the field's mean brightness 580 Evo +0.5% and -14%, 580 shot +8%, Gabiria +4%, 532 -8%. Snow shots unchanged; scene pass 580 19.8 ms and 532 11.8 ms both before and after. Reach (2026-10-31): full to 50 m (was 14), halving every 25 m (was 10), to 110 m (was 100); the tile meshes sized by their cards (a full 6400-card mesh for every tile in reach would be ~1.2 GB; sized on 580, 621, 532, 450, 417, 176 and 52, a few of the farthest at Odry 462's densest spot go without). Meshes never filled drew their whole capacity of zero-area cards (no bounds: never culled), about 0.5 to 2.4 M triangles a frame before: now they draw nothing until filled. Full density to 100 m measured 580 chase 29.4 to 39.0 ms a frame, 621 cockpit 12.5 to 29.4 ms (with the empty meshes still drawn); this reach, after the fix: scene pass 580 chase 20.1 to 21.0 ms, 621 cockpit 7.8 to 8.4, Odry chase 10.8 to 8.7, Gabiria fly-by 11.4 both |
