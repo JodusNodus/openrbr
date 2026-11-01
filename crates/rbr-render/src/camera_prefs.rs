@@ -6,6 +6,7 @@
 //! ```ini
 //! [camera]
 //! view = cockpit
+//! head = off
 //! COROLLA cockpit = 0 0.04 -0.1 -2
 //! COROLLA bonnet = 0 0.02 0
 //! rsf-24 chase = 0 0.5 -1
@@ -14,7 +15,8 @@
 //! A car is its `Cars.ini` folder for the game's cars and `rsf-<id>` for an RSF car ([`car_key`]). A nudge is
 //! right, up and forward in metres in the car's frame, and for the fixed views optionally a tilt in degrees up,
 //! written only when it is not 0; the chase takes up (its height) and forward (nearer the car;
-//! [`crate::game_camera::Settings::nudged`]).
+//! [`crate::game_camera::Settings::nudged`]). `head = off` keeps the in-car view fixed to the car ([`crate::head`];
+//! on unless set off, from the pause menu's Camera page or the launcher's Graphics page).
 
 use crate::game_camera::Settings;
 use crate::playback::Playback;
@@ -42,6 +44,8 @@ pub type Nudges = [Nudge; CarView::ALL.len()];
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct CameraPrefs {
     pub view: Option<CarView>,
+    /// The in-car view's head is off ([`crate::head`]).
+    pub head_off: bool,
     pub cars: BTreeMap<String, Nudges>,
 }
 
@@ -66,6 +70,10 @@ impl CameraPrefs {
                 prefs.view = CarView::parse(value);
                 continue;
             }
+            if key == "head" {
+                prefs.head_off = value.trim() == "off";
+                continue;
+            }
             let Some((car, view)) = key.rsplit_once(' ').and_then(|(car, v)| Some((car.trim(), CarView::parse(v)?)))
             else {
                 continue;
@@ -86,6 +94,9 @@ impl CameraPrefs {
         let mut out = format!("[{SECTION}]\n");
         if let Some(view) = self.view {
             out.push_str(&format!("view = {}\n", view.name()));
+        }
+        if self.head_off {
+            out.push_str("head = off\n");
         }
         for (car, nudges) in &self.cars {
             for view in CarView::ALL {
@@ -160,11 +171,17 @@ impl Session {
         self.car.as_deref().map(|car| self.prefs.nudges(car)).unwrap_or_default()
     }
 
-    /// Puts the car's nudges on its fixed views and its chase.
+    /// Whether the in-car view's head is on.
+    pub fn head(&self) -> bool {
+        !self.prefs.head_off
+    }
+
+    /// Puts the car's nudges on its fixed views and its chase, and the head on the in-car view.
     pub fn apply(&self, mounts: &mut Mounts, playback: &mut Playback) {
         let nudges = self.nudges();
         mounts.nudges = nudges;
         playback.set_chase_settings(Settings::default().nudged(nudges[CarView::Chase.index()].shift));
+        playback.set_head(self.head());
     }
 
     /// The player chose `view` (C): kept for the next drive.
@@ -173,9 +190,10 @@ impl Session {
         self.save();
     }
 
-    /// The view and the car's nudges the Camera page set (not yet written: [`Session::save`]).
-    pub fn set(&mut self, view: CarView, nudges: Nudges) {
+    /// The view, the car's nudges and the head the Camera page set (not yet written: [`Session::save`]).
+    pub fn set(&mut self, view: CarView, nudges: Nudges, head: bool) {
         self.prefs.view = Some(view);
+        self.prefs.head_off = !head;
         if let Some(car) = &self.car {
             self.prefs.set_nudges(car, nudges);
         }
@@ -203,7 +221,7 @@ mod tests {
 
     #[test]
     fn prefs_round_trip_and_keep_the_rest_of_the_file() {
-        let mut prefs = CameraPrefs { view: Some(CarView::Cockpit), ..Default::default() };
+        let mut prefs = CameraPrefs { view: Some(CarView::Cockpit), head_off: true, ..Default::default() };
         let mut nudges = prefs.nudges("COROLLA");
         nudges[CarView::Cockpit.index()] = nudge(0.0, 0.04, -0.1, -2.0);
         nudges[CarView::Bonnet.index()] = nudge(0.0, 0.02, 0.0, 0.0);
@@ -215,7 +233,7 @@ mod tests {
         // The tilt is a 4th value only when it is not 0.
         assert_eq!(
             text,
-            "[camera]\nview = cockpit\nCOROLLA cockpit = 0 0.04 -0.1 -2\nCOROLLA bonnet = 0 0.02 0\n\
+            "[camera]\nview = cockpit\nhead = off\nCOROLLA cockpit = 0 0.04 -0.1 -2\nCOROLLA bonnet = 0 0.02 0\n\
              rsf-24 chase = 0 0.5 -1\n"
         );
         assert_eq!(CameraPrefs::parse(&text), prefs);
@@ -254,11 +272,12 @@ mod tests {
         let mut nudges = session.nudges();
         nudges[CarView::Cockpit.index()] = nudge(0.0, STEP, STEP, -TILT_STEP);
         nudges[CarView::Chase.index()] = nudge(0.0, CHASE_STEP, 0.0, 0.0);
-        session.set(CarView::Cockpit, nudges);
+        assert!(session.head(), "on unless set off");
+        session.set(CarView::Cockpit, nudges, false);
         session.save();
         session.chose(CarView::Bumper);
         let again = Session::load(Some(&path), Some("COROLLA".into()));
-        assert_eq!((again.start_view(None), again.nudges()), (CarView::Bumper, nudges));
+        assert_eq!((again.start_view(None), again.nudges(), again.head()), (CarView::Bumper, nudges, false));
         assert_eq!(again.start_view(Some(CarView::Chase)), CarView::Chase);
         assert!(std::fs::read_to_string(&path).unwrap().starts_with("[launcher]\ncar = COROLLA\n\n[camera]\n"));
         // Another car has none.

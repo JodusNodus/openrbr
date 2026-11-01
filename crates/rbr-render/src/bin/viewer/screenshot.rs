@@ -29,7 +29,8 @@ pub fn screenshot(scene: &mut Scene, args: &Args, data: &Data, path: &Path) -> R
     let view = scene.cameras.start_view(args.view);
     let menu = match (&scene.live, &args.pause_menu) {
         (Some(live), Some(moves)) => {
-            let mut menu = PauseMenu::open(live.menu, CameraPage::new(view, scene.cameras.nudges()));
+            let mut menu =
+                PauseMenu::open(live.menu, CameraPage::new(view, scene.cameras.nudges(), scene.cameras.head()));
             if moves.iter().any(|&nav| matches!(menu.nav(nav), Some(Outcome::Chosen(_)))) {
                 return Err("--pause-menu: the moves close the menu".into());
             }
@@ -41,7 +42,7 @@ pub fn screenshot(scene: &mut Scene, args: &Args, data: &Data, path: &Path) -> R
     let page = menu.as_ref().and_then(PauseMenu::camera);
     let view = page.map_or(view, |page| page.view);
     if let Some(page) = page {
-        scene.cameras.set(page.view, page.nudges);
+        scene.cameras.set(page.view, page.nudges, page.head);
         if let (Some(mounts), Some(playback)) = (&mut scene.mounts, &mut scene.playback) {
             scene.cameras.apply(mounts, playback);
         }
@@ -86,7 +87,7 @@ pub fn screenshot(scene: &mut Scene, args: &Args, data: &Data, path: &Path) -> R
             _ => camera,
         };
         if let Some(playback) = &mut scene.playback {
-            playback.follow_game_chase(shown.swing(), args.look_back);
+            playback.follow_cameras(shown.swing(), args.look_back);
         }
         let aspect = size.0 as f32 / size.1 as f32;
         let (view_projection, sky_view_projection) = match camera {

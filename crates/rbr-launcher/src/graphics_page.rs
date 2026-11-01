@@ -390,6 +390,18 @@ impl Form {
                 .on_hover_text(tip);
             ui.end_row();
 
+            let tip = "The in-car view's head: it keeps the horizon steadier over bumps and looks into corners and \
+                       slides. Off, the view is fixed to the car. The pause menu's Camera page sets it too";
+            ui.label("Head motion").on_hover_text(tip);
+            let head = ui.add_enabled(!self.read_only, egui::Checkbox::new(&mut self.head, "in-car view"));
+            if head.on_hover_text(tip).changed() {
+                let on = self.head;
+                if let Err(e) = self.edit_camera(|prefs| prefs.head_off = !on) {
+                    self.status = e;
+                }
+            }
+            ui.end_row();
+
             ui.label("Cameras");
             self.camera_row(ui);
             ui.end_row();
@@ -581,16 +593,26 @@ impl Form {
             .add_enabled(!self.read_only, egui::Button::new("Reset this car's cameras"))
             .on_hover_text("While driving: C changes the view (kept for the next drive); the pause menu's Camera moves it for this car");
         if reset.clicked() {
-            let file = std::fs::read_to_string(&self.paths.settings).unwrap_or_default();
-            let mut prefs = camera_prefs::CameraPrefs::parse(&file);
-            let had = prefs.cars.contains_key(&key);
-            prefs.set_nudges(&key, [Default::default(); 4]);
-            self.status = match std::fs::write(&self.paths.settings, prefs.replace_in(&file)) {
+            let mut had = false;
+            let reset = self.edit_camera(|prefs| {
+                had = prefs.cars.contains_key(&key);
+                prefs.set_nudges(&key, [Default::default(); 4]);
+            });
+            self.status = match reset {
                 Ok(()) if had => format!("{}: cameras reset", car.name),
                 Ok(()) => format!("{}: cameras not adjusted", car.name),
-                Err(e) => format!("{}: {e}", self.paths.settings.display()),
+                Err(e) => e,
             };
         }
+    }
+
+    /// Changes the settings file's `[camera]` section by `change`, the rest of the file kept.
+    fn edit_camera(&self, change: impl FnOnce(&mut camera_prefs::CameraPrefs)) -> Result<(), String> {
+        let file = std::fs::read_to_string(&self.paths.settings).unwrap_or_default();
+        let mut prefs = camera_prefs::CameraPrefs::parse(&file);
+        change(&mut prefs);
+        std::fs::write(&self.paths.settings, prefs.replace_in(&file))
+            .map_err(|e| format!("{}: {e}", self.paths.settings.display()))
     }
 }
 
