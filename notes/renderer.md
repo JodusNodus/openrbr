@@ -253,7 +253,10 @@ white wall; other frames byte-identical, 2026-10-27). The sky gradient, doubled 
   17:30, 2026-10-27). The other way, its casters sit 200 m lower (`sun::backdrop_drop`), so the backdrop casts
   nothing on the stage ground it lies over (the Capo di Feno patch: a sea sheet 120-200 m over the ground; 200 m
   clears it, Valstagna's gorge still shades the strip). Frame and load time within noise (41M 0.94 to 0.97 ms, Capo
-  2.50 to 2.53 ms at 1440p).
+  2.50 to 2.53 ms at 1440p). Past a map's far plane those casters are clipped, not held on it (`vs_sun`, 2026-11-01):
+  a held vertex bent its triangle toward the sun, so under a low sun the near cascades shaded the road the world layer
+  lit, with a lit band from the 14 m split that moved with the car (Torre Vecchia 337M 05:30 cockpit replay). 31 of
+  the 34 reference shots byte-identical, 3 by 1 to 10 pixels at 1/255.
 - Panorama backdrops: on 60 of 356 installed RSF stage folders the backdrop is at least half upright faces, on some a
   ring of photo strips with alpha sky (462-467 Odry: 4 items, 22 triangles, 2.5-2.8 km out, white vertex colour,
   `HOR_2`/`Hor_11` 4096x512; also 138-140, 149, 166-169, 436). Where the eye is above a strip's top the sky dome

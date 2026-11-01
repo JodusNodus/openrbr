@@ -198,7 +198,8 @@ impl Casting<'_> {
             if mesh.bounds.is_some_and(|(centre, half)| !frustum.intersects_box(centre, half)) {
                 continue;
             }
-            // The backdrop's casters stay on the map's near and far planes (`vs_sun`): only its sides cull them.
+            // The backdrop's casters stay on the map's near plane (`vs_sun`) and are clipped past its far one: only its
+            // sides cull them.
             if mesh.backdrop_bounds.is_some_and(|(centre, half)| beside(matrix, centre + drop, half)) {
                 continue;
             }
