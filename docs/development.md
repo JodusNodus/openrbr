@@ -236,14 +236,17 @@ Commands and the snapshot set: [verification.md](../notes/verification.md).
 ## Reference shots
 
 `scripts/render-shots.py` (`--out`, `--only`, `--jobs N`, `--list`, `--compare OLD_DIR [--diff DIR]`, `--previews DIR`,
-`--gallery FILE`) renders `data/shots.json`: 32 1080p shots (top-10 cars by RallySimFans use, RSF stages, night, golden hour, fog, snow, cockpit, chase and
+`--gallery FILE`, `--set`, `--args`, `--cars`, `--rename`, `--save`) renders `data/shots.json`: 32 1080p shots (top-10 cars by RallySimFans use, RSF stages, night, golden hour, fog, snow, cockpit, chase and
 fly-by) with every enhancement on, for the README and as the reference for graphics changes. Each entry is a stage, a
 car, the launcher selection, viewer arguments and the drive frame (`at`) the autopilot has reached
 (`viewer --screenshot --at N --at-periods 5 --live ... --pilot autopilot`, `--flyby` for the fly-bys). It needs release
 builds of `rerbr`, `viewer` and `rbr-standalone`, the install with NGP and the RSF stages and cars the list names, and
 the upscaler for the same textures. Renders are deterministic for the same install and upscaler, however many run at
 once (`--jobs`, default 3: up to 5 GB each; the 32 shots take about 2 minutes on a 32-thread desktop). `--size 3840x2160` renders the same shots in 4K for
-marketing use; the committed set is 1080p.
+marketing use; the committed set is 1080p. `--set KEY=VALUE` (repeatable: `car`, `view`, `clock`, `stage`, `at`,
+`settings.<name>`) and `--args STRING` (repeatable, shell-split) tweak the selected shots for the run; `--cars A B`
+renders each once per car plus a labelled `<name>--cars.jpg` sheet. `--rename NEW --save` swaps a selected shot for
+good once it renders: the shots file, with `--gallery` the full page, with `--previews` the old JPEG removed.
 
 Graphics workflow: build `viewer` and `rbr-standalone` (release) from main and render into a baseline folder; make the
 change, rebuild and render into a second folder (`--only` for a subset); `--compare BASELINE --diff DIFFS` prints the
