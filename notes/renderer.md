@@ -578,6 +578,11 @@ not ported.
 - Look (ours): mud specks are opaque (the HDR sky through a 5 % gap read as grey); with `cabin`, seen from inside, a speck's thin rim lets
   3 to 45 % of the light behind through in the mud's hue, its core dark (2026-10-27; glass pass 0.14 ms before and
   after, off frames byte-identical). Tried and dropped: a dashboard reflection in the windscreen (user's call).
+- Specks (ours, 2026-11-01; `splat` in `glass.wgsl`, `mud_color`, `hidden` in `glass/mod.rs`): mud specks take the
+  stage's dust colour against the neutral dust, as the car's dirt does (snow specks keep theirs); radius 1 to 5 mm
+  (was 2 to 7), twice as many a unit of spray, the auto wipers at 600; each a ragged blot thinning to its edge with up
+  to 4 fine droplets thrown up the glass around it. Seen from inside, a speck behind a sun strip or printed band is
+  hidden (what the glass lets through there, from 0.1 to 0.4).
 - Water redone (ours, 2026-10-31; `lens`, `film_cell`, `ribbon` in `glass.wgsl`; `flow`, `merge` in `model.rs`): a drop, bead or
   ribbon is clear water, not a white cap: it lays 0.85 (0.55 for a ribbon's weight) of a lens over what is drawn behind it
   (replacing the pixel left drops darker than the hazy glass), the frame seen mirrored through its centre 5x its offset,

@@ -120,7 +120,7 @@ pub const PAUSE: f32 = 2.0;
 /// and heavy rain wipe continuously, snow always does.
 pub const DRIZZLE_MOST: f32 = 0.6;
 /// The specks of mud from which the automatic wipers clear the dry glass (ours).
-pub const MUD_WIPE: usize = 300;
+pub const MUD_WIPE: usize = 600;
 
 /// The wiper switch (ours: the launcher's setting and the wiper key; the 1.02 control is not traced).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -247,10 +247,11 @@ const BUG_RADIUS: [f32; 2] = [0.004, 0.007];
 const BUG_SPEEDS: [f32; 2] = [25.0 / 3.6, 75.0 / 3.6];
 /// Bugs per second at the medium speed and over (ours).
 const BUG_RATE: f32 = 0.25;
-/// Mud specks (ours): the radius, and the specks per unit of spray mass that reach the glass at [`MUD_SPEED`] and
-/// over (fewer below it, none standing).
-const MUD_RADIUS: [f32; 2] = [0.002, 0.007];
-const MUD_PER_MASS: f32 = 0.01;
+/// Mud specks (ours): the radius, most a few millimetres (fine spray dries to small dots; `splat` in `glass.wgsl` adds
+/// the droplets around each), and the specks per unit of spray mass that reach the glass at [`MUD_SPEED`] and over
+/// (fewer below it, none standing).
+const MUD_RADIUS: [f32; 2] = [0.001, 0.005];
+const MUD_PER_MASS: f32 = 0.02;
 const MUD_SPEED: f32 = 20.0;
 /// Mud's colours (ours: drying gravel mud, lighter than the paint's dirt colour in `shader.wgsl`).
 const MUD_COLORS: [[f32; 3]; 4] = [[0.52, 0.45, 0.34], [0.45, 0.38, 0.27], [0.58, 0.52, 0.41], [0.40, 0.33, 0.23]];
@@ -617,7 +618,7 @@ impl Glass {
     /// One drop of a wet road's spray thrown at the glass: water, as rain's.
     fn splash(&mut self, inside: &impl Fn(Vec2) -> bool) {
         let at = self.sprayed_at();
-        let radius = RAIN_RADIUS[0] + (RAIN_RADIUS[1] - RAIN_RADIUS[0]) * self.rng.unit().powi(3);
+        let radius = RAIN_RADIUS[0] + (RAIN_RADIUS[1] - RAIN_RADIUS[0]) * self.rng.unit().powi(2);
         let seed = self.rng.unit();
         if inside(at) {
             self.drops.push(Drop {
@@ -1222,9 +1223,11 @@ mod tests {
     fn a_jump_leaves_the_mud_the_wipers_would_have() {
         assert_eq!(settled_mud(-5.0), 0);
         assert_eq!(settled_mud(120.7), 120);
-        assert_eq!(settled_mud(MUD_WIPE as f32), 105);
-        assert_eq!(settled_mud(MUD_WIPE as f32 + 194.0), 299);
-        assert_eq!(settled_mud(MUD_WIPE as f32 + 195.0), 105);
+        let smeared = (MUD_WIPE as f32 * MUD_SMEAR).round() as usize;
+        let refill = (MUD_WIPE - smeared) as f32;
+        assert_eq!(settled_mud(MUD_WIPE as f32), smeared);
+        assert_eq!(settled_mud(MUD_WIPE as f32 + refill - 1.0), MUD_WIPE - 1);
+        assert_eq!(settled_mud(MUD_WIPE as f32 + refill), smeared);
         let mut g = glass(Vec::new());
         g.spatter_all(Thrown { mud: 250.0 / MUD_PER_MASS, water: 1e6, ..Thrown::default() }, |at| at.x < 0.5);
         assert_eq!(g.mud(), 250, "specks off the glass are thrown again");
