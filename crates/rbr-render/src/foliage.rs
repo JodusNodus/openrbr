@@ -4,12 +4,15 @@
 //! too, with opaque textures, and the object atlases hold the stage's spectators, rocks and vans next to cut-out
 //! texels). Grass (plants lower than [`GRASS`]) casts no sun shadow: its flat cards' shadows show how flat they are.
 //! Cut-out structures (power pylons, wire and wooden fences, gates, lamps, signs) and spectator cards are not plants:
-//! their textures are named for them ([`STRUCTURES`]).
+//! their textures are named for them ([`STRUCTURES`]), or a piece's part of the texture looks like one
+//! ([`Marks::structure`]: the RSF object atlases hold people, signs and buildings next to their trees).
 
 use crate::stage::{Draw, Image, Mesh, Stage, TextureRef, Vertex};
 use glam::{Vec2, Vec3, Vec3Swizzles};
 use rbr_formats::dds::{self, Format};
+use rbr_formats::stage_files;
 use std::collections::{HashMap, HashSet};
+use std::sync::Mutex;
 
 /// Plants lower than this, metres, are grass. Plant heights on three stages dip between 1.5 and 2 m, between the
 /// tufts and low plants and the bushes and trees.
@@ -19,6 +22,9 @@ const GRASS: f32 = 1.5;
 const CUT: f32 = 0.05;
 /// The texture level tested is the first no wider than this.
 const TEST_WIDTH: u32 = 256;
+/// The level the shape test reads ([`Shape`]) is the first no wider than this: at [`TEST_WIDTH`] a piece's part is a
+/// few dozen texels across, too few to show the gaps between leaves.
+const SHAPE_WIDTH: u32 = 1024;
 /// Words in the file names of cut-out textures that are not plants (upper case), over the retail stages and the RSF
 /// samples' (`FENCE_TILE`, `POWERPYLON01_UPDATE`, `fieldfnc`, `panneausta1` and the like), and of the RSF stages'
 /// spectator cards (`divaci`, `lidi2D`, `S-Spectators-3`, `people1`, `S-01_Person_Albedo`). Neither their colour nor
@@ -59,6 +65,7 @@ pub(crate) struct Cut {
     width: usize,
     height: usize,
     sums: Vec<u32>,
+    shape: Option<Shape>,
 }
 
 impl Cut {
@@ -73,7 +80,20 @@ impl Cut {
                 sums[(y + 1) * (width + 1) + x + 1] = sums[y * (width + 1) + x + 1] + row;
             }
         }
-        Cut { width, height, sums }
+        Cut { width, height, sums, shape: None }
+    }
+
+    /// Whether a piece over the uv rectangle `low` to `high`, spanning `from` to `to` in the stage, is a plant's: its
+    /// texels are cut out ([`Cut::under`]) and they do not look like a structure's ([`Marks::structure`]).
+    fn plant(&self, low: [f32; 2], high: [f32; 2], from: Vec3, to: Vec3) -> bool {
+        let (height, across) = (to.y - from.y, (to.x - from.x).max(to.z - from.z));
+        self.under(low, high)
+            && !(height <= TALLEST
+                && self
+                    .shape
+                    .as_ref()
+                    .and_then(|shape| shape.marks(low, high))
+                    .is_some_and(|marks| marks.structure(height, across)))
     }
 
     /// Whether the texels under the uv rectangle `low` to `high` are cut out (the texture repeats).
@@ -100,8 +120,17 @@ impl Cut {
 }
 
 /// The textures of the draws `foliage` picks that are cut out at the draw's alpha reference, but for structures, with
-/// their cut-out texels.
+/// their cut-out texels. Only an RSF stage's own textures take the shape test ([`Shape`]): the retail atlases, which
+/// RSF stages borrow too, pack small dry plants and cacti that it takes for structures, and their structures are named.
 pub(crate) fn cut_out(stage: &Stage, foliage: impl Fn(&Draw) -> bool) -> HashMap<TextureRef, Cut> {
+    let own =
+        stage_files::folder(&stage.name).and(stage_files::parts(&stage.name)).map(|(id, _)| format!("track-{id}_"));
+    let shaped = |texture: TextureRef| {
+        let request = stage.textures.get(&texture).map(|t| &t.request);
+        own.as_ref().zip(request).is_some_and(|(own, request)| {
+            request.get(..own.len()).is_some_and(|prefix| prefix.eq_ignore_ascii_case(own))
+        })
+    };
     let mut tested = HashSet::new();
     let mut cut = HashMap::new();
     for draw in stage.meshes.iter().flat_map(|mesh| &mesh.draws).filter(|draw| foliage(draw)) {
@@ -112,7 +141,9 @@ pub(crate) fn cut_out(stage: &Stage, foliage: impl Fn(&Draw) -> bool) -> HashMap
         let Some((width, rgba)) = test_texels(stage, texture) else { continue };
         let texels: Vec<bool> = rgba.chunks_exact(4).map(|texel| texel[3] <= alpha_ref).collect();
         if texels.iter().filter(|&&below| below).count() as f32 > CUT * texels.len() as f32 {
-            cut.insert(texture, Cut::new(width, &texels));
+            let shape = shaped(texture).then(|| texels_at(stage, texture, SHAPE_WIDTH)).flatten();
+            let shape = shape.map(|(width, rgba)| Shape::new(width, &rgba, alpha_ref));
+            cut.insert(texture, Cut { shape, ..Cut::new(width, &texels) });
         }
     }
     cut
@@ -120,10 +151,15 @@ pub(crate) fn cut_out(stage: &Stage, foliage: impl Fn(&Draw) -> bool) -> HashMap
 
 /// The width and RGBA texels of `texture`'s first level no wider than [`TEST_WIDTH`], when it is a stage `.dds`.
 pub(crate) fn test_texels(stage: &Stage, texture: TextureRef) -> Option<(usize, Vec<u8>)> {
+    texels_at(stage, texture, TEST_WIDTH)
+}
+
+/// The width and RGBA texels of `texture`'s first level no wider than `widest`, when it is a stage `.dds`.
+fn texels_at(stage: &Stage, texture: TextureRef, widest: u32) -> Option<(usize, Vec<u8>)> {
     let Some(Some(Image::Dds(bytes))) = stage.textures.get(&texture).map(|t| &t.image) else { return None };
     let dds = dds::parse(bytes).ok()?;
     let levels = dds.levels();
-    let level = levels.iter().find(|level| level.width <= TEST_WIDTH).or(levels.last())?;
+    let level = levels.iter().find(|level| level.width <= widest).or(levels.last())?;
     let bc = match dds.format {
         Format::Dxt1 => texpresso::Format::Bc1,
         Format::Dxt3 => texpresso::Format::Bc2,
@@ -134,6 +170,181 @@ pub(crate) fn test_texels(stage: &Stage, texture: TextureRef) -> Option<(usize, 
     let mut rgba = vec![0; width * height * 4];
     bc.decompress(level.data, width, height, &mut rgba);
     Some((width, rgba))
+}
+
+/// Pieces taller than this, metres, are not tested for structures ([`Marks::structure`]): tree lines and snowy firs
+/// looked like fences, and the tall structures (pylons, power lines) are named ([`STRUCTURES`]). Testing only the
+/// pieces under it also spares the large parts (hedges, tree-line panels): 394's load spent 8 s of one thread on them.
+const TALLEST: f32 = 9.0;
+/// A [`Shape`] texel's bit: drawn (above the alpha reference).
+const DRAWN: u8 = 1;
+/// A [`Shape`] texel's bit: green (hue 50 to 170 degrees, saturation over 0.12).
+const GREEN: u8 = 2;
+
+/// A texture's texels at [`SHAPE_WIDTH`] for the shape test, each [`DRAWN`] and [`GREEN`] or not, with the marks of
+/// the parts tested so far: pieces share their parts (a tree card's thousands of copies, an atlas cell's).
+struct Shape {
+    width: usize,
+    height: usize,
+    texels: Vec<u8>,
+    marks: Mutex<HashMap<[i64; 4], Option<Marks>>>,
+}
+
+impl Shape {
+    fn new(width: usize, rgba: &[u8], alpha_ref: u8) -> Shape {
+        let texels = rgba
+            .chunks_exact(4)
+            .map(|t| if t[3] > alpha_ref { DRAWN } else { 0 } | if green([t[0], t[1], t[2]]) { GREEN } else { 0 })
+            .collect::<Vec<_>>();
+        Shape { width, height: texels.len() / width, texels, marks: Mutex::default() }
+    }
+
+    /// The marks of the texels under the uv rectangle `low` to `high` (the texture repeats; at most one copy of it each
+    /// way), `None` with fewer than 4 drawn.
+    fn marks(&self, low: [f32; 2], high: [f32; 2]) -> Option<Marks> {
+        let span = |size: usize, k: usize| {
+            let from = (low[k] * size as f32).floor() as i64;
+            (from, ((high[k] * size as f32).ceil() as i64).clamp(from + 1, from + size as i64))
+        };
+        let ((x0, x1), (y0, y1)) = (span(self.width, 0), span(self.height, 1));
+        if let Some(&marks) = self.marks.lock().unwrap().get(&[x0, y0, x1, y1]) {
+            return marks;
+        }
+        let (width, height) = (self.width as i64, self.height as i64);
+        let part: Vec<u8> = (y0..y1)
+            .flat_map(|y| (x0..x1).map(move |x| (y.rem_euclid(height) * width + x.rem_euclid(width)) as usize))
+            .map(|i| self.texels[i])
+            .collect();
+        let marks = Marks::of(&part, (x1 - x0) as usize);
+        self.marks.lock().unwrap().insert([x0, y0, x1, y1], marks);
+        marks
+    }
+}
+
+/// Whether an RGB texel is green: hue 50 to 170 degrees, saturation (chroma over the largest channel) over 0.12.
+fn green(rgb: [u8; 3]) -> bool {
+    let [r, g, b] = rgb.map(|c| f32::from(c) / 255.0);
+    let (most, chroma) = (r.max(g).max(b), r.max(g).max(b) - r.min(g).min(b));
+    if chroma <= 1e-6 || chroma / most <= 0.12 {
+        return false;
+    }
+    let sector = if most == r {
+        ((g - b) / chroma).rem_euclid(6.0)
+    } else if most == g {
+        (b - r) / chroma + 2.0
+    } else {
+        (r - g) / chroma + 4.0
+    };
+    (50.0..=170.0).contains(&(sector * 60.0))
+}
+
+/// What a part of a texture shows, for [`Marks::structure`]. Counts are per square root of the drawn texels.
+#[derive(Clone, Copy, Debug)]
+struct Marks {
+    /// Undrawn areas that do not reach the part's edge: the gaps between leaves and twigs.
+    holes: f32,
+    /// Separate drawn areas: blades, stalks, twigs.
+    blobs: f32,
+    /// The share of the drawn texels that are green.
+    green: f32,
+    /// The share of the drawn edge texels (drawn, beside an undrawn one or the part's edge) on a straight run of 7 of
+    /// them across or down.
+    straight: f32,
+}
+
+impl Marks {
+    /// The marks of `part`'s [`Shape`] texels, `width` a row; `None` with fewer than 4 drawn.
+    fn of(part: &[u8], width: usize) -> Option<Marks> {
+        let height = part.len() / width;
+        let drawn = |i: usize| part[i] & DRAWN != 0;
+        let count = (0..part.len()).filter(|&i| drawn(i)).count();
+        if count < 4 {
+            return None;
+        }
+        let border =
+            |i: usize| i.is_multiple_of(width) || i % width == width - 1 || i < width || i >= part.len() - width;
+        let edge: Vec<bool> = (0..part.len())
+            .map(|i| {
+                drawn(i) && (border(i) || !drawn(i - 1) || !drawn(i + 1) || !drawn(i - width) || !drawn(i + width))
+            })
+            .collect();
+        // A run's texels beyond the part's edge mirror those within it.
+        let mirror = |mut j: i64, size: usize| {
+            let size = size as i64;
+            while !(0..size).contains(&j) {
+                j = if j < 0 { -j - 1 } else { 2 * size - j - 1 };
+            }
+            j as usize
+        };
+        let straight = (0..part.len())
+            .filter(|&i| edge[i])
+            .filter(|&i| {
+                let (x, y) = ((i % width) as i64, (i / width) as i64);
+                (-3..=3).all(|d| edge[y as usize * width + mirror(x + d, width)])
+                    || (-3..=3).all(|d| edge[mirror(y + d, height) * width + x as usize])
+            })
+            .count();
+        let edges = edge.iter().filter(|&&e| e).count();
+        let root = (count as f32).sqrt();
+        Some(Marks {
+            holes: areas(width, height, |i| !drawn(i)).1 as f32 / root,
+            blobs: areas(width, height, drawn).0 as f32 / root,
+            green: part.iter().filter(|&&t| t == DRAWN | GREEN).count() as f32 / count as f32,
+            straight: straight as f32 / edges.max(1) as f32,
+        })
+    }
+
+    /// Whether a piece showing these marks, `height` tall and `across` wide (metres), is a structure rather than a
+    /// plant: people, signs, fences, poles, buildings and vehicles, which the RSF object atlases hold next to their
+    /// trees. Leaves leave gaps in a cut-out, structures' outlines are smooth or straight, and plants are mostly green
+    /// but for dry grass, stalks and bare twigs, which are many separate pieces. Fitted to labelled RSF pieces no taller
+    /// than [`TALLEST`] (`notes/renderer.md`).
+    fn structure(self, height: f32, across: f32) -> bool {
+        if self.holes <= 0.17 {
+            if self.green <= 0.74 {
+                self.blobs <= 0.3
+            } else {
+                self.straight > 0.5
+            }
+        } else if across <= 3.5 * height.max(0.01) {
+            self.straight > 0.45
+        } else {
+            self.green <= 0.86
+        }
+    }
+}
+
+/// The 4-connected areas of `width` by `height` texels where `inside` holds, and how many of them touch no edge.
+fn areas(width: usize, height: usize, inside: impl Fn(usize) -> bool) -> (usize, usize) {
+    let mut seen = vec![false; width * height];
+    let (mut all, mut enclosed) = (0, 0);
+    let mut open = Vec::new();
+    for start in 0..width * height {
+        if seen[start] || !inside(start) {
+            continue;
+        }
+        seen[start] = true;
+        open.push(start);
+        let mut touches = false;
+        while let Some(i) = open.pop() {
+            let (x, y) = (i % width, i / width);
+            touches |= x == 0 || y == 0 || x == width - 1 || y == height - 1;
+            for (beside, j) in [
+                (x > 0, i.wrapping_sub(1)),
+                (x + 1 < width, i + 1),
+                (y > 0, i.wrapping_sub(width)),
+                (y + 1 < height, i + width),
+            ] {
+                if beside && !seen[j] && inside(j) {
+                    seen[j] = true;
+                    open.push(j);
+                }
+            }
+        }
+        all += 1;
+        enclosed += usize::from(!touches);
+    }
+    (all, enclosed)
 }
 
 /// The share of a plant's height, from its foot, at which its crown's centre sits ([`with_plants`]).
@@ -413,7 +624,8 @@ fn pieces<'a>(
             let cut = on[i]?;
             let r = root(&mut parent, i);
             let (low, high, uv_low, uv_high) = span[r];
-            let cut = *tested.entry((r, std::ptr::from_ref(cut))).or_insert_with(|| cut.under(uv_low, uv_high));
+            let cut =
+                *tested.entry((r, std::ptr::from_ref(cut))).or_insert_with(|| cut.plant(uv_low, uv_high, low, high));
             Some((r, low, high, cut))
         })
         .collect()
@@ -421,7 +633,7 @@ fn pieces<'a>(
 
 #[cfg(test)]
 mod tests {
-    use super::{structure, Cut};
+    use super::{green, structure, Cut, Marks, DRAWN, GREEN};
 
     #[test]
     fn pieces_by_their_part_of_the_texture() {
@@ -478,5 +690,33 @@ mod tests {
         for name in ["ObjectTexturePlateTransparent.dds", "HO_LD_DECIDUOUS_WOOD_1.tga", "genet2.dds", "Cabinet.dds"] {
             assert!(!structure(name), "{name}");
         }
+    }
+
+    #[test]
+    fn marks_count_gaps_and_pieces() {
+        // A 10 by 10 part: a green 8 by 8 square with two gaps inside it, and a single drawn texel in a corner.
+        let mut part = vec![0; 100];
+        for y in 1..9 {
+            for x in 1..9 {
+                part[y * 10 + x] = DRAWN | GREEN;
+            }
+        }
+        part[33] = 0;
+        part[66] = 0;
+        part[99] = DRAWN;
+        let marks = Marks::of(&part, 10).unwrap();
+        let root = 63f32.sqrt();
+        assert_eq!((marks.holes, marks.blobs), (2.0 / root, 2.0 / root));
+        assert_eq!(marks.green, 62.0 / 63.0);
+        assert!(Marks::of(&[DRAWN, DRAWN, DRAWN, 0], 2).is_none(), "fewer than 4 drawn");
+    }
+
+    #[test]
+    fn green_by_hue_and_saturation() {
+        assert!(green([60, 120, 40]));
+        assert!(green([40, 90, 80]), "blue-green");
+        assert!(!green([120, 100, 60]), "brown");
+        assert!(!green([128, 134, 128]), "grey");
+        assert!(!green([200, 30, 30]));
     }
 }
