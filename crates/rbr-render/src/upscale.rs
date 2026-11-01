@@ -1,10 +1,10 @@
 //! Upscaled textures at load (ours, not the game's): each car texture and [`stage_textures`] texture is upscaled 4x by
 //! a Real-ESRGAN ncnn binary with [`MODEL`], halved where 4x would pass [`MAX`] ([`INTERIOR_MAX`] for the in-car
-//! view's textures in a 4K frame, [`interior_max`]), and re-encoded in its block format with a full mip chain. A
-//! texture the dials draw on (`Image::Dial`, the cockpit of a car with a gauge pack) has its base upscaled from its
-//! art's size: RBRHUD's bases larger than the car's own texture are smooth resizes of it. The results are kept in a
-//! cache folder per largest side by the source file's SHA-256, so a texture is upscaled once, whichever car or stage
-//! shows it, and again only when its file changes.
+//! view's textures in a 4K frame, [`interior_max`]; [`BACKDROP_MAX`] for the backdrop's), and re-encoded in its block
+//! format with a full mip chain. A texture the dials draw on (`Image::Dial`, the cockpit of a car with a gauge pack)
+//! has its base upscaled from its art's size: RBRHUD's bases larger than the car's own texture are smooth resizes of
+//! it. The results are kept in a cache folder per largest side by the source file's SHA-256, so a texture is upscaled
+//! once, whichever car or stage shows it, and again only when its file changes.
 //!
 //! The upscaler's folder (the launcher's `<player folder>/Upscaler`, which its "Download upscaler…" fills) holds the
 //! binary, its `models` and the `cache`. `RBR_UPSCALER`, else `upscaler/` beside the running program, names another
@@ -33,6 +33,10 @@ pub const MAX: u32 = 4096;
 /// 4096 cockpit is magnified on the dash (the Fiat 131 Grp4's, about 0.8 texels a pixel), 8192 is sharper there
 /// (user, 2026-11-01). Up to 350 MB of GPU memory for a cockpit the dials draw on (an `RGBA8` target).
 pub const INTERIOR_MAX: u32 = 8192;
+/// The largest side the stage's backdrop textures get, at any frame size: the panorama strips some stages stand round
+/// the stage (462 Odry's 4096x512, 337 Torre Vecchia's 4096x256) span a whole turn, so a 4K view of them is magnified
+/// about 6x (user, 2026-11-01).
+pub const BACKDROP_MAX: u32 = 8192;
 /// The frame height, after the render scale, from which the in-car view's textures get [`INTERIOR_MAX`]: 4K's 2160
 /// and a little under it.
 pub const INTERIOR_HEIGHT: u32 = 1800;
@@ -153,23 +157,23 @@ pub fn apply(
     replaced
 }
 
-/// The stage's textures: the ground's atlases, signs, banners, barriers, vehicles, buildings and plants. Not the sky's,
-/// nor the start board's clock face, which [`crate::start_board`] draws digits into.
-pub fn stage_textures(stage: &Stage) -> BTreeSet<TextureRef> {
-    let sky: BTreeSet<TextureRef> = stage
-        .meshes
-        .iter()
-        .filter(|mesh| mesh.layer == Layer::Sky)
-        .flat_map(|mesh| &mesh.draws)
-        .flat_map(|draw| draw.state.textures.into_iter().flatten())
-        .collect();
+/// The stage's textures, each with the largest side it gets: the ground's atlases, signs, banners, barriers, vehicles,
+/// buildings and plants [`MAX`], and those only the backdrop draws [`BACKDROP_MAX`]. Not the clouds, nor the start
+/// board's clock face, which [`crate::start_board`] draws digits into.
+pub fn stage_textures(stage: &Stage) -> BTreeMap<TextureRef, u32> {
+    let drawn = |sky: bool| -> BTreeSet<TextureRef> {
+        let meshes = stage.meshes.iter().filter(|mesh| (mesh.layer == Layer::Sky) == sky);
+        meshes.flat_map(|mesh| &mesh.draws).flat_map(|draw| draw.state.textures.into_iter().flatten()).collect()
+    };
+    let (sky, rest) = (drawn(true), drawn(false));
     let start_board = stage.start_board();
     stage
         .textures
         .keys()
         .copied()
-        .filter(|&key| key.set == TextureSet::Stage && !sky.contains(&key) && Some(key) != start_board)
+        .filter(|&key| key.set == TextureSet::Stage && Some(key) != start_board)
         .filter(|key| stage.texture_names.get(key).is_none_or(|name| name.file_name != crate::grass::TEXTURE))
+        .map(|key| (key, if sky.contains(&key) && !rest.contains(&key) { BACKDROP_MAX } else { MAX }))
         .collect()
 }
 

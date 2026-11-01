@@ -1051,6 +1051,10 @@ In a frame at least 1800 high (`--size` times the render scale) the in-car view'
 at 8192 its gauges and dash fabric are sharp; its 4096 pack base is upscaled 2x (4x, halved). Cached in a folder per
 largest side; about 90 MB of disk per texture, a gauge cockpit's `RGBA8` target about 350 MB of GPU memory. The Fiat's
 first 4K load 128 s (five 8192 interior textures).
+The stage's backdrop textures (those only the sky layer draws, not the clouds) are upscaled too, to 8192 at any frame
+size (`upscale::BACKDROP_MAX`, user's call 2026-11-01): the panorama strips span a whole turn (462 Odry's 4096x512,
+337 Torre Vecchia's `land_mo` 4096x256), so a 4K view of them was magnified about 6x. Textures shared by the backdrop
+and the ground take the ground's 4096.
 Not packaged: the download takes Real-ESRGAN v0.2.5.0's release zip (macOS universal, Linux and Windows x86_64; none for ARM Linux) and the
 model's ncnn files from upscayl/custom-models at 500e6a0, each checked by SHA-256.
 

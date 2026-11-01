@@ -122,8 +122,8 @@ pub fn load(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Result<
                 let interior_max = upscale::interior_max(height as u32);
                 let pick = |key: stage::TextureRef| match () {
                     _ if interior.contains(&key) => Some(interior_max),
-                    _ if key.set == stage::TextureSet::Car || stage_textures.contains(&key) => Some(upscale::MAX),
-                    _ => None,
+                    _ if key.set == stage::TextureSet::Car => Some(upscale::MAX),
+                    _ => stage_textures.get(&key).copied(),
                 };
                 let mut told = |done, total| progress(Step::Upscale { done, total });
                 let cache = dir.join("cache");
