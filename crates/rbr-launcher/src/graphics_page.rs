@@ -390,8 +390,8 @@ impl Form {
                 .on_hover_text(tip);
             ui.end_row();
 
-            let tip = "The in-car view's head: it keeps the horizon steadier over bumps and looks into corners and \
-                       slides. Off, the view is fixed to the car. The pause menu's Camera page sets it too";
+            let tip = "The in-car view's head: it keeps the horizon steadier over bumps. Off, the view is fixed to \
+                       the car. The pause menu's Camera page sets it too";
             ui.label("Head motion").on_hover_text(tip);
             let head = ui.add_enabled(!self.read_only, egui::Checkbox::new(&mut self.head, "in-car view"));
             if head.on_hover_text(tip).changed() {

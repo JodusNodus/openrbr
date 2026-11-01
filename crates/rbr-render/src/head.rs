@@ -1,15 +1,10 @@
-//! The in-car view's head, ours: the driver's gaze over the car's motion, on top of the game's seat shake
-//! ([`crate::views::Mount::shaken`], which already moves the eye with the seat spring). It only turns the view about
-//! the eye, from the frames' car poses on the physics clock, so it is the same at any frame rate, in a replay and in a
-//! video:
-//!
-//! - Steady horizon: the view's up follows the body's up through a lag of [`STEADY_SECONDS`], [`STEADY`] of the way,
-//!   so the fast pitch and roll (bumps, landings, kerbs) are mostly taken out and the slow ones (a hill, a banked road,
-//!   the lean through a long corner) kept; then the roll is levelled [`LEVEL`] of the way to the horizon. Together at
-//!   most [`TILT_MAX`].
-//! - Look ahead: the view turns about the body's up [`LOOK`] of the way to the point on the car's path twice
-//!   [`AHEAD_SECONDS`] ahead: the slide's angle (the velocity against the nose) plus the yaw rate times
-//!   [`AHEAD_SECONDS`]. Within [`LOOK_MAX`], faded in over [`LOOK_SPEEDS`], through a lag of [`LOOK_SECONDS`].
+//! The in-car view's head, ours: a steadier horizon on top of the game's seat shake ([`crate::views::Mount::shaken`],
+//! which already moves the eye with the seat spring). It only tilts the view about the eye, from the frames' car poses
+//! on the physics clock, so it is the same at any frame rate, in a replay and in a video. The view's up follows the
+//! body's up through a lag of [`STEADY_SECONDS`], [`STEADY`] of the way, so the fast pitch and roll (bumps, landings,
+//! kerbs) are mostly taken out and the slow ones (a hill, a banked road, the lean through a long corner) kept; then the
+//! roll is levelled [`LEVEL`] of the way to the horizon. Together at most [`TILT_MAX`]. It never turns the view
+//! sideways: a look into corners and slides was tried and dropped (user, 2026-11-01: it made them sick).
 //!
 //! A gap in the frames (a seek, a restart, the first frame shown) settles it over the [`SETTLE_SECONDS`] before; a
 //! jump of the car (the recovery) starts it again from the car. Off (`[camera] head = off`,
@@ -29,16 +24,6 @@ pub const STEADY_SECONDS: f32 = 0.25;
 pub const LEVEL: f32 = 0.15;
 /// The most the view tilts from the body, degrees.
 pub const TILT_MAX: f32 = 6.0;
-/// The share of the turn to the point ahead taken.
-pub const LOOK: f32 = 0.5;
-/// Half the time ahead of the point looked at, s.
-pub const AHEAD_SECONDS: f32 = 0.5;
-/// The most the view turns from the nose, degrees.
-pub const LOOK_MAX: f32 = 10.0;
-/// The speeds over which the look fades in, m/s.
-pub const LOOK_SPEEDS: [f32; 2] = [3.0, 10.0];
-/// The lag of the look, s.
-pub const LOOK_SECONDS: f32 = 0.3;
 /// A fresh head is settled over the frames this long before, s.
 pub const SETTLE_SECONDS: f32 = 2.0;
 /// A car moving this much more than its speed takes it within a frame was placed (the recovery), m.
@@ -71,8 +56,6 @@ pub struct Head {
     on: bool,
     /// The body's up through the lag, stage axes.
     up: Vec3,
-    /// The look's angle about the body's up, rad.
-    look: f32,
     /// The frame last followed and its step counter, `None` after a reset.
     last: Option<(usize, u32)>,
     /// The body at the frame last followed.
@@ -121,7 +104,7 @@ impl Head {
 
     /// Starts again from `body`, level with it.
     fn start(&mut self, body: Body) {
-        (self.up, self.look, self.body) = (body.up, 0.0, Some(body));
+        (self.up, self.body) = (body.up, Some(body));
     }
 
     /// One frame of `dt` s from `before` to `body`; nothing when no step ran.
@@ -132,10 +115,8 @@ impl Head {
         if (body.position - before.position).length() > JUMP_METRES + before.velocity.length() * dt {
             return self.start(body);
         }
-        let share = |seconds: f32| 1.0 - (-dt / seconds).exp();
-        self.up = self.up.lerp(body.up, share(STEADY_SECONDS)).normalize_or(body.up);
-        let yaw_rate = signed_angle(before.forward, body.forward, body.up) / dt;
-        self.look += (look_target(body, yaw_rate) - self.look) * share(LOOK_SECONDS);
+        let share = 1.0 - (-dt / STEADY_SECONDS).exp();
+        self.up = self.up.lerp(body.up, share).normalize_or(body.up);
         self.body = Some(body);
     }
 
@@ -150,32 +131,17 @@ impl Head {
         }
     }
 
-    /// The head's turn from the body, stage axes: the look about the body's up, then the tilt.
+    /// The head's tilt from the body, stage axes.
     fn rotation(&self, body: Body) -> Quat {
-        let look = Quat::from_axis_angle(body.up, self.look);
         let steady = Quat::from_rotation_arc(body.up, body.up.lerp(self.up, STEADY).normalize_or(body.up));
-        let forward = steady * look * body.forward;
+        let forward = steady * body.forward;
         let up = steady * body.up;
         let roll = signed_angle(up, Vec3::Y.reject_from(forward).normalize_or(up), forward);
         let tilt = Quat::from_axis_angle(forward, roll * LEVEL) * steady;
         // The shorter way round, so the angle is at most pi.
         let (axis, angle) = if tilt.w < 0.0 { -tilt } else { tilt }.to_axis_angle();
-        Quat::from_axis_angle(axis, angle.min(TILT_MAX.to_radians())) * look
+        Quat::from_axis_angle(axis, angle.min(TILT_MAX.to_radians()))
     }
-}
-
-/// The look's target about the body's up, rad: [`LOOK`] of the way to the point on the path ahead.
-fn look_target(body: Body, yaw_rate: f32) -> f32 {
-    let along = body.velocity.reject_from(body.up);
-    let speed = along.length();
-    let [slow, fast] = LOOK_SPEEDS;
-    if along.dot(body.forward) <= 0.0 || speed <= slow {
-        return 0.0;
-    }
-    let fade = ((speed - slow) / (fast - slow)).min(1.0);
-    let ahead = signed_angle(body.forward, along, body.up) + yaw_rate * AHEAD_SECONDS;
-    let max = LOOK_MAX.to_radians();
-    (fade * LOOK * ahead).clamp(-max, max)
 }
 
 /// The angle from `from` to `to` about `axis`, rad: turning `from` by it about `axis` brings it towards `to`.
@@ -249,46 +215,14 @@ mod tests {
     }
 
     #[test]
-    fn the_view_looks_into_a_corner_and_back_out() {
-        // The car turns towards +yaw at 0.4 rad/s for 2 s at 20 m/s along its nose, then drives straight.
+    fn a_turn_on_the_flat_does_not_turn_the_view() {
         let pose = |t: f32| {
-            let yaw = 0.4 * t.min(2.0);
-            let nose = Vec3::new(yaw.sin(), -yaw.cos(), 0.0);
-            car(Vec3::ZERO, yaw, 0.0, nose * 20.0)
+            let yaw = 0.4 * t;
+            car(Vec3::ZERO, yaw, 0.0, Vec3::new(yaw.sin(), -yaw.cos(), 0.0) * 20.0)
         };
-        let samples = drive(600, 2, pose);
-        let corner = samples.iter().position(|s| s.0 as f32 * STEP > 1.6).unwrap();
-        let head = followed(&samples[..=corner]);
-        // Turned the way the car turns, towards the nose a moment later.
+        let head = followed(&drive(300, 2, pose));
         let body = head.body.unwrap();
-        let turned = head.rotation(body) * body.forward;
-        let expected = LOOK * 0.4 * AHEAD_SECONDS;
-        assert!((body.forward.angle_between(turned) - expected).abs() < 0.01 * expected, "{turned} {expected}");
-        let later = Body::of(&pose(samples[corner].0 as f32 * STEP + 0.2)).forward;
-        assert!(turned.angle_between(later) < body.forward.angle_between(later));
-        // Back to the nose on the straight.
-        let head = followed(&samples);
-        assert!(head.look.abs() < 1e-3, "{}", head.look);
-        // Slow or reversing, no look.
-        let slow = Body { velocity: body.forward * 2.0, ..body };
-        assert_eq!(look_target(slow, 0.4), 0.0);
-        assert_eq!(look_target(Body { velocity: -body.forward * 20.0, ..body }, 0.4), 0.0);
-    }
-
-    #[test]
-    fn a_slide_looks_along_the_velocity() {
-        let forward = Vec3::Z;
-        let body = Body { position: Vec3::ZERO, up: Vec3::Y, forward, velocity: Vec3::ZERO };
-        let slide = Quat::from_axis_angle(Vec3::Y, 0.3) * forward * 20.0;
-        let look = look_target(Body { velocity: slide, ..body }, 0.0);
-        assert!((look - LOOK * 0.3).abs() < 1e-5, "{look}");
-        // Turning the view by the look brings it towards the velocity.
-        let turned = Quat::from_axis_angle(Vec3::Y, look) * forward;
-        assert!(turned.angle_between(slide) < forward.angle_between(slide));
-        // Within LOOK_MAX.
-        let sideways = Quat::from_axis_angle(Vec3::Y, 1.4) * forward * 20.0;
-        let sideways = look_target(Body { velocity: sideways, ..body }, 0.0);
-        assert!((sideways.abs() - LOOK_MAX.to_radians()).abs() < 1e-6);
+        assert!(degrees(head.rotation(body) * body.forward, body.forward) < 1e-3);
     }
 
     #[test]
@@ -322,6 +256,6 @@ mod tests {
         let mut placed = samples[..=600].to_vec();
         placed.push((1202, car(Vec3::new(10.0, 0.0, 0.0), 2.0, 0.0, Vec3::ZERO)));
         let head = followed(&placed);
-        assert_eq!((head.look, head.up), (0.0, head.body.unwrap().up));
+        assert_eq!(head.up, head.body.unwrap().up);
     }
 }
