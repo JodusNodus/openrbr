@@ -280,11 +280,10 @@ and packs carry no gearbox type.
 
 ## Test install and recordings
 
-A separate NGP 7.4.778 install on the test machine (a Windows or Wine machine with the original game and NGP;
+A separate NGP 7.4.778 install on this PC (vanilla 1.02 plus NGP under Wine, `RBR_NGP_GAME`/`RBR_NGP_PREFIX`;
 harness plugin installed), `scripts/ngp-run.sh NAME [SECS]` (`LIVE=1`, `SNAPSHOT=`, `REPLAY=`). Slots
 (`scripts/ngp-install-car.py`): 2 BMW M3 E30 (RWD), 4 Fiesta Rally4 (FWD), 5 Fiesta Rally3 (AWD), 6 Celica ST185
-(AWD, centre diff type 5). Profile `pfMULLIGATAWNY` (`ClutchHelp 1`). Runs are kept in `~/rbr-ngp-runs` on that
-machine.
+(AWD, centre diff type 5). Profile `pfMULLIGATAWNY` (`ClutchHelp 1`). Runs are kept in `$RBR_NGP_RUNS`.
 
 - Harness NGP mode (`HookCarControl`): with NGP loaded the recorder and playback hook `0x4e91f0` for the player's
   car, taking only calls from NGP.dll (`harness/matrix.py`: recordings stop past 2 GiB, pairs take 130k).

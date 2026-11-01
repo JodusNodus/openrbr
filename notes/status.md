@@ -125,9 +125,9 @@ rbr-recomp `notes/progress/systems.md`; history up to the split: rbr-recomp `LOG
   to rbr-recomp's `rerbr/`. ReRBR keeps the Rust, the layouts and addresses that key the vectors and bindings, and
   the checks.
 - 2026-10-19 (user): the repository becomes ReRBR, Rust only; the C++ reconstruction moves to rbr-recomp.
-- 2026-10-19: the repository holds no private paths or hosts: the harness reaches the test machine through
-  `RBR_REMOTE_*` variables ([verification.md](verification.md#test-machine)), and the test data comes from the
-  player's disc and patch (`rerbr --extract-test-data`).
+- 2026-10-19: the repository holds no private paths or hosts: the harness runs the original locally under Wine
+  (`RBR_GAME`/`RBR_PREFIX` in `dev.env`; [verification.md](verification.md#dev-setup)), and the test data comes from
+  the player's disc and patch (`rerbr --extract-test-data`).
 - 2026-10-19: the documentation is cut to one note per area; detail as of the split stays in rbr-recomp under the
   same paths.
 - 2026-10-17 (user): the goal is RBR with NGP 7 physics and its NGP cars, on the original and the modded stages, all
