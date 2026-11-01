@@ -196,8 +196,12 @@ const NEGLIGIBLE: f32 = 0.001;
 const WISP_LAMPS: f32 = 0.2;
 const PARTICLE_PI: f32 = 3.14159265;
 
+// A lattice point's value, 0 to 1, the same on every GPU: "Hash without Sine" (`hash13`), Copyright (c) 2014 David
+// Hoskins, MIT (`notes/references/hash-without-sine/LicenseText.txt`; `hash` in `shader.wgsl`).
 fn soft_hash(p: vec3<f32>) -> f32 {
-    return fract(sin(dot(p, vec3<f32>(12.9898, 78.233, 37.719))) * 43758.5453);
+    var p3 = fract(p * 0.1031);
+    p3 += dot(p3, p3.zyx + 31.32);
+    return fract((p3.x + p3.y) * p3.z);
 }
 
 fn soft_noise(p: vec3<f32>) -> f32 {

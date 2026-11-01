@@ -2090,9 +2090,11 @@ const LANDING_WIDTH: f32 = 0.02;
 const LANDING_TILT: f32 = 0.25;
 const LANDING_FAR: f32 = 60.0;
 
+// Three values of the cell `c`: "Hash without Sine" (`hash32`), Copyright (c) 2014 David Hoskins, MIT (as `hash`).
 fn landing_hash(c: vec2<f32>) -> vec3<f32> {
-    let q = vec3<f32>(dot(c, vec2<f32>(127.1, 311.7)), dot(c, vec2<f32>(269.5, 183.3)), dot(c, vec2<f32>(419.2, 371.9)));
-    return fract(sin(q) * 43758.5453);
+    var p3 = fract(c.xyx * vec3<f32>(0.1031, 0.1030, 0.0973));
+    p3 += dot(p3, p3.yxz + 33.33);
+    return fract((p3.xxy + p3.yzz) * p3.zyx);
 }
 
 fn rain_rings(n: vec3<f32>, world: vec3<f32>, standing: f32) -> vec3<f32> {
@@ -2331,10 +2333,14 @@ const DETAIL: f32 = 0.08;
 const DETAIL_FADE: vec2<f32> = vec2<f32>(4.0, 30.0);
 const MACRO: f32 = 0.22;
 
-// A lattice point's value; the lattice repeats every 289 points, which keeps the hash precise far from the origin.
+// A point's value, 0 to 1: "Hash without Sine" (`hash13`), Copyright (c) 2014 David Hoskins, MIT
+// (`notes/references/hash-without-sine/LicenseText.txt`). Multiplies and adds of small values, which every GPU rounds
+// alike (a fused multiply-add moves it by under 0.5 %). A sine hash (`fract(sin(x) * 43758.5)`) does not: GPUs reduce
+// its large arguments differently, so the ground's patches fell elsewhere on each and a shot differed between machines.
 fn hash(p: vec3<f32>) -> f32 {
-    let q = p - floor(p / 289.0) * 289.0;
-    return fract(sin(dot(q, vec3<f32>(127.1, 311.7, 74.7))) * 43758.5453);
+    var p3 = fract(p * 0.1031);
+    p3 += dot(p3, p3.zyx + 31.32);
+    return fract((p3.x + p3.y) * p3.z);
 }
 
 fn value_noise(p: vec3<f32>) -> f32 {
