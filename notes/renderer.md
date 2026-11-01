@@ -47,8 +47,8 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   71M 52 pixels over 8) (2026-10-26).
 - `--anti-aliasing taa|off` (`AntiAliasing`, default `Taa`, ours after gp4's `taa.rs`; `4x` parses as `taa`): one
   sample, the main view's projection jittered and resolved into the post pass's scene, sharpened under TAA
-  (`taa.rs`, `taa.wgsl`, `post.rs`: Halton 2,3, 8 phases, 16 below full size, so 0.75 and 0.5 render scales resolve
-  cleanly; the reprojection, history, glass mask and reset rules are there).
+  (`taa.rs`, `taa.wgsl`, `post.rs`: Halton 2,3, 8 phases an output pixel, `taa::phases`, 18 at 67 % and 32 at 50 %;
+  the reprojection, history, glass mask and reset rules are there).
   Measured 2026-10-26 (RX 9060 XT radv, `--enhance all`, 1440p, Laplacian variance): 4x / TAA / TAA sharpened
   forest chase 251 / 136 / 230, cockpit 174 / 95 / 120 (TAA roughly halves the aliasing, sharpening restores about
   half; dry, wet, rain and night scenes similar). `--anti-aliasing off` frames are byte-identical to before in
@@ -64,6 +64,22 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   the car the car's motion (smeared gravel behind a chase car, 208 Helette); the wheels now carry their roll. 34 stills
   within RMSE 9/65535 of before, `--anti-aliasing off` byte-identical; wipers and wheel as solid as before (GC8 Luceram
   rain, 8-frame sequence). Pass 0.06-0.34 ms, 1080p RX 9060 XT (208 chase the most); TAA as before.
+  Upscale (`fs_upscale` in `taa.wgsl`, 2026-11-01, after Qualcomm's Snapdragon GSR 2, BSD-3): below 100 % render scale
+  the resolve writes the output's size (history and post pass there) instead of the post pass stretching the frame. Each
+  output pixel gathers the 3x3 jittered samples by a Gaussian of their distance in output pixels, at a share of 0.1 over
+  the scale per unit of weight (`taa.rs` `KERNEL_AREA`); the clip box is the unweighted 3x3 (weighted by nearness:
+  stair-steps, speckled grass); the motion is the 3x3's nearest depth's; where clipped hard or moving fast (3/4 at 64
+  output pixels a frame: a chase camera's roadside smudged) the history gives way to a Catmull-Rom of the frame held
+  within the 3x3 (the nearest sample drew blocks, a Gaussian smudged). Textures biased `log2(scale)` in the main view
+  (`texture_bias` in `shader.wgsl`; Laplacian variance 50 % flyby 122 to 163). Rain and particles go into the frame after
+  a copy (`Taa::keep`) and their difference is added, out of the history. The reference shots draw one or two frames, so
+  compare 32-frame sequences (`--sequence 32 --sequence-step 12`, last frame). Laplacian variance, 1080p, chase 208 /
+  cockpit Fiesta / flyby Clio / rain cockpit GC8: native 572 / 437 / 739 / 1980; old stretch 67 % 112 / 129 / 153 / 608,
+  50 % 43 / 71 / 62 / 276; upscale 67 % 442 / 273 / 382 / 1151, 50 % 206 / 206 / 219 / 716; FSR 3 (`render/fsr-motion`,
+  RCAS 0.8) 67 % 480 / 268 / 351 / 821, 50 % 311 / 204 / 231 / 571. By eye even with FSR on the car and dash, FSR smoother
+  on fast-moving edges (wiper, a passing car's roof). Resolve 0.32-0.59 ms at 1080p (FSR 0.86-1.04, old 0.05-0.09),
+  scene 3.2 to 1.8 ms at 50 % (RX 9060 XT radv). 100 % and `--anti-aliasing off` byte-identical to before. Untested on
+  Metal.
   Glass over the car (the dash below the windscreen, the cabin behind the windows, lamp lenses) gathers as the rest:
   the mask takes the frame new only where the stage is behind the glass (2026-10-31). The lower windscreen (alpha about
   0.9 at its grazing angle) was taken new every frame, its dash edges and reflected cabin never smoothed; its
@@ -746,7 +762,10 @@ medium; high), `grass` as "Dense grass" on High and Ultra (user decision 2026-10
 field cost more frame time than the full one at 4K, so no middle setting), `windscreen` as "Windscreen" on High and
 Ultra (user decision 2026-10-30: one switch for the pane and its reflection). Removed: `lens`; `ao`, `msaa`, `taa`,
 `wind` (user decision 2026-10-19); `hdr` (2026-10-26: float targets, bloom, exposure and AgX are always on). Older settings and names are
-not read (user decision). The launcher's render scale is 100 % by default. The default frame was
+not read (user decision). The launcher's render scale is 100 % (native) by default, else 87, 75, 67 or 50 %, which the
+TAA upscales (user, 2026-11-01: at least 50 %; 75 kept, older settings hold it). The launcher offers no
+anti-aliasing choice (user, 2026-11-01): the TAA either resolves or upscales; a saved `anti_aliasing` is not read, and
+`viewer --anti-aliasing off` stays for the byte-identical checks. The default frame was
 byte-identical before and after (chase, cockpit, heavy rain, 1920x1080).
 
 | Name | What |

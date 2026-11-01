@@ -11,7 +11,7 @@ use rbr_gameplay::markers::MarkerSettings;
 use rbr_gameplay::race_options::RaceOptions;
 use rbr_gameplay::weather::{self, Draws, Preset, Weather};
 use rbr_render::glass::model::Switch;
-use rbr_render::renderer::{AntiAliasing, Detail, Enhance, Reflections};
+use rbr_render::renderer::{Detail, Enhance, Reflections};
 use rbr_render::shifter::CarBox;
 use rbr_sound::mixer::Volumes;
 
@@ -611,10 +611,6 @@ impl Form {
         // The viewer's `--live` command is the rest of the line.
         let live = args.iter().position(|a| a == "--live").unwrap_or(args.len());
         let scale = render_scale_args(self.render_scale);
-        let anti_aliasing = (self.anti_aliasing != AntiAliasing::default())
-            .then(|| ["--anti-aliasing".to_owned(), self.anti_aliasing.name().to_owned()])
-            .into_iter()
-            .flatten();
         let reflections = self.graphics.wet_roads.reflections();
         let reflections = (reflections != Reflections::default())
             .then(|| ["--reflections".to_owned(), reflections.name().to_owned()])
@@ -642,7 +638,6 @@ impl Form {
             .into_iter()
             .chain(replay)
             .chain(scale)
-            .chain(anti_aliasing)
             .chain(reflections)
             .chain(detail)
             .chain(present)
@@ -802,7 +797,7 @@ mod tests {
              size = 1920x1080\nfov = 72.5\nvolume = 0.75\ncodriver = off\nhud = off\nunits = mph\nfps = on\n\
              pace_stack = 2\npace_3d = on\nwipers = intermittent\ncallout_distance = 0.5\nmarker_threshold = 12.5\n\
              damage = realistic\nauto_gears = on\ngear_guard = off\nneutral_lock = on\nclutch_help = off\n\
-             ghost = best\nrender_scale = 75\nanti_aliasing = off\nreflections = off\npresent = immediate\nfullscreen = off\nstart_time = 16:30\n",
+             ghost = best\nrender_scale = 75\nreflections = off\npresent = immediate\nfullscreen = off\nstart_time = 16:30\n",
         ),
         (
             "random weather, advanced shifter",

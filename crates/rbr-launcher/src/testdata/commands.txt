@@ -125,8 +125,6 @@ anisotropy,cabin,contact,decals,lighting,particles,water,wet
 <here>/replays/<time>-track_54_O.rrp
 --render-scale
 0.75
---anti-aliasing
-off
 --reflections
 off
 --present

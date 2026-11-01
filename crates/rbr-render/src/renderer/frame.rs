@@ -57,7 +57,9 @@ impl Renderer {
             if let Some(ssr) = &mut self.screen_reflection {
                 ssr.resize(&self.device, SCENE_FORMAT, size, &self.depth_view);
             }
-            self.post.resize(&self.device, size, &self.depth_view);
+            // The temporal anti-aliasing upscales the frame drawn below the output's size into the post pass's scene.
+            let scene = if self.taa.is_some() { output } else { size };
+            self.post.resize(&self.device, scene, &self.depth_view);
             if let Some(shafts) = &mut self.light_shafts {
                 shafts.resize(&self.device, &self.post.scene, size, &self.depth_view);
             }
@@ -68,7 +70,7 @@ impl Renderer {
             self.cloud_volume.resize(&self.device, &self.depth_view, size);
             if let (Some(taa), Some(motion)) = (&mut self.taa, &mut self.motion) {
                 motion.resize(&self.device, size);
-                taa.resize(&self.device, size, size != output, &self.depth_view, motion.view());
+                taa.resize(&self.device, size, output, &self.depth_view, motion.view());
             }
         }
         // Under the temporal anti-aliasing the main view's draws are jittered; the sun's cascades, the mirrors and
@@ -210,10 +212,23 @@ impl Renderer {
         });
         if let Some(taa) = &mut self.taa {
             taa.prepare(&self.queue, view_projection, self.outside_view);
+        }
+        // Upscaling, the rain and the particles go into the frame (the depth's size), which the resolve adds over the
+        // gathered frame; else over the resolve.
+        let upscaling = self.taa.as_ref().is_some_and(crate::taa::Taa::upscaling);
+        if let Some(taa) = self.taa.as_ref().filter(|_| upscaling) {
+            taa.keep(encoder);
+            if self.late_effects() {
+                let t = mark(&mut profiler, encoder);
+                self.draw_late_effects(encoder, taa.raw());
+                span(&mut profiler, encoder, "particles, rain", t);
+            }
+        }
+        if let Some(taa) = &mut self.taa {
             let t = mark(&mut profiler, encoder);
             taa.resolve(encoder, &self.post.scene);
             span(&mut profiler, encoder, "taa", t);
-            if self.late_effects() {
+            if self.late_effects() && !upscaling {
                 let t = mark(&mut profiler, encoder);
                 self.draw_late_effects(encoder, &self.post.scene);
                 span(&mut profiler, encoder, "particles, rain", t);

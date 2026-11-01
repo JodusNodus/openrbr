@@ -196,7 +196,7 @@ impl Renderer {
             // Under the temporal anti-aliasing each image is drawn with a sub-texel jitter of its own, which the glass
             // samples it by, so that the main view's resolve gathers its edges over the draws.
             let draws = held[k].map_or(0, |held| held.draws.wrapping_add(1));
-            let shift = self.taa.as_ref().map_or(Mat4::IDENTITY, |_| taa::shift(taa::jitter(draws, false), view.size));
+            let shift = self.taa.as_ref().map_or(Mat4::IDENTITY, |_| taa::shift(taa::jitter(draws, 8), view.size));
             let view = mirrors::View {
                 view_projection: shift * view.view_projection,
                 sky_view_projection: shift * view.sky_view_projection,

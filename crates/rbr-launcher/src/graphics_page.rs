@@ -6,7 +6,7 @@ use rbr_render::coords;
 use rbr_render::hud::{Part, Parts};
 use rbr_render::mirrors::Rate;
 use rbr_render::present::Present;
-use rbr_render::renderer::{AntiAliasing, Detail, Reflections};
+use rbr_render::renderer::{Detail, Reflections};
 
 use crate::pages::{combo, fields, section, Choice, DRIVE_FIELDS, FIELD};
 use crate::Form;
@@ -89,19 +89,6 @@ impl Choice for WetRoads {
             WetRoads::Low => "Low",
             WetRoads::Medium => "Medium",
             WetRoads::High => "High",
-        }
-    }
-}
-
-impl Choice for AntiAliasing {
-    const ALL: &[Self] = &AntiAliasing::ALL;
-    fn name(self) -> &'static str {
-        AntiAliasing::name(self)
-    }
-    fn label(self) -> &'static str {
-        match self {
-            AntiAliasing::Taa => "Temporal",
-            AntiAliasing::Off => "Off",
         }
     }
 }
@@ -189,14 +176,17 @@ impl Quality {
     }
 }
 
-/// The render scales the Graphics & sound page offers, percent of the window's width and height (`viewer --render-scale`): the
-/// frame is drawn smaller and the post pass scales it up, for high refresh rates at 1440p and above. 100, the first,
-/// is the default.
-pub const RENDER_SCALES: [u32; 4] = [100, 75, 67, 50];
+/// The render scales the Graphics & sound page offers, percent of the window's width and height (`viewer --render-scale`): below
+/// 100 the frame is drawn smaller and the temporal anti-aliasing upscales it, for
+/// high refresh rates at 1440p and above. 100, the first, is the default.
+pub const RENDER_SCALES: [u32; 5] = [100, 87, 75, 67, 50];
 
 /// A render scale's label.
 fn scale_label(percent: u32) -> String {
-    format!("{percent}%")
+    match percent {
+        100 => "100% (native)".into(),
+        percent => format!("{percent}%"),
+    }
 }
 
 /// A detail choice's label.
@@ -313,18 +303,11 @@ impl Form {
             });
             ui.end_row();
 
-            let tip = "Draws the 3D view at this share of the window's size and scales it up: softer, but faster, for \
-                       high refresh rates at 1440p and above";
+            let tip = "Draws the 3D view at this share of the window's size, which the temporal anti-aliasing \
+                       upscales to it over the frames: faster, for high refresh rates at 1440p and above; the lower, \
+                       the softer, and fast-moving edges grow rougher";
             ui.label("Render scale").on_hover_text(tip);
-            combo(ui, "render scale", None, &mut self.render_scale, &RENDER_SCALES, scale_label).on_hover_text(tip);
-            ui.end_row();
-
-            let tip =
-                "Temporal: one sample a pixel, jittered and gathered over the frames: smooth edges, the foliage's \
-                       and fences' cut-outs too. Off: one sample a pixel, the cut-outs as in 1.02: a little faster, \
-                       with jagged edges";
-            ui.label("Anti-aliasing").on_hover_text(tip);
-            combo(ui, "anti-aliasing", FIELD, &mut self.anti_aliasing, &AntiAliasing::ALL, AntiAliasing::label)
+            combo(ui, "render scale", QUALITY_FIELD, &mut self.render_scale, &RENDER_SCALES, scale_label)
                 .on_hover_text(tip);
             ui.end_row();
 
@@ -488,8 +471,8 @@ impl Form {
         let g = &mut self.graphics;
         fields(ui, "quality", |ui| {
             let tip = "Sets the choices below. Low: the game's look. Medium: all but Lighting, the costliest, Dense \
-                       grass, which needs it, and Windscreen. High: all but Ultra detail. Ultra: all. The render scale, anti-aliasing and tyre \
-                       marks stay as they are";
+                       grass, which needs it, and Windscreen. High: all but Ultra detail. Ultra: all. The render scale and tyre marks \
+                       stay as they are";
             ui.label("Preset").on_hover_text(tip);
             ComboBox::from_id_salt("preset")
                 .width(QUALITY_FIELD)

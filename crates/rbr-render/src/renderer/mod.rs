@@ -713,7 +713,7 @@ impl Renderer {
         });
         let effects = enhance.particles.then(|| Effects::new(&device, format, &depth_view, &sun_view));
         let motion = taa.then(|| motion::Motion::new(&device, &shader, &shadow_layout, buffers.len()));
-        let taa = motion.as_ref().map(|m| crate::taa::Taa::new(&device, depth_size, false, &depth_view, m.view()));
+        let taa = motion.as_ref().map(|m| crate::taa::Taa::new(&device, depth_size, depth_size, &depth_view, m.view()));
         Renderer {
             device,
             queue,
@@ -881,8 +881,9 @@ impl Renderer {
         self.profiler.as_ref().map_or_else(Vec::new, Profiler::medians)
     }
 
-    /// Draws the frame at `scale` of the target's width and height (at most 1, the default), which the post pass
-    /// scales up: a cheaper frame for high refresh rates at high resolutions.
+    /// Draws the frame at `scale` of the target's width and height (at most 1, the default), which the temporal
+    /// anti-aliasing upscales (without it, the post pass stretches it): a cheaper frame for high refresh rates at high
+    /// resolutions.
     pub fn set_render_scale(&mut self, scale: f32) {
         self.render_scale = scale.clamp(0.25, 1.0);
     }

@@ -41,8 +41,9 @@
 //! alpha-tested as in 1.02. `4x`, the multisampling taken out, is read as `taa`.
 //! `--reflections high|medium|low|off` the screen-space reflections' rays a pixel and steps a ray (4 and 64, 2 and 48,
 //! 1 and 32), or none. `--shadows X`, from older command lines, is read and ignored.
-//! `--render-scale S` (0.25 to 1) draws the frame at S of the window's width and height, scaled up by the
-//! post pass: cheaper, softer frames. `auto`, from older settings, is full size.
+//! `--render-scale S` (0.25 to 1) draws the frame at S of the window's width and height, which the temporal
+//! anti-aliasing upscales (without it the post pass stretches it): cheaper, softer frames. `auto`, from older settings,
+//! is full size.
 //!
 //! `STAGE` defaults to `track-10_O`. A community stage is its folder (RallySimFans `Maps/<id>-<name>`, loaded at its
 //! default variant) or the path of its files without the extension (`notes/formats.md` "RSF stages"). `RBR_PATCH` (optional) is the 1.02 patch's `files/Main_group`: its files

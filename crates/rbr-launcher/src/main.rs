@@ -513,8 +513,6 @@ struct Form {
     graphics: graphics_page::Graphics,
     /// The render scale, percent ([`graphics_page::RENDER_SCALES`]).
     render_scale: u32,
-    /// The frame's anti-aliasing (`viewer --anti-aliasing`).
-    anti_aliasing: rbr_render::renderer::AntiAliasing,
     /// The car's and the stage's textures upscaled (`viewer --upscale-textures`), when [`Form::upscaler`].
     upscale_textures: bool,
     /// Whether the upscaler is installed ([`rbr_render::upscale::Upscaler::find`]), looked for at the start and after

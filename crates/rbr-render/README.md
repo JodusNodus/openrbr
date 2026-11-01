@@ -21,7 +21,7 @@ scripts/launcher.sh   # live drives: the launcher runs viewer --live rbr-standal
 - `skylight`, `height_fog`, `light_shafts`: sky and lighting (`lighting`)
 - `sun`, `foliage`: sun cascades, plants
 - `post`: HDR post pass, the composite's sharpening under TAA
-- `taa`: temporal anti-aliasing (the default); `renderer/motion`: its motion pass
+- `taa`: temporal anti-aliasing (the default; upscales below 100 % render scale); `renderer/motion`: its motion pass
 - `effects`, `puddles`: GPU rain, wet roads
 - `car/`: car loading, parts, cabin bake
 - `car_shadow`: shadow decal
