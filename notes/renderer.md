@@ -1000,6 +1000,13 @@ displays keep the pack's texels, scaled to the target's. Clio 4K cockpit: edges 
 the small switch labels garbled. Reference cockpits 0.35 to 2.86 % RMSE, upscale off byte-identical; the target
 gets the base's mip chain (+21 MB at 4096, the dials redrawn into every level: a Clio redraw 0.92 ms GPU against
 0.60, `--profile` with the dials redrawn each frame).
+A pack's base without mip levels (139 of RSF's 150) gets a chain at load, as the car's own textures do: one level
+aliased over the whole cockpit where the upscaler did not replace it (2026-11-01).
+In a frame at least 1800 high (`--size` times the render scale) the in-car view's textures go to 8192, not 4096
+(`upscale::INTERIOR_MAX`, user's call 2026-11-01): at 4K the Fiat 131 Grp4's 4096 dash is about 0.8 texels a pixel,
+at 8192 its gauges and dash fabric are sharp; its 4096 pack base is upscaled 2x (4x, halved). Cached in a folder per
+largest side; about 90 MB of disk per texture, a gauge cockpit's `RGBA8` target about 350 MB of GPU memory. The Fiat's
+first 4K load 128 s (five 8192 interior textures).
 Not packaged: the download takes Real-ESRGAN v0.2.5.0's release zip (macOS universal, Linux and Windows x86_64; none for ARM Linux) and the
 model's ncnn files from upscayl/custom-models at 500e6a0, each checked by SHA-256.
 

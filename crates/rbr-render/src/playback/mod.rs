@@ -286,6 +286,13 @@ impl Playback {
         Ok(())
     }
 
+    /// The textures the interior set draws with ([`Playback::add_interior`]), in `stage`.
+    pub fn interior_textures(&self, stage: &Stage) -> std::collections::BTreeSet<crate::stage::TextureRef> {
+        let parts = self.parts.iter().filter(|part| part.interior);
+        let draws = parts.flat_map(|part| &stage.meshes[part.stage].draws);
+        draws.flat_map(|draw| draw.state.textures.into_iter().flatten()).collect()
+    }
+
     /// The steering wheel's meshes ([`Playback::add_interior`]) turn about `node`
     /// (`characters::incar::Crew::wheel_node`): the TAA carries what they cover by [`Playback::turn`].
     pub fn set_wheel_node(&mut self, node: Mat4) {

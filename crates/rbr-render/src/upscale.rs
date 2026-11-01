@@ -1,9 +1,10 @@
 //! Upscaled textures at load (ours, not the game's): each car texture and [`stage_textures`] texture is upscaled 4x by
-//! a Real-ESRGAN ncnn binary with [`MODEL`], halved where 4x would pass [`MAX`], and re-encoded in its block format
-//! with a full mip chain. A texture the dials draw on (`Image::Dial`, the cockpit of a car with a gauge pack) has its
-//! base upscaled from its art's size: RBRHUD's bases larger than the car's own texture are smooth resizes of it.
-//! The results are kept in a cache folder by the source file's SHA-256, so a texture is upscaled once, whichever car
-//! or stage shows it, and again only when its file changes.
+//! a Real-ESRGAN ncnn binary with [`MODEL`], halved where 4x would pass [`MAX`] ([`INTERIOR_MAX`] for the in-car
+//! view's textures in a 4K frame, [`interior_max`]), and re-encoded in its block format with a full mip chain. A
+//! texture the dials draw on (`Image::Dial`, the cockpit of a car with a gauge pack) has its base upscaled from its
+//! art's size: RBRHUD's bases larger than the car's own texture are smooth resizes of it. The results are kept in a
+//! cache folder per largest side by the source file's SHA-256, so a texture is upscaled once, whichever car or stage
+//! shows it, and again only when its file changes.
 //!
 //! The upscaler's folder (the launcher's `<player folder>/Upscaler`, which its "Download upscaler…" fills) holds the
 //! binary, its `models` and the `cache`. `RBR_UPSCALER`, else `upscaler/` beside the running program, names another
@@ -28,6 +29,13 @@ use std::sync::mpsc;
 pub const MODEL: &str = "RealESRGAN_General_WDN_x4_v3";
 /// The largest side an upscaled texture gets: as sharp as 8192 on the Fiesta R5's liveries, at a third of the memory.
 pub const MAX: u32 = 4096;
+/// The largest side the in-car view's textures get when the frame is at least [`INTERIOR_HEIGHT`] high: at 4K a
+/// 4096 cockpit is magnified on the dash (the Fiat 131 Grp4's, about 0.8 texels a pixel), 8192 is sharper there
+/// (user, 2026-11-01). Up to 350 MB of GPU memory for a cockpit the dials draw on (an `RGBA8` target).
+pub const INTERIOR_MAX: u32 = 8192;
+/// The frame height, after the render scale, from which the in-car view's textures get [`INTERIOR_MAX`]: 4K's 2160
+/// and a little under it.
+pub const INTERIOR_HEIGHT: u32 = 1800;
 /// The smallest largest side upscaled: below it a texture is a light, a flat colour or a fence tile, with nothing to
 /// sharpen.
 pub const MIN: u32 = 32;
@@ -75,44 +83,56 @@ impl Upscaler {
     }
 }
 
-/// Replaces each texture of the sets `sets` takes in `textures` (a `.dds` file's or a dial's base, its larger side, or
-/// its art's, at most half [`MAX`]) by its upscaled copy from `cache`, upscaling with `upscaler` the ones not there
-/// yet; `progress` is told (done, total) before each. A texture that fails keeps its own. Returns how many were
-/// replaced.
+/// The largest side the in-car view's textures get in a frame `height` high (after the render scale).
+pub fn interior_max(height: u32) -> u32 {
+    if height >= INTERIOR_HEIGHT {
+        INTERIOR_MAX
+    } else {
+        MAX
+    }
+}
+
+/// Replaces each texture `pick` gives a largest side (at most [`MAX`] or [`INTERIOR_MAX`]) in `textures` (a `.dds`
+/// file's or a dial's base, its larger side, or its art's, at most half that side) by its upscaled copy from `cache`
+/// (a folder per largest side), upscaling with `upscaler` the ones not there yet; `progress` is told (done, total)
+/// before each. A texture that fails keeps its own. Returns how many were replaced.
 pub fn apply(
     textures: &mut BTreeMap<TextureRef, StageTexture>,
-    pick: impl Fn(TextureRef) -> bool,
+    pick: impl Fn(TextureRef) -> Option<u32>,
     upscaler: &Upscaler,
     cache: &Path,
     progress: &mut dyn FnMut(usize, usize),
 ) -> usize {
-    let folder = cache.join(format!("{MODEL}-{MAX}"));
     let mut planned: Vec<(TextureRef, PathBuf)> = Vec::new();
-    let mut missing: BTreeMap<PathBuf, (&[u8], u32)> = BTreeMap::new();
-    // Each with the larger side it is upscaled from: a dial's base its art's.
-    let wanted: Vec<_> =
-        textures
-            .iter()
-            .filter_map(|(&key, texture)| {
-                let (bytes, side) = match texture.image.as_ref()? {
-                    Image::Dds(bytes) => (bytes, larger_side(bytes)?),
-                    Image::Dial { base, art, .. } => (base, art.0.max(art.1)),
-                    _ => return None,
-                };
-                (pick(key) && texture.request.to_ascii_lowercase().ends_with(".dds") && scale(side).is_some())
-                    .then_some((key, bytes.as_slice(), side))
-            })
-            .collect();
-    let digests = in_parallel(&wanted, |&(_, bytes, _)| Sha256::digest(bytes));
-    for ((key, bytes, side), digest) in wanted.into_iter().zip(digests) {
-        let path = folder.join(format!("{digest:x}.dds"));
+    let mut missing: BTreeMap<PathBuf, Source> = BTreeMap::new();
+    // Each with the larger side it is upscaled from (a dial's base its art's) and the largest side it gets.
+    let wanted: Vec<_> = textures
+        .iter()
+        .filter_map(|(&key, texture)| {
+            let max = pick(key)?;
+            let (bytes, side) = match texture.image.as_ref()? {
+                Image::Dds(bytes) => (bytes, larger_side(bytes)?),
+                Image::Dial { base, art, .. } => (base, art.0.max(art.1)),
+                _ => return None,
+            };
+            (texture.request.to_ascii_lowercase().ends_with(".dds") && scale(side, max).is_some()).then_some((
+                key,
+                bytes.as_slice(),
+                side,
+                max,
+            ))
+        })
+        .collect();
+    let digests = in_parallel(&wanted, |&(_, bytes, _, _)| Sha256::digest(bytes));
+    for ((key, bytes, side, max), digest) in wanted.into_iter().zip(digests) {
+        let path = cache.join(format!("{MODEL}-{max}")).join(format!("{digest:x}.dds"));
         if !path.is_file() {
-            missing.insert(path.clone(), (bytes, side));
+            missing.insert(path.clone(), (bytes, side, max));
         }
         planned.push((key, path));
     }
     if !missing.is_empty() {
-        let work = folder.join(format!("work-{}", std::process::id()));
+        let work = cache.join(format!("work-{}", std::process::id()));
         if let Err(e) = make(upscaler, missing.into_iter().collect(), &work, progress) {
             eprintln!("upscale: {e}");
         }
@@ -158,29 +178,32 @@ fn larger_side(bytes: &[u8]) -> Option<u32> {
     dds::parse(bytes).ok().map(|dds| dds.width.max(dds.height))
 }
 
-/// The scale a texture of larger side `side` is upscaled by: 4, else 2 where 4 would pass [`MAX`]; none where 2 would
-/// or under [`MIN`].
-fn scale(side: u32) -> Option<u32> {
-    [4, 2].into_iter().find(|s| side >= MIN && side * s <= MAX)
+/// A texture to upscale: its `.dds` file, the larger side it is upscaled from and the largest side it gets.
+type Source<'a> = (&'a [u8], u32, u32);
+
+/// The scale a texture of larger side `side` is upscaled by to at most `max`: 4, else 2 where 4 would pass it; none
+/// where 2 would or under [`MIN`].
+fn scale(side: u32, max: u32) -> Option<u32> {
+    [4, 2].into_iter().find(|s| side >= MIN && side * s <= max)
 }
 
 /// Upscales each `.dds` file of `missing` into its cache file: their top levels, halved down to the side each is
 /// upscaled from, as PNGs into `work`, one run of the binary over them, and each file it saves halved where 4x passes
-/// [`MAX`] and encoded while it makes the next. The largest go first, so the last encodes are short. `progress` is told
-/// (done, total) before each.
+/// its largest side and encoded while it makes the next. The largest go first, so the last encodes are short.
+/// `progress` is told (done, total) before each.
 fn make(
     upscaler: &Upscaler,
-    mut missing: Vec<(PathBuf, (&[u8], u32))>,
+    mut missing: Vec<(PathBuf, Source)>,
     work: &Path,
     progress: &mut dyn FnMut(usize, usize),
 ) -> Result<(), String> {
-    missing.sort_by_key(|&(_, (_, side))| std::cmp::Reverse(side));
+    missing.sort_by_key(|&(_, (_, side, max))| std::cmp::Reverse(side * scale(side, max).unwrap_or(1)));
     let (input, output) = (work.join("in"), work.join("out"));
     for dir in [&input, &output] {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
     let name = |index: usize| format!("{index:04}.png");
-    for (index, (path, (bytes, side))) in missing.iter().enumerate() {
+    for (index, (path, (bytes, side, _))) in missing.iter().enumerate() {
         let written = dds::parse(bytes).map_err(|e| e.to_string()).and_then(|dds| {
             let level = &dds.levels()[0];
             let (mut width, mut height) = (level.width, level.height);
@@ -209,8 +232,8 @@ fn make(
     });
     let mut done = vec![false; total];
     let mut take = |index: usize, done: &mut [bool]| {
-        let (path, (bytes, side)) = &missing[index];
-        if let Err(e) = finish(bytes, *side, &output.join(name(index)), path) {
+        let (path, (bytes, side, max)) = &missing[index];
+        if let Err(e) = finish(bytes, *side, *max, &output.join(name(index)), path) {
             eprintln!("upscale: {}: {e}", path.display());
         }
         done[index] = true;
@@ -234,13 +257,16 @@ fn make(
 }
 
 /// Encodes the upscaled PNG `upscaled` of the `.dds` file `bytes`, upscaled from larger side `side`, into `out`, halved
-/// where 4x passes [`MAX`]. Written whole, then renamed, so a stopped load leaves no part file in its place.
-fn finish(bytes: &[u8], side: u32, upscaled: &Path, out: &Path) -> Result<(), String> {
+/// where 4x passes `max`. Written whole, then renamed, so a stopped load leaves no part file in its place.
+fn finish(bytes: &[u8], side: u32, max: u32, upscaled: &Path, out: &Path) -> Result<(), String> {
     let dds = dds::parse(bytes).map_err(|e| e.to_string())?;
     let (mut width, mut height, mut rgba) = read_png(upscaled).map_err(|e| e.to_string())?;
     let _ = std::fs::remove_file(upscaled);
-    if scale(side) == Some(2) {
+    if scale(side, max) == Some(2) {
         (width, height, rgba) = half(width, height, &rgba);
+    }
+    if let Some(folder) = out.parent() {
+        std::fs::create_dir_all(folder).map_err(|e| format!("{}: {e}", folder.display()))?;
     }
     let part = out.with_extension("part");
     std::fs::write(&part, encode(dds.format, width, height, rgba)).map_err(|e| e.to_string())?;
@@ -391,10 +417,13 @@ mod tests {
     #[test]
     fn scale_fits_max() {
         assert_eq!(larger_side(&file(1024)), Some(1024));
-        assert_eq!(scale(1024), Some(4));
-        assert_eq!(scale(2048), Some(2));
-        assert_eq!(scale(4096), None);
-        assert_eq!(scale(16), None);
+        assert_eq!(scale(1024, MAX), Some(4));
+        assert_eq!(scale(2048, MAX), Some(2));
+        assert_eq!(scale(4096, MAX), None);
+        assert_eq!(scale(16, MAX), None);
+        assert_eq!(scale(2048, INTERIOR_MAX), Some(4));
+        assert_eq!(scale(4096, INTERIOR_MAX), Some(2));
+        assert_eq!((interior_max(1080), interior_max(2160)), (MAX, INTERIOR_MAX));
     }
 
     #[test]

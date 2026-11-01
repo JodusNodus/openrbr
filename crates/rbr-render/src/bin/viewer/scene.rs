@@ -116,7 +116,15 @@ pub fn load(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Result<
         match upscale::Upscaler::find(dir) {
             Some(upscaler) => {
                 let stage_textures = upscale::stage_textures(&scene.stage);
-                let pick = |key: stage::TextureRef| key.set == stage::TextureSet::Car || stage_textures.contains(&key);
+                // The in-car view's sharper in a 4K frame, by `--size` (the launcher's choice, fullscreen too).
+                let interior = scene.playback.as_ref().map(|p| p.interior_textures(&scene.stage)).unwrap_or_default();
+                let height = args.size.map_or(720, |(_, height)| height) as f32 * args.render_scale;
+                let interior_max = upscale::interior_max(height as u32);
+                let pick = |key: stage::TextureRef| match () {
+                    _ if interior.contains(&key) => Some(interior_max),
+                    _ if key.set == stage::TextureSet::Car || stage_textures.contains(&key) => Some(upscale::MAX),
+                    _ => None,
+                };
                 let mut told = |done, total| progress(Step::Upscale { done, total });
                 let cache = dir.join("cache");
                 let replaced = upscale::apply(&mut scene.stage.textures, pick, &upscaler, &cache, &mut told);

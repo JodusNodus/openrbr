@@ -435,6 +435,10 @@ impl Face {
             migrate(&mut base, &Rgba::decode(&own), &rects);
             remapped = dds::rgba8_file(base.width, base.height, &base.pixels);
         }
+        // With the mip chain most packs' bases lack (139 of RSF's 150), as the car's own textures get it
+        // (`crate::car::files`): one level aliases over the whole cockpit where the upscaler does not replace it.
+        let remapped = dds::with_mips(&remapped).unwrap_or(remapped);
+        let remapped = crate::upscale::with_block_mips(&remapped).unwrap_or(remapped);
         // The config places its elements in texels of the base as the pack has it.
         let base = dds::parse(&remapped).map_err(|_| unreadable())?;
         let texels = (base.width, base.height);
