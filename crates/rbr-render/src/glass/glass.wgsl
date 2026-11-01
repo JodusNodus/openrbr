@@ -155,6 +155,21 @@ fn ragged(local: vec2<f32>, seed: f32, amount: f32) -> f32 {
     return 1.0 - amount * (0.5 + 0.25 * sin(a * 3.0 + k) + 0.15 * sin(a * 7.0 + k * 1.7) + 0.1 * sin(a * 13.0 + k * 2.3));
 }
 
+// A drop's or bead's outline (ours: no water on glass lies round): how far out to its edge the point `local` of its
+// unit disc lies, 1 at the edge. Its edge holds where it touched the glass (`ragged` by `amount`), and it is up to
+// `DROP_STRETCH` longer one way than across, its own way by `seed`.
+const DROP_STRETCH: f32 = 0.35;
+// A drop's raggedness, from the small ones to those 6 pixels across and more, and a bead's.
+const DROP_RAGGED: vec2<f32> = vec2<f32>(0.12, 0.28);
+const BEAD_RAGGED: f32 = 0.15;
+
+fn outline(local: vec2<f32>, seed: f32, amount: f32) -> f32 {
+    let a = seed * 19.0;
+    let way = vec2<f32>(cos(a), sin(a));
+    let p = vec2<f32>(dot(local, way), (local.y * way.x - local.x * way.y) * (1.0 + DROP_STRETCH * fract(seed * 5.77)));
+    return length(p) / ragged(p, seed, amount);
+}
+
 // At night a drop or flake is lit by what lies in front of the car rather than by the dark sky: the frame's light
 // around it (the mean of a ring of samples `NIGHT_REACH` of the screen out, so drops over the beam-lit road glow and
 // those against the dark trees stay faint), and the headlights' glow scattered back (`Frame::night`).
@@ -228,11 +243,14 @@ const LENS_BODY: f32 = 0.85;
 // and its crescent's.
 const LENS_SKY: f32 = 0.7;
 const LENS_SKY_SHARE: f32 = 0.45;
-const LENS_CRESCENT: f32 = 0.3;
+const LENS_CRESCENT: f32 = 0.2;
+// No two drops alike (ours): each catches `LENS_VARY` to all of that sky and crescent, its outline as dark or a quarter
+// lighter, its highlight a little to either side, by its own number.
+const LENS_VARY: f32 = 0.3;
 
 // `weight` is how much of a lens a thing of water is: 1 a drop, less a thin ribbon (more of the view straight behind
-// it, a fainter outline). Premultiplied light over what lies behind it.
-fn lens(q: vec2<f32>, o: vec2<f32>, look: vec2<f32>, size: f32, centre: vec2<f32>, mag: f32, spec: f32, weight: f32) -> vec4<f32> {
+// it, a fainter outline); `vary` its own number, 0 to 1. Premultiplied light over what lies behind it.
+fn lens(q: vec2<f32>, o: vec2<f32>, look: vec2<f32>, size: f32, centre: vec2<f32>, mag: f32, spec: f32, weight: f32, vary: f32) -> vec4<f32> {
     let r = min(length(q), 1.0);
     let bend = mag * (1.0 + 0.6 * r * r);
     let uv = clamp(centre - look * bend * frame.screen.zw, vec2<f32>(0.0), vec2<f32>(1.0));
@@ -253,15 +271,17 @@ fn lens(q: vec2<f32>, o: vec2<f32>, look: vec2<f32>, size: f32, centre: vec2<f32
     // inside its lower rim where that light gathers. The rim bends the view out of the eye: a dark outline, darker
     // along the top, which looks down.
     let sky = linear(frame.light.rgb) * LENS_SKY;
+    let own = vec4<f32>(vary, fract(vary * 7.31), fract(vary * 13.7), fract(vary * 3.37));
     let below = (1.0 - smoothstep(-0.35, 0.0, q.y - 0.4 * q.x * q.x)) * weight * smoothstep(0.5, 1.5, size);
-    through = mix(through, max(through, sky), below * LENS_SKY_SHARE);
+    through = mix(through, max(through, sky), below * LENS_SKY_SHARE * mix(LENS_VARY, 1.0, own.x));
     let rim = smoothstep(0.62, 1.0, r);
-    let dark = min(mix(0.25, DROP_RIM, smoothstep(1.0, 3.0, size)) * weight * rim * (1.0 + 0.35 * clamp(q.y, -1.0, 1.0)), 0.7);
+    let dark = min(mix(0.25, DROP_RIM, smoothstep(1.0, 3.0, size)) * weight * rim * (1.0 + 0.35 * clamp(q.y, -1.0, 1.0)), 0.7)
+        * mix(0.75, 1.0, own.w);
     let crescent = smoothstep(0.45, 0.8, r) * (1.0 - smoothstep(0.8, 0.97, r)) * (1.0 - smoothstep(-0.8, -0.2, q.y));
-    var colour = through * (1.0 - dark) + sky * (crescent * LENS_CRESCENT * weight * detail);
+    var colour = through * (1.0 - dark) + sky * (crescent * LENS_CRESCENT * mix(LENS_VARY, 1.0, own.y) * weight * detail);
     let nz = sqrt(max(1.0 - r * r, 0.0));
     let n = normalize(vec3<f32>(q, nz * 1.3 + 0.05));
-    let h = normalize(vec3<f32>(-0.4, 0.6, 1.0));
+    let h = normalize(vec3<f32>(-0.4 + 0.5 * (own.z - 0.5), 0.6, 1.0));
     var glint = linear(frame.light.rgb) * pow(max(dot(n, h), 0.0), 60.0) * spec * smoothstep(0.7, 2.5, size);
     if (frame.night.w != 0.0) {
         // At night the rim also catches the lamps the lens sees, and a little of the headlights' glow.
@@ -340,8 +360,11 @@ fn chart_pixels(in: Out, c: vec2<f32>) -> vec2<f32> {
 // in two layers, a fine one and a coarser one over it, each square with a bead at a hashed place when a hash is under
 // the layer's share of the film's thickness (`bead_share`), of a hashed size from the layer's range (a share of the
 // square); drawn as small lenses, like the drops. Behind a blade, each stroke lays its own (the hash takes the
-// stroke's number).
+// stroke's number). They gather in patches about `BEAD_PATCH` metres across, from `BEAD_PATCHY.x` to `.y` of that
+// share (ours: the glass wets unevenly).
 const BEADS_FINE: f32 = 5.0;
+const BEAD_PATCH: f32 = 0.04;
+const BEAD_PATCHY: vec2<f32> = vec2<f32>(0.25, 1.5);
 const BEADS_COARSE: f32 = 2.0;
 const BEAD_SIZE_FINE: vec2<f32> = vec2<f32>(0.18, 0.45);
 const BEAD_SIZE_COARSE: vec2<f32> = vec2<f32>(0.2, 0.42);
@@ -376,7 +399,8 @@ fn bead_layer(in: Out, film: f32, per_pixel: mat2x2<f32>, squares: f32, sizes: v
     let wipe = wipe_at(in, (square + 0.5) / squares);
     let key = ((u32(in.alpha) * 2u + pane) * 64u + u32(square.y) * 8u + u32(square.x)) * 3u + salt;
     let h = hash4(key ^ (u32(wipe.y + 1.0) * 0x9e3779b9u));
-    if (h.x >= bead_share(film, wipe) * fill) {
+    let patchy = mix(BEAD_PATCHY.x, BEAD_PATCHY.y, value_noise(cell_point(in, (square + 0.5) / squares) / BEAD_PATCH, 52u));
+    if (h.x >= bead_share(film, wipe) * fill * patchy) {
         return vec4<f32>(0.0);
     }
     let radius = mix(sizes.x, sizes.y, h.y * h.y);
@@ -386,13 +410,14 @@ fn bead_layer(in: Out, film: f32, per_pixel: mat2x2<f32>, squares: f32, sizes: v
     let local = (grid - centre) * (2.0 / squares);
     let offset = to_pixels * local;
     let size = length(to_pixels * vec2<f32>(radius * 2.0 / squares, 0.0));
-    let r = length(grid - centre) / radius;
+    let vary = fract(h.z * 5.3 + h.w);
+    let r = outline((grid - centre) / radius, vary, BEAD_RAGGED);
     let cover = 1.0 - smoothstep(1.0 - 0.7 / max(size, 0.7), 1.0, r);
     if (cover <= 0.0) {
         return vec4<f32>(0.0);
     }
-    let q = vec2<f32>(offset.x, -offset.y) / max(size, 1e-3);
-    return lens(q, offset, offset, size, (in.position.xy - offset) * frame.screen.zw, LENS_MAG, 0.9, 1.0) * cover;
+    let q = vec2<f32>(offset.x, -offset.y) * (min(r, 1.0) / max(length(offset), 1e-3));
+    return lens(q, offset, offset, size, (in.position.xy - offset) * frame.screen.zw, LENS_MAG, 0.9, 1.0, vary) * cover;
 }
 
 fn beads(in: Out, film: f32, per_pixel: mat2x2<f32>) -> vec4<f32> {
@@ -418,16 +443,19 @@ fn smear(wipe: vec4<f32>) -> f32 {
 
 // The water a blade pushes (ours): a ridge along its leading edge, `RIDGE_GAP` metres ahead of its line, as wide as
 // `RIDGE_GROW` times the root of the water it has gathered over the stroke so far (the film times the arc swept, at
-// this radius), within `RIDGE_WIDTH`, lumpy along the blade (`RIDGE_LUMP` metres). Its churned surface catches the
-// sky's light in patches `RIDGE_CHURN` metres apart, up to `RIDGE_SHEEN` of it. Where a stroke ends it is left lying,
-// spreading and running off over `RIDGE_LINGER` seconds.
+// this radius), within `RIDGE_WIDTH`, lumpy along the blade (`RIDGE_LUMP` metres): clear water, `RIDGE_WEIGHT` of a
+// drop's lens. Its churned surface catches the sky's light in patches `RIDGE_CHURN` metres apart, up to `RIDGE_SHEEN`
+// of it. Where a stroke ends it is left lying and breaks up over `RIDGE_LINGER` seconds, into the drops the blade
+// leaves (`model::Glass::leave`). At 3 to 12 mm, a third of the sky's light and over 0.25 s it read as a bank of white
+// foam where the blades turned.
 const RIDGE_GAP: f32 = 0.001;
-const RIDGE_GROW: f32 = 0.035;
-const RIDGE_WIDTH: vec2<f32> = vec2<f32>(0.003, 0.012);
+const RIDGE_GROW: f32 = 0.025;
+const RIDGE_WIDTH: vec2<f32> = vec2<f32>(0.002, 0.007);
 const RIDGE_LUMP: f32 = 0.02;
-const RIDGE_LINGER: f32 = 0.25;
+const RIDGE_LINGER: f32 = 0.1;
 const RIDGE_MAG: f32 = 2.0;
-const RIDGE_SHEEN: f32 = 0.35;
+const RIDGE_WEIGHT: f32 = 0.6;
+const RIDGE_SHEEN: f32 = 0.08;
 const RIDGE_CHURN: f32 = 0.006;
 
 struct Ridge {
@@ -489,7 +517,7 @@ fn blade_water(in: Out, t: vec2<f32>, film: f32) -> vec4<f32> {
     let edge = 1.0 - smoothstep(1.0 - 0.8 / size, 1.0, abs(r.across));
     let churn = smoothstep(0.4, 0.85, value_noise(vec2<f32>(r.along / RIDGE_CHURN, r.across * 1.5), 43u));
     let sheen = linear(frame.light.rgb) * (RIDGE_SHEEN * churn * (1.0 - r.across * r.across));
-    let water = lens(q, o, o, size, (in.position.xy - o) * frame.screen.zw, RIDGE_MAG, 1.0, 1.0);
+    let water = lens(q, o, o, size, (in.position.xy - o) * frame.screen.zw, RIDGE_MAG, 0.5, RIDGE_WEIGHT, churn);
     return (water + vec4<f32>(sheen, 0.0)) * (edge * r.amount);
 }
 
@@ -550,7 +578,7 @@ fn ribbon(in: Out) -> vec4<f32> {
     }
     let size = max(length(in.pixels.xy), 0.5);
     let o = in.pixels.xy * q.x + in.pixels.zw * q.y * (half_width / max(in.metres.y, 1e-6));
-    return lens(screen_up(o, r), o, o, size, (in.position.xy - o) * frame.screen.zw, LENS_MAG * 0.4, 0.0, 0.3)
+    return lens(screen_up(o, r), o, o, size, (in.position.xy - o) * frame.screen.zw, LENS_MAG * 0.4, 0.0, 0.3, in.seed)
         * ((1.0 - smoothstep(1.0 - 0.8 / size, 1.0, r)) * in.alpha);
 }
 
@@ -580,19 +608,18 @@ fn fs_main(in: Out) -> @location(0) vec4<f32> {
         return ribbon(in);
     }
     if (in.kind == 0) {
-        // A drop: its outline wavers (more on the larger ones), the lens inside it.
+        // A drop: its outline (`outline`, more ragged on the larger ones), the lens inside it.
         let size = max(length(in.pixels.xy), 0.5);
-        let edge = ragged(in.local, in.seed, mix(0.04, 0.2, smoothstep(2.0, 6.0, size)));
-        let q = in.local / edge;
-        let rr = length(q);
+        let rr = outline(in.local, in.seed, mix(DROP_RAGGED.x, DROP_RAGGED.y, smoothstep(2.0, 6.0, size)));
         if (rr > 1.0) {
             discard;
         }
+        let q = in.local * (rr / max(length(in.local), 1e-6));
         // A running drop is longer than it is wide, but its lens looks about as far out each way.
         let run = max(length(in.pixels.zw) / size, 1.0);
         let o = in.pixels.xy * q.x + in.pixels.zw * q.y;
         let look = in.pixels.xy * q.x + in.pixels.zw * (q.y / run);
-        return lens(screen_up(o, rr), o, look, size, in.centre.xy, LENS_MAG, 0.6, 1.0)
+        return lens(screen_up(o, rr), o, look, size, in.centre.xy, LENS_MAG, 0.6, 1.0, in.seed)
             * ((1.0 - smoothstep(1.0 - 0.8 / size, 1.0, rr)) * in.alpha);
     }
     let edge = ragged(in.local, in.seed, select(0.35, 0.25, in.kind == 1));
@@ -651,6 +678,9 @@ fn mud_inside(in: Out, rim: f32, soft: f32) -> vec4<f32> {
 //   it, reaches the eye (the cone `dot(t, sun - view) = 0` about its tangent `t`), so the lit arcs line up through the
 //   pivot toward the sun.
 const PANE_F0: f32 = 0.04;
+// The share of the faces' reflection of the cabin drawn (ours, the user's call: a less reflective interior; in full
+// the light dash and the wheel veiled the view).
+const CABIN_REFLECTED: f32 = 0.5;
 // A pane cell's `edge` at 1, metres (`glass::gpu::PANE_EDGE`).
 const PANE_EDGE: f32 = 0.05;
 // The dust: the share of the sun's light on the pane it scatters toward the eye (a forward lobe, `DUST_G`, and a broad
@@ -867,9 +897,9 @@ fn pane(in: Out, per_pixel: mat2x2<f32>) -> vec4<f32> {
         through *= 1.0 - 0.08 * residue;
     }
     // The cabin reflected in the inner face, and in the outer seen through it and its texture twice (a sun strip
-    // keeps only the inner face's).
+    // keeps only the inner face's), `CABIN_REFLECTED` of it.
     if (in.seed == 0.0) {
-        light += fresnel * (1.0 + through * tint * tint) * reflected(in.world);
+        light += fresnel * (1.0 + through * tint * tint) * reflected(in.world) * CABIN_REFLECTED;
     }
     return vec4<f32>(light, 1.0 - through) * glass;
 }

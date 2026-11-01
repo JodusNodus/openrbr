@@ -571,7 +571,7 @@ not ported.
   `model::Stroke`): the glass keeps the blades' last 4 strokes and each pixel finds when a blade last passed it. Behind
   a blade the film and its beads build again from nothing at the rain's rate, in a new layout each stroke; a smear of
   fine arcs dries in 0.5 s; the gathered water rides along the leading edge as a lumpy ridge, left lying where a stroke
-  turns (0.25 s). The glass steps by the step clock's time between frames, as the blades do (a payload period a frame
+  turns (0.1 s, then the drops the blade leaves). The glass steps by the step clock's time between frames, as the blades do (a payload period a frame
   ran it at half the blades' pace in a 6.9 ms sequence). The blades turn about the normal of the plane that best fits
   the glass over their sweep (`Windscreen::turning_axis`): about the chart's normal the GC8's blades sank 7 cm into it
   or rose 10 cm off it at the top of the sweep, 70 px off the line they wiped as seen from the seat; now within 2 cm.
@@ -580,8 +580,8 @@ not ported.
   car's acceleration (`felt_acceleration`: the velocity's change, smoothed over 0.25 s, at most 30 m/s²): braking runs
   them down the glass, a bend sideways (GC8 Luceram: 4 to 5 m/s² braking, 2 to 4 cornering). Dry M3 621 cockpit within
   0.2 of 255 on the glass. `--sequence` with `--live` showed the last frame each time (`Playback::step` is relative).
-  Open: with `windscreen` the cabin's reflection, now over the water, lifts the dark view about 30 of 255, the
-  heavy-rain look's main haze; the blade meshes' frames stand 1 to 5 cm off the glass.
+  Open: with `windscreen` the cabin's reflection, now over the water, lifted the dark view about 30 of 255, the
+  heavy-rain look's main haze (now drawn at half, below); the blade meshes' frames stand 1 to 5 cm off the glass.
 - Drops at rest and on the move (ours, 2026-11-01, user: "the drops move around too fast/aggressively"; `flow`, `leave`
   in `model.rs`): drops land 0.7 to 3.5 mm (cubed; 1400/m2/s still, 50 more per m/s), bigger ones only by merging. The
   pin goes as `16 (2 mm / r)^2` m/s² (the edge holds by its width, the pull moves the mass; was `8 (2 mm / r)`): on the
@@ -590,11 +590,21 @@ not ported.
   glass). Grip 0.7 to 1.5 a drop, times 1 +- 0.6 over 4 mm noise patches; a running drop holds at 0.85 of its pin, so
   it stops on grippy patches until it grows. It follows its pull over 0.15 s (holds under 4 mm/s) at
   `0.006 (r / 2 mm)^2` m/s per m/s² beyond the pin, at most 0.2 m/s. The airflow's sideways share grows from the
-  middle out. Where a blade turns or parks it leaves 0.1 of the water it swept, up to 20 drops of 1 to 3 mm, 3 to 16 mm
-  ahead of it. Luceram heavy rain, 8 s in at three points: drops sliding 29-38 % to 6-10 %, their median speed 12-16 to
+  middle out. Where a blade turns or parks it leaves 0.05 of the water it swept, up to 24 drops of 0.6 to 2.5 mm (cubed),
+  1 to 14 mm ahead of it (squared). Luceram heavy rain, 8 s in at three points: drops sliding 29-38 % to 6-10 %, their median speed 12-16 to
   2-3 cm/s (90th 60 cap to 7-12); over the 75 s drive 0-9 % slide. Frame cost within noise (drawn-only 20.4 to
   20.6 ms, glass pass 3.75 to 3.78 ms, 2000 to 2500 drops on the glass against 600 to 800). User: "looks pretty
   realistic now".
+- Softer and less alike (ours, 2026-11-01, user: "the culmination effect from the wipers is a bit too harsh", "more
+  natural and random", "real drops aren't that perfectly round", "the interior a bit less reflective"): the blade's
+  ridge 2 to 7 mm wide (was 3 to 12), 0.6 of a lens, sheen 0.08 of the sky (0.35), left lying 0.1 s (0.25): where the
+  blades turned it read as blocks of white foam. Each lens its own (`vary`): 0.3 to all of the sky share and of the
+  crescent (now 0.2 from 0.3), its outline 0.75 to 1 as dark, its highlight shifted. Outlines (`outline`): ragged 0.12
+  to 0.28 (was 0.04 to 0.2; beads 0.15, were round), up to 0.35 longer one way, each its own way. Beads patchy over
+  4 cm (0.25 to 1.5 of their share); rain and snow in gusts, +-0.5 over about 2 s (`GUSTS`). The cabin's reflection
+  in the windscreen at 0.5 (`CABIN_REFLECTED`). The pale shapes high in the GC8's windscreen at Luceram's hairpin are
+  the stage (they stay with the pane and the film off). Cost within noise (GC8 Luceram heavy rain, drawn-only 20.38 to
+  20.41 ms).
 - Beads (ours, 2026-10-26): the film's cells draw the small drops too many to be drops of their own. The film builds to the rain's amount, less with the airflow, and the wipers clear
   the beads with it (drops alone covered 1.3-2.1% after 12 s; more drops cost ~5 ms a step at 100 km/h). Shows with
   additions off too (user-approved); cockpit heavy 13.1 ms before and after.

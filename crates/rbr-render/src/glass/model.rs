@@ -209,6 +209,10 @@ const RAIN_STILL: f32 = 1400.0;
 const RAIN_PER_SPEED: f32 = 50.0;
 const SNOW_STILL: f32 = 25.0;
 const SNOW_PER_SPEED: f32 = 4.0;
+/// The rain and snow come in gusts (ours): their rate is up to [`GUSTS`] more or less, changing over about
+/// [`GUST_TIME`] seconds.
+const GUSTS: f32 = 0.5;
+const GUST_TIME: f32 = 2.0;
 /// A drop sticks until the pull on it is more than this (m/s²) times `(PIN_RADIUS / radius)²` (its edge holds it by
 /// its width, the pull moves its mass): small drops hold, big ones run. Gravity alone runs drops from about 4 mm on a
 /// windscreen laid back 25 degrees, from 2.5 mm on a side window.
@@ -319,11 +323,12 @@ pub const BLADE_MOST: f32 = 60.0;
 const BLADE_MELTS: f32 = 0.01;
 /// The water a blade pushes it leaves where it turns or parks (ours): [`BLADE_LEAVES`] of what it swept (the rest
 /// runs off its ends and over the glass's edge), as up to [`LEFT_MOST`] drops of [`LEFT_RADIUS`] along the blade,
-/// [`LEFT_AHEAD`] metres ahead of it.
-const BLADE_LEAVES: f32 = 0.1;
-const LEFT_MOST: usize = 20;
-const LEFT_RADIUS: [f32; 2] = [0.001, 0.003];
-const LEFT_AHEAD: [f32; 2] = [0.003, 0.016];
+/// mostly small (the cube of a uniform number across the range), [`LEFT_AHEAD`] metres ahead of it, mostly close
+/// (its square): a broken line of beads, not a bank of water.
+const BLADE_LEAVES: f32 = 0.05;
+const LEFT_MOST: usize = 24;
+const LEFT_RADIUS: [f32; 2] = [0.0006, 0.0025];
+const LEFT_AHEAD: [f32; 2] = [0.001, 0.014];
 /// A side window's share of the rain the windscreen takes, and of the tyre spray (ours: it faces neither the rain
 /// the car drives into nor, as squarely, the spray), which lands mostly low on it.
 const SIDE_RAIN: f32 = 0.3;
@@ -523,8 +528,9 @@ impl Glass {
 
     fn spawn(&mut self, dt: f32, c: Conditions, inside: &impl Fn(Vec2) -> bool) {
         let speed = c.speed.max(0.0);
-        let rain = c.rain * (RAIN_STILL + RAIN_PER_SPEED * speed);
-        let snow = c.snow * (SNOW_STILL + SNOW_PER_SPEED * speed);
+        let gust = 1.0 + GUSTS * noise(Vec2::new(self.clock / GUST_TIME, 0.5));
+        let rain = c.rain * (RAIN_STILL + RAIN_PER_SPEED * speed) * gust;
+        let snow = c.snow * (SNOW_STILL + SNOW_PER_SPEED * speed) * gust;
         let bugs = if self.back.is_none() && c.rain <= 0.0 && c.snow <= 0.0 && speed > BUG_SPEEDS[0] {
             BUG_RATE * ((speed - BUG_SPEEDS[0]) / (BUG_SPEEDS[1] - BUG_SPEEDS[0])).min(1.0)
         } else {
@@ -673,7 +679,7 @@ impl Glass {
             let air = AIR * speed2 / (d.radius * 1000.0);
             let outward = ((d.at.x - self.centre_x) / half_width).clamp(-1.0, 1.0);
             let pull = c.gravity + self.back.map_or(Vec2::new(outward * air * AIR_SIDEWAYS, air), |back| back * air);
-            let grip = (GRIP[0] + (GRIP[1] - GRIP[0]) * (d.seed * 13.7).fract()) * (1.0 + PATCHY * patch(d.at));
+            let grip = (GRIP[0] + (GRIP[1] - GRIP[0]) * (d.seed * 13.7).fract()) * (1.0 + PATCHY * noise(d.at / PATCH));
             let pin = PIN * (PIN_RADIUS / d.radius).powi(2) * grip;
             let holding = d.velocity == Vec2::ZERO;
             let beyond = pull.length() - pin * if holding { 1.0 } else { RUNNING_PIN };
@@ -833,10 +839,11 @@ impl Glass {
                 if left <= TOO_SMALL.powi(3) {
                     break;
                 }
-                let radius = (LEFT_RADIUS[0] + (LEFT_RADIUS[1] - LEFT_RADIUS[0]) * self.rng.unit()).min(left.cbrt());
+                let radius =
+                    (LEFT_RADIUS[0] + (LEFT_RADIUS[1] - LEFT_RADIUS[0]) * self.rng.unit().powi(3)).min(left.cbrt());
                 left -= radius.powi(3);
                 let reach = wiper.reach[0] + (wiper.reach[1] - wiper.reach[0]) * self.rng.unit();
-                let gap = LEFT_AHEAD[0] + (LEFT_AHEAD[1] - LEFT_AHEAD[0]) * self.rng.unit();
+                let gap = LEFT_AHEAD[0] + (LEFT_AHEAD[1] - LEFT_AHEAD[0]) * self.rng.unit().powi(2);
                 let at = wiper.pivot + along * reach + ahead * (gap + radius);
                 let seed = self.rng.unit();
                 if inside(at) {
@@ -856,9 +863,8 @@ impl Glass {
     }
 }
 
-/// The glass's grip at `at` over its mean, -1 to 1 ([`PATCHY`]): smooth noise on a [`PATCH`] grid.
-fn patch(at: Vec2) -> f32 {
-    let p = at / PATCH;
+/// Smooth value noise over the unit grid, -1 to 1: the glass's grip ([`PATCHY`]) and the gusts ([`GUSTS`]).
+fn noise(p: Vec2) -> f32 {
     let cell = p.floor();
     let f = p - cell;
     let s = f * f * (Vec2::splat(3.0) - 2.0 * f);
@@ -900,9 +906,23 @@ mod tests {
             g.drops.iter().filter(|d| d.kind != Kind::Trail).count()
         };
         let (still, fast) = (count(0.0), count(25.0));
-        assert!(still > 650 && still < 800, "{still}");
+        // 1.12 square metres for half a second, in its gust, less the drops that ran together.
+        let gust = 1.0 + GUSTS * noise(Vec2::new(0.125 / GUST_TIME, 0.5));
+        let expected = 1.12 * RAIN_STILL * 0.5 * gust;
+        assert!(still as f32 > 0.8 * expected && still as f32 <= expected, "{still} of {expected}");
         assert!(fast * 2 > still * 3, "{fast} vs {still}");
         assert_eq!(count(0.0), still, "deterministic");
+    }
+
+    #[test]
+    fn the_rain_comes_in_gusts() {
+        let gust = |t: f32| 1.0 + GUSTS * noise(Vec2::new(t / GUST_TIME, 0.5));
+        let seconds: Vec<f32> =
+            (0..600).map(|s| (0..10).map(|k| gust(s as f32 + k as f32 * 0.1)).sum::<f32>() / 10.0).collect();
+        let mean = seconds.iter().sum::<f32>() / seconds.len() as f32;
+        assert!((mean - 1.0).abs() < 0.05, "{mean}");
+        assert!(seconds.iter().any(|&g| g < 0.75) && seconds.iter().any(|&g| g > 1.25));
+        assert!(seconds.iter().all(|g| (1.0 - GUSTS..=1.0 + GUSTS).contains(g)));
     }
 
     #[test]
