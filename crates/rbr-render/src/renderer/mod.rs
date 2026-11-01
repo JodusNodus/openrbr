@@ -32,6 +32,7 @@ mod frame;
 mod gpu;
 mod meshes;
 mod mirrors;
+mod motion;
 mod occlusion;
 mod offscreen;
 mod pipelines;
@@ -108,8 +109,6 @@ pub struct Renderer {
     /// ([`Renderer::set_car_body`]).
     cabin_sun: Option<crate::car::cabin::SunIn>,
     car_body: Option<Mat4>,
-    /// The car's turning parts and their turns ([`Renderer::set_car_rooms`]).
-    car_rooms: Vec<(crate::taa::Room, Mat4)>,
     /// The camera is outside the car ([`Renderer::set_outside_view`]).
     outside_view: bool,
     /// The sky gradient, drawn first ([`Atmosphere::zenith`] overhead, the fog colour at the horizon).
@@ -153,6 +152,8 @@ pub struct Renderer {
     post: Post,
     /// `None` unless [`AntiAliasing::Taa`] ([`crate::taa`]).
     taa: Option<crate::taa::Taa>,
+    /// The motion of what moves of itself, for the temporal anti-aliasing (`None` without it).
+    motion: Option<motion::Motion>,
     /// `None` unless [`Enhance::lighting`] ([`crate::light_shafts`]).
     light_shafts: Option<crate::light_shafts::LightShafts>,
     /// `None` unless [`Enhance::particles`].
@@ -711,7 +712,8 @@ impl Renderer {
             crate::light_shafts::LightShafts::new(&device, &post.scene, depth_size, &depth_view, &sun_view, clouds)
         });
         let effects = enhance.particles.then(|| Effects::new(&device, format, &depth_view, &sun_view));
-        let taa = taa.then(|| crate::taa::Taa::new(&device, depth_size, false, &depth_view));
+        let motion = taa.then(|| motion::Motion::new(&device, &shader, &shadow_layout, buffers.len()));
+        let taa = motion.as_ref().map(|m| crate::taa::Taa::new(&device, depth_size, false, &depth_view, m.view()));
         Renderer {
             device,
             queue,
@@ -719,6 +721,7 @@ impl Renderer {
             enhance,
             post,
             taa,
+            motion,
             light_shafts,
             effects,
             sun,
@@ -751,7 +754,6 @@ impl Renderer {
             car_dirt: Default::default(),
             cabin_sun: None,
             car_body: None,
-            car_rooms: Vec::new(),
             outside_view: false,
             screen_reflection,
             skid_marks: None,
@@ -1000,14 +1002,6 @@ impl Renderer {
         }
     }
 
-    /// The box of the car's body parts in its model space ([`Renderer::set_car_vertices`]), `None` without any.
-    fn car_model_box(&self) -> Option<(Vec3, Vec3)> {
-        let boxes = self.meshes.iter().filter_map(|mesh| mesh.in_car);
-        boxes
-            .map(|(centre, half)| (centre - half, centre + half))
-            .reduce(|(l, h), (low, high)| (l.min(low), h.max(high)))
-    }
-
     /// The car body's model space to stage space this frame.
     pub fn set_car_body(&mut self, model_to_stage: Mat4) {
         self.car_body = Some(model_to_stage);
@@ -1016,13 +1010,6 @@ impl Renderer {
                 mesh.bounds = Some(meshes::placed_box(model_to_stage, model));
             }
         }
-    }
-
-    /// The car's turning parts drawn this frame (the steering wheel, the wipers) and their turns in the car's model
-    /// space: the TAA carries what each covers by its turn.
-    pub(crate) fn set_car_rooms(&mut self, rooms: impl IntoIterator<Item = (crate::taa::Room, Mat4)>) {
-        self.car_rooms.clear();
-        self.car_rooms.extend(rooms);
     }
 
     /// How much sun gets into the car's cabin by its direction ([`Enhance::cabin`], `crate::car::cabin::SunIn`), which

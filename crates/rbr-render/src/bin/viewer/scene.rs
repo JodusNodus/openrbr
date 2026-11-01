@@ -334,9 +334,6 @@ fn load_scene<'scope, 'env>(
                         }
                         loaded.set_probe(probe);
                         loaded.add_interior(&stage, &interior, &interior_damage)?;
-                        if let Some(node) = crew.as_ref().and_then(Crew::wheel_node) {
-                            loaded.set_wheel_node(node);
-                        }
                         if args.hide_wheel {
                             let wheel =
                                 car::node_place(data, car_name, "i_steeringwheel").map_err(|e| e.to_string())?;

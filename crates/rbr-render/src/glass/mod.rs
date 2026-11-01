@@ -24,7 +24,7 @@ pub mod model;
 
 use std::collections::BTreeMap;
 
-use glam::{Mat3, Mat4, Quat, Vec2, Vec3};
+use glam::{Mat3, Mat4, Vec2, Vec3};
 use rbr_formats::data::Data;
 use rbr_formats::sgc;
 
@@ -275,15 +275,6 @@ impl Windscreen {
         }
         let [_, b, c] = (normal.inverse() * sums).to_array();
         (self.axes[2] - self.axes[0] * b - self.axes[1] * c).normalize()
-    }
-
-    /// The frame `wiper` turns in, model space: its pivot on the glass at the origin, its [`Windscreen::turning_axis`]
-    /// along `z`.
-    pub fn wiper_node(&self, wiper: &Wiper) -> Mat4 {
-        Mat4::from_rotation_translation(
-            Quat::from_rotation_arc(Vec3::Z, self.turning_axis(wiper)),
-            self.point(wiper.pivot, 0.0),
-        )
     }
 }
 
@@ -602,7 +593,7 @@ impl Drawn {
     /// The glass of car `name` in `precipitation`, with the wiper meshes found among `playback`'s interior parts and
     /// what its windows' faces let through, `tints`, its mud specks as `mud`. `None` (reported on stderr) when the car
     /// has no windscreen part.
-    /// The wipers start at `switch`; `playback` turns their meshes ([`Playback::set_turning`]).
+    /// The wipers start at `switch`.
     pub fn load(
         data: &Data,
         name: &str,
@@ -634,14 +625,6 @@ impl Drawn {
             .flat_map(|(_, wipers)| wipers)
             .map(|(_, centre)| playback.parts_at(*centre, false))
             .collect();
-        let nodes = |w: &Windscreen, wipers: &[(Wiper, Vec3)], parts: &[Vec<usize>]| {
-            wipers.iter().zip(parts).map(|((wiper, _), parts)| (parts.clone(), w.wiper_node(wiper))).collect::<Vec<_>>()
-        };
-        let mut turning = nodes(&car.windscreen, &car.wipers, &parts);
-        if let Some((outside, wipers)) = &car.exterior {
-            turning.extend(nodes(outside, wipers, &exterior_parts));
-        }
-        playback.set_turning(&turning);
         let wiping = switch.wiping(falling(precipitation), amounts(precipitation).1, 0);
         eprintln!(
             "glass: windscreen {:.2} m², {} side windows, {} wipers ({} meshes, {} outside), {:?}, wipers {} ({:?})",
