@@ -1,4 +1,4 @@
-// x87 results of this CPU (the test machine) for harness/replay.py, which uses them in place of the
+// x87 results of this CPU for harness/replay.py, which uses them in place of the
 // emulator's transcendentals, and harness/replay-fpu.py (the emulator check): reads 24-byte
 // cases { u8 op, u8 0, u16 control word, f80 a, f80 b } from stdin and writes
 // { f80 r0, f80 r1, u16 status word after the op } for:

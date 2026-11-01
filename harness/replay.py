@@ -11,17 +11,22 @@ Usage: .venv/bin/python -I harness/replay.py SNAPSHOT [--check AFTER_SNAPSHOT RE
   Bytes that depend on the stubbed Windows calls (timers, their stack garbage) and the stack
   below the call are left out of every comparison.
 
-Needs unicorn and numpy in the worktree's .venv; ssh to the test machine (RBR_REMOTE_HOST, RBR_REMOTE) for new x87 results.
+Needs unicorn and numpy in the worktree's .venv; new x87 results come from this machine's CPU (harness/replay-fpu.c,
+compiled at first use).
 """
 import argparse
 import bisect
 import ctypes
 import mmap
 import os
+import platform
 import struct
 import subprocess
 import sys
 import time
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import dev_env  # noqa: E402  (dev.env: RBR_DATA, the harness folders)
 
 from unicorn import (Uc, UcError, UC_ARCH_X86, UC_MODE_32, UC_PROT_ALL, UC_PROT_READ, UC_PROT_EXEC, UC_HOOK_MEM_WRITE,
                      UC_HOOK_BLOCK, UC_HOOK_MEM_UNMAPPED, UC_HOOK_MEM_PROT, UC_HOOK_INTR, UC_HOOK_CODE)
@@ -135,15 +140,15 @@ class Snapshot:
 
 # Hardware results for the x87 ops the emulator gets wrong (it computes transcendentals through
 # host doubles: 53 of 64 mantissa bits; fscale at 24-bit precision is rounded; harness/replay-fpu.py
-# measures it). They come from the CPU the references ran on: harness/replay-fpu.c on the test machine
-# over ssh, keyed by (op, control word, st0, st1) and cached in build/replay-fpu-cache.bin.
+# measures it). They come from this machine's CPU: harness/replay-fpu.c, compiled into build/replay-fpu/
+# at first use, keyed by (op, control word, st0, st1) and cached in build/replay-fpu-cache.bin.
 FPU_OPS = {0xFE: (5, 0), 0xFF: (6, 0), 0xFB: (7, 1), 0xF2: (8, 1), 0xF3: (9, -1), 0xF1: (10, -1), 0xF0: (11, 0),
            0xFD: (12, 0), 0xF8: (14, 0), 0xF5: None, 0xF9: None, 0xFC: None}  # op -> (replay-fpu.c case, stack change)
 FPU_UNARY = {0xFE, 0xFF, 0xFB, 0xF2, 0xF0}  # st1 is no input
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FPU_CACHE = os.environ.get("RBR_REPLAY_FPU_CACHE", os.path.join(REPO, "build", "replay-fpu-cache.bin"))
-REMOTE = os.environ.get("RBR_REMOTE")  # a work dir on the test machine (scripts/remote-setup.sh); for new x87 cases
-REMOTE_HOST = os.environ.get("RBR_REMOTE_HOST")  # the test machine's ssh host; "" when the replay runs on it
+FPU_SRC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "replay-fpu.c")
+FPU_EXE = os.path.join(REPO, "build", "replay-fpu", "replay-fpu")  # compiled at first use; needs an x86_64 CPU
 
 
 def original_text():
@@ -172,25 +177,19 @@ class FpuOracle:
                 self.known[d[k:k + 24]] = d[k + 24:k + 46]
 
     def fetch(self, keys):
-        """Runs the cases natively on the test machine and caches the results."""
+        """Runs the cases natively on this machine and caches the results."""
         keys = sorted(set(keys) - set(self.known))
         if not keys:
             return
-        if not REMOTE or REMOTE_HOST is None:
-            sys.exit("replay.py: set RBR_REMOTE_HOST to the test machine's ssh host and RBR_REMOTE to a work dir there "
-                     "(scripts/remote-setup.sh <dir>); the x87 oracle compiles replay-fpu.c there")
-        src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "replay-fpu.c")
-        if REMOTE_HOST:
-            subprocess.run(["scp", "-q", src, "%s:%s/replay-fpu.c" % (REMOTE_HOST, REMOTE)], check=True)
-            where = REMOTE
-        else:  # on the test machine: REMOTE is under the home directory, as over ssh
-            where = os.path.join(os.path.expanduser("~"), REMOTE)
-            subprocess.run(["cp", src, os.path.join(where, "replay-fpu.c")], check=True)
-        run = "cd %s && gcc -O1 -o replay-fpu replay-fpu.c && ./replay-fpu" % where
-        cmd = ["ssh", REMOTE_HOST, run] if REMOTE_HOST else ["sh", "-c", run]
-        out = subprocess.run(cmd, input=b"".join(keys), capture_output=True, check=True).stdout
+        if platform.machine() not in ("x86_64", "AMD64"):
+            sys.exit("replay.py: the x87 oracle runs on this machine's CPU, which is not x86_64 (%s); "
+                     "no new x87 results can be computed" % platform.machine())
+        if not os.path.exists(FPU_EXE) or os.path.getmtime(FPU_SRC) > os.path.getmtime(FPU_EXE):
+            os.makedirs(os.path.dirname(FPU_EXE), exist_ok=True)
+            subprocess.run(["gcc", "-O1", "-o", FPU_EXE, FPU_SRC], check=True)
+        out = subprocess.run([FPU_EXE], input=b"".join(keys), capture_output=True, check=True).stdout
         if len(out) != 22 * len(keys):
-            raise RuntimeError("replay-fpu on the test machine returned %d bytes for %d cases" % (len(out), len(keys)))
+            raise RuntimeError("replay-fpu returned %d bytes for %d cases" % (len(out), len(keys)))
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
         with open(self.path, "ab") as f:
             for i, k in enumerate(keys):

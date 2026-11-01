@@ -1,14 +1,15 @@
-"""Dump the exe image and NGP.dll's image from the running NGP test game (run on the test machine by scripts/ngp-run.sh;
+"""Dump the exe image and NGP.dll's image from the running NGP game (started by scripts/ngp-run.sh;
 rbr-recomp's scripts/ngp-memdiff.py reads them).
 
-Usage (on the test machine, the game running in the Wine prefix ~/PREFIX): python3 -I ngp-dump.py OUT_DIR PREFIX
+Usage: python3 -I ngp-dump.py OUT_DIR PREFIX
 Writes OUT_DIR/exe.bin (0x400000..0x7ec000) and OUT_DIR/ngp.bin, and prints NGP.dll's load address.
+PREFIX is the Wine prefix the game runs in (WINEPREFIX=PREFIX/pfx/).
 """
 import glob, os, sys
 
 
 def game_pid():
-    want = "WINEPREFIX=" + os.path.join(os.path.expanduser("~"), sys.argv[2], "pfx/")
+    want = "WINEPREFIX=" + os.path.join(sys.argv[2], "pfx/")
     for d in glob.glob("/proc/[0-9]*"):
         try:
             env = open(d + "/environ", "rb").read().decode(errors="replace").split("\0")

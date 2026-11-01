@@ -17,6 +17,7 @@
 # Usage: scripts/rust-check.sh
 set -uo pipefail
 cd "$(dirname "$0")/.."
+source scripts/dev-env.sh
 fail=0
 
 store=${RBR_VECTOR_STORE:-}

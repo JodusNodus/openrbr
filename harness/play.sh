@@ -1,27 +1,27 @@
 #!/bin/bash
-# Unattended playback run on the vanilla 1.02 test install on the test machine (RBR_REMOTE_HOST): slot 0 is
-# ~/$RBR_REMOTE_GAME (Wine prefix ~/$RBR_REMOTE_PREFIX, Proton $RBR_REMOTE_PROTON), slot N > 0 is
-# ~/$RBR_REMOTE_GAME-sN (prefix ~/$RBR_REMOTE_PREFIX-sN; made by harness/slots.sh). Paths relative to the remote home.
+# Unattended playback run on the vanilla 1.02 install (RBR_GAME): slot 0 is
+# $RBR_GAME (Wine prefix $RBR_PREFIX, Proton $RBR_PROTON), slot N > 0 is
+# $RBR_GAME-sN (prefix $RBR_PREFIX-sN; made by harness/slots.sh).
 # Usage: [RBR_DRIVE=<name>] [RBR_WRITEWATCH=1] harness/play.sh <name>
 #   Plays the drive's controls back (RBR_DRIVE, default tanner-corolla: the plugin starts
 #   the stage from the drive's auto-start file and quits when the controls run out),
-#   and keeps the recording as ~/rbr-harness-runs/<name>.bin on the test machine, with the
+#   and keeps the recording as $RBR_RUNS/<name>.bin, with the
 #   plugin's log next to it (<name>.harness.log).
-#   The drive's files live in ~/rbr-harness-runs (harness/record.sh, harness/v1-drive.sh):
+#   The drive's files live in $RBR_RUNS (harness/record.sh, harness/v1-drive.sh):
 #   drive-<drive>.playback.bin and drive-<drive>.auto are copied into the slot's
 #   RBRRecompPlayback.bin / RBRRecompAuto.txt when they differ.
 #   The plugin's transplant, shadow, count and capture runs and load-time dumps take a
 #   transplant file built from the C++ reconstruction: run them from an rbr-recomp checkout.
-#   Runs take the first free slot (RBR_SLOTS, default 4; one lock per slot on this machine)
+#   Runs take the first free slot (RBR_SLOTS, default 4; one lock per slot)
 #   and wait while all are busy, so up to RBR_SLOTS games run at once.
-#   Each run installs its plugin into the slot first: RBR_HARNESS_PLUGIN=<path on the test machine>, or
-#   ~/rbr-harness-plugin/RBRRecompHarness.dll (harness/plugin/build.sh --install).
+#   Each run installs its plugin into the slot first: $RBR_HARNESS_PLUGIN
+#   (harness/plugin/build.sh --install).
 #   RBR_PEEK=<local file> copies a probe list into the slot and saves the plugin's
-#   RBRRecompPeek-<tick>.bin as ~/rbr-harness-runs/<name>.peek.bin.
+#   RBRRecompPeek-<tick>.bin as $RBR_RUNS/<name>.peek.bin.
 #   RBR_SNAPSHOT="40 572" lists steps to snapshot (RBRRecompSnapshot.txt): before the step call
 #   starting at each listed step and the call after it the plugin dumps the process
 #   (harness/replay.py), and again right after a listed step's call; kept as
-#   ~/rbr-harness-runs/<name>.snap-<step>.bin and <name>.snap-<step>-after.bin.
+#   $RBR_RUNS/<name>.snap-<step>.bin and <name>.snap-<step>-after.bin.
 #   RBR_WRITEWATCH=1 arms one-word write watches for 0x01660b74/0x01660b80 and logs the marker-tick reads through frame 5000.
 #   RBR_WATCHLIST=<local file> (with RBR_WRITEWATCH=1) replaces those watches: the file lists up to 4 hex word addresses
 #   (one per line) and optionally "steps N" to quit at step N; each hit logs whether it came inside StepForward.
@@ -35,22 +35,24 @@
 #   refused sounds (RBRRecompPops.txt; rbr-recomp notes/sound.md 2.5).
 #   RBR_FPS=N caps the game at N frames a second (RBRRecompFps.txt), as the retrace wait does on a display.
 #   RBR_ALLOCLOG=1 logs the exe's heap calls (RBRRecompAllocLog.on, see the plugin), kept as
-#   ~/rbr-harness-runs/<name>.allocs.bin (rbr-recomp's harness/allocs.py reads it).
+#   $RBR_RUNS/<name>.allocs.bin (rbr-recomp's harness/allocs.py reads it).
 #   A game still running after RBR_TIMEOUT seconds (default 600) counts as hung and is killed.
 set -euo pipefail
-host=${RBR_REMOTE_HOST:?set RBR_REMOTE_HOST to the ssh host of the test machine (notes/verification.md)}
-game=${RBR_REMOTE_GAME:?set RBR_REMOTE_GAME to the vanilla 1.02 test install on the test machine (notes/verification.md)}
-wineprefix=${RBR_REMOTE_PREFIX:?set RBR_REMOTE_PREFIX to the Wine prefix of the test install (notes/verification.md)}
-proton=${RBR_REMOTE_PROTON:?set RBR_REMOTE_PROTON to the Proton build umu-run uses on the test machine (notes/verification.md)}
+source "$(dirname "${BASH_SOURCE[0]}")/../scripts/dev-env.sh"
+game=${RBR_GAME:?set RBR_GAME to the vanilla 1.02 install (notes/verification.md)}
+wineprefix=${RBR_PREFIX:?set RBR_PREFIX to the Wine prefix of the install (notes/verification.md)}
+proton=${RBR_PROTON:-}
+plugin=${RBR_HARNESS_PLUGIN:?set RBR_HARNESS_PLUGIN to the harness plugin (harness/plugin/build.sh --install)}
+runs=${RBR_RUNS:?set RBR_RUNS to the harness runs directory (notes/verification.md)}
 if [ -n "${RBR_PEEK:-}" ] && [ ! -f "$RBR_PEEK" ]; then
   echo "RBR_PEEK file not found: $RBR_PEEK" >&2; exit 1
 fi
 if [ -z "${RBR_SLOT:-}" ]; then
-  # lockf -t 0 exits 75 when the slot is busy; anything else is the run's own status.
+  # flock -n exits 75 when the slot is busy; anything else is the run's own status.
   until [ $SECONDS -gt 7200 ]; do
     for ((i = 0; i < ${RBR_SLOTS:-4}; i++)); do
       lock=/tmp/rbr-harness.lock; [ $i = 0 ] || lock=/tmp/rbr-harness-s$i.lock
-      rc=0; RBR_SLOT=$i lockf -t 0 "$lock" "$0" "$@" || rc=$?
+      rc=0; RBR_SLOT=$i flock -n -E 75 "$lock" "$0" "$@" || rc=$?
       [ $rc = 75 ] || exit $rc
     done
     sleep 3
@@ -78,123 +80,107 @@ watchlist=${RBR_WATCHLIST:-}
 # children, a zombie game whose threads live on). Matched by the WINEPREFIX Proton sets
 # for it, read through any live thread; never another prefix's, nor RSF_Launcher.
 kill_vanilla() {
-ssh -o BatchMode=yes "$host" bash -s -- "$prefix" <<'EOF'
-want=WINEPREFIX=$HOME/$1/pfx/
-pids() {
-  for d in /proc/[0-9]*; do
-    cat "$d"/task/*/environ 2>/dev/null | tr '\0' '\n' | grep -qxF "$want" || continue
-    cat "$d"/task/*/cmdline 2>/dev/null | tr '\0' ' ' | grep -q RSF_Launcher && continue
-    echo "${d#/proc/}"
-  done
-}
-p=$(pids)
-[ -z "$p" ] && exit 0
-echo "killing leftover processes of $1:" $p >&2
-kill $p 2>/dev/null || true
-sleep 3
-p=$(pids)
-[ -z "$p" ] || kill -9 $p 2>/dev/null || true
-EOF
+  local want="WINEPREFIX=$prefix/pfx/" p d
+  pids() {
+    for d in /proc/[0-9]*; do
+      cat "$d"/task/*/environ 2>/dev/null | tr '\0' '\n' | grep -qxF "$want" || continue
+      cat "$d"/task/*/cmdline 2>/dev/null | tr '\0' ' ' | grep -q RSF_Launcher && continue
+      echo "${d#/proc/}"
+    done
+  }
+  p=$(pids)
+  [ -z "$p" ] && return 0
+  echo "killing leftover processes of the slot:" $p >&2
+  kill $p 2>/dev/null || true
+  sleep 3
+  p=$(pids)
+  [ -z "$p" ] || kill -9 $p 2>/dev/null || true
 }
 
 kill_vanilla
-ssh -o BatchMode=yes "$host" bash -s -- "$game_dir" "$drive" "${RBR_ALLOCLOG:-0}" "$snaparg" "$writewatch" <<'EOF'
-set -euo pipefail
-mkdir -p ~/rbr-harness-runs && cd ~/"$1"
-drive=${2:-tanner-corolla}
-pb=~/rbr-harness-runs/drive-$drive.playback.bin; au=~/rbr-harness-runs/drive-$drive.auto
-[ -f "$pb" ] && [ -f "$au" ] || { echo "no drive-$drive.playback.bin/auto in ~/rbr-harness-runs" >&2; exit 1; }
-cmp -s "$pb" RBRRecompPlayback.bin || cp "$pb" RBRRecompPlayback.bin
-cmp -s "$au" RBRRecompAuto.txt || cp "$au" RBRRecompAuto.txt
+mkdir -p "$runs" && cd "$game_dir"
+drive_pb=$runs/drive-$drive.playback.bin; drive_au=$runs/drive-$drive.auto
+[ -f "$drive_pb" ] && [ -f "$drive_au" ] || { echo "no drive-$drive.playback.bin/auto in $runs" >&2; exit 1; }
+cmp -s "$drive_pb" RBRRecompPlayback.bin || cp "$drive_pb" RBRRecompPlayback.bin
+cmp -s "$drive_au" RBRRecompAuto.txt || cp "$drive_au" RBRRecompAuto.txt
 # Recordings are ~195 MB per full run: drop those older than 6 h (user, 2026-10-14). The
 # references (ref*, drive-*: the recorded drives), step-replay snapshots and every log stay.
-if [ "$5" != 1 ]; then
-  find ~/rbr-harness-runs -maxdepth 1 -type f -name '*.bin' -mmin +360 ! -name 'ref*' ! -name 'drive-*' \
+if [ "$writewatch" != 1 ]; then
+  find "$runs" -maxdepth 1 -type f -name '*.bin' -mmin +360 ! -name 'ref*' ! -name 'drive-*' \
     ! -name 'y24-drive-meta.bin' ! -name '*.snap-*' -delete
 fi
 test -f RBRRecompPlayback.bin && test -f RBRRecompAuto.txt
-! pgrep -f "[${1:0:1}]${1:1}/RichardBurnsRally_SSE.exe" >/dev/null
+! pgrep -f "[${game_dir:0:1}]${game_dir:1}/RichardBurnsRally_SSE.exe" >/dev/null
 rm -f RBRRecompTransplant.bin RBRRecompRecord-*.bin RBRRecompHarness.log RBRRecompCalls.log RBRRecompShadow.log RBRRecompShadow.on \
   RBRRecompCount.on RBRRecompTrace.on RBRRecompTrace-*.bin RBRRecompPeek.txt RBRRecompPeek-*.bin RBRRecompEarlyStop.txt \
   RBRRecompSnapshot.txt RBRRecompSnap-*.bin RBRRecompSnapAt.txt RBRRecompSnapAt-*.bin RBRRecompAllocLog.on \
   RBRRecompAllocs.bin RBRRecompWriteWatch.on RBRRecompFastForward.txt RBRRecompCamera.txt RBRRecompVolumes.txt \
   RBRRecompPops.txt RBRRecompFps.txt
 touch RBRRecompRecord.on
-if [ "$3" = 1 ]; then touch RBRRecompAllocLog.on; fi
-if [ "$5" = 1 ]; then touch RBRRecompWriteWatch.on; fi
-snap=${4:-}
-[ "$snap" = - ] && snap=
-if [ -n "$snap" ]; then echo "${snap//,/ }" > RBRRecompSnapshot.txt; fi
-EOF
-if [ -n "$peek" ]; then scp -q "$peek" "$host:$game_dir/RBRRecompPeek.txt"; fi
+if [ "${RBR_ALLOCLOG:-0}" = 1 ]; then touch RBRRecompAllocLog.on; fi
+if [ "$writewatch" = 1 ]; then touch RBRRecompWriteWatch.on; fi
+if [ "$snaparg" != - ]; then echo "${snaparg//,/ }" > RBRRecompSnapshot.txt; fi
+if [ -n "$peek" ]; then cp "$peek" "$game_dir/RBRRecompPeek.txt"; fi
 if [ -n "${RBR_FASTFORWARD:-}" ]; then
   [[ "$RBR_FASTFORWARD" =~ ^[0-9]+$ ]] || { echo "bad RBR_FASTFORWARD" >&2; exit 1; }
-  echo "$RBR_FASTFORWARD" | ssh -o BatchMode=yes "$host" "cat > $game_dir/RBRRecompFastForward.txt"
+  echo "$RBR_FASTFORWARD" > "$game_dir/RBRRecompFastForward.txt"
 fi
 if [ -n "${RBR_CAMERA:-}" ]; then
   [[ "$RBR_CAMERA" =~ ^[1345]$ ]] || { echo "bad RBR_CAMERA" >&2; exit 1; }
-  echo "$RBR_CAMERA" | ssh -o BatchMode=yes "$host" "cat > $game_dir/RBRRecompCamera.txt"
+  echo "$RBR_CAMERA" > "$game_dir/RBRRecompCamera.txt"
 fi
 if [ -n "${RBR_VOLUMES:-}" ]; then
   [[ "$RBR_VOLUMES" =~ ^([0-9.]+|-)( ([0-9.]+|-)){5}$ ]] || { echo "bad RBR_VOLUMES" >&2; exit 1; }
-  echo "$RBR_VOLUMES" | ssh -o BatchMode=yes "$host" "cat > $game_dir/RBRRecompVolumes.txt"
+  echo "$RBR_VOLUMES" > "$game_dir/RBRRecompVolumes.txt"
 fi
 if [ -n "${RBR_FPS:-}" ]; then
   [[ "$RBR_FPS" =~ ^[0-9]+$ ]] || { echo "bad RBR_FPS" >&2; exit 1; }
-  echo "$RBR_FPS" | ssh -o BatchMode=yes "$host" "cat > $game_dir/RBRRecompFps.txt"
+  echo "$RBR_FPS" > "$game_dir/RBRRecompFps.txt"
 fi
-if [ "${RBR_POPS:-}" = 1 ]; then ssh -o BatchMode=yes "$host" "touch $game_dir/RBRRecompPops.txt"; fi
-if [ -n "$watchlist" ]; then scp -q "$watchlist" "$host:$game_dir/RBRRecompWriteWatch.on"; fi
-# Every run installs its plugin (no run inherits another run's build): RBR_HARNESS_PLUGIN, or
-# the current one in ~/rbr-harness-plugin (harness/plugin/build.sh --install).
-ssh -o BatchMode=yes "$host" cp "${RBR_HARNESS_PLUGIN:-rbr-harness-plugin/RBRRecompHarness.dll}" "$game_dir/Plugins/RBRRecompHarness.dll"
-ssh -o BatchMode=yes "$host" bash -s -- "$name" "${RBR_TIMEOUT:-600}" "$game_dir" "$prefix" "$proton" <<'EOF'
-set -euo pipefail
-cd ~/"$3"
+if [ "${RBR_POPS:-}" = 1 ]; then touch "$game_dir/RBRRecompPops.txt"; fi
+if [ -n "$watchlist" ]; then cp "$watchlist" "$game_dir/RBRRecompWriteWatch.on"; fi
+# Every run installs its plugin (no run inherits another run's build)
+cp "$plugin" "$game_dir/Plugins/RBRRecompHarness.dll"
 # as ~/.local/bin/rbr-vanilla, with this slot's game folder and prefix
-(export WINEPREFIX=$HOME/$4 PROTONPATH=$5 \
-   GAMEID=umu-${4##*/} WINEDLLOVERRIDES="mfc70,mfc71,msvci70,msvcp70,msvcp71,msvcr70,msvcr71=n" \
+rbr_timeout=${RBR_TIMEOUT:-600}
+(export WINEPREFIX=$prefix ${proton:+PROTONPATH=$proton} \
+   GAMEID=umu-${prefix##*/} WINEDLLOVERRIDES="mfc70,mfc71,msvci70,msvcp70,msvcp71,msvcr70,msvcr71=n" \
    WAYLAND_DISPLAY=wayland-1 DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/$(id -u)
- setsid umu-run ./RichardBurnsRally_SSE.exe >/tmp/rbr-vanilla-run-${4##*/}.log 2>&1 &)
-game="[${3:0:1}]${3:1}/RichardBurnsRally_SSE.exe"
+ setsid umu-run ./RichardBurnsRally_SSE.exe >/tmp/rbr-vanilla-run-${prefix##*/}.log 2>&1 &)
+game_pat="[${game_dir:0:1}]${game_dir:1}/RichardBurnsRally_SSE.exe"
 # the launcher may update its runtime first
-timeout 300 bash -c "until pgrep -f '$game' >/dev/null; do sleep 2; done" || echo "the game did not start" >&2
-timeout "$2" bash -c "while pgrep -f '$game' >/dev/null; do sleep 5; done" || echo "the game did not quit in $2 s (hung); killed" >&2
-EOF
+timeout 300 bash -c "until pgrep -f '$game_pat' >/dev/null; do sleep 2; done" || echo "the game did not start" >&2
+timeout "$rbr_timeout" bash -c "while pgrep -f '$game_pat' >/dev/null; do sleep 5; done" || echo "the game did not quit in $rbr_timeout s (hung); killed" >&2
 kill_vanilla
-ssh -o BatchMode=yes "$host" bash -s -- "$name" "$game_dir" "$([ -n "$peek" ] && echo 1 || echo 0)" <<'EOF'
-set -euo pipefail
-cd ~/"$2"
-cat RBRRecompHarness.log 2>/dev/null || true
+has_peek=0; [ -n "$peek" ] && has_peek=1
 for log in Harness Calls Shadow; do
-  if [ -f RBRRecomp$log.log ]; then cp RBRRecomp$log.log ~/rbr-harness-runs/"$1".${log,,}.log; fi
+  if [ -f RBRRecomp$log.log ]; then cp RBRRecomp$log.log "$runs/$name".${log,,}.log; fi
 done
 rm -f RBRRecompTransplant.bin
 rec=$(ls -t RBRRecompRecord-*.bin 2>/dev/null | head -1)
 [ -n "$rec" ] || { echo "no recording" >&2; exit 1; }
-mv "$rec" ~/rbr-harness-runs/"$1".bin
-if [ "$3" = 1 ]; then
-  peek=$(ls -t RBRRecompPeek-*.bin 2>/dev/null | head -1)
-  [ -n "$peek" ] || { echo "no peek output" >&2; exit 1; }
-  mv "$peek" ~/rbr-harness-runs/"$1".peek.bin
+mv "$rec" "$runs/$name.bin"
+if [ "$has_peek" = 1 ]; then
+  peekout=$(ls -t RBRRecompPeek-*.bin 2>/dev/null | head -1)
+  [ -n "$peekout" ] || { echo "no peek output" >&2; exit 1; }
+  mv "$peekout" "$runs/$name.peek.bin"
 else
-  rm -f ~/rbr-harness-runs/"$1".peek.bin
+  rm -f "$runs/$name.peek.bin"
 fi
 rm -f RBRRecompPeek.txt RBRRecompPeek-*.bin RBRRecompFastForward.txt RBRRecompCamera.txt RBRRecompVolumes.txt \
   RBRRecompPops.txt RBRRecompFps.txt
 rm -f RBRRecompWriteWatch.on
 for f in RBRRecompSnap-*.bin; do
   [ -e "$f" ] || continue
-  step=${f#RBRRecompSnap-}; mv "$f" ~/rbr-harness-runs/"$1".snap-${step%.bin}.bin
-  ls -la ~/rbr-harness-runs/"$1".snap-${step%.bin}.bin
+  step=${f#RBRRecompSnap-}; mv "$f" "$runs/$name.snap-${step%.bin}.bin"
+  ls -la "$runs/$name.snap-${step%.bin}.bin"
 done
 rm -f RBRRecompSnapshot.txt
 if [ -f RBRRecompAllocs.bin ]; then
-  mv RBRRecompAllocs.bin ~/rbr-harness-runs/"$1".allocs.bin
-  ls -la ~/rbr-harness-runs/"$1".allocs.bin
+  mv RBRRecompAllocs.bin "$runs/$name.allocs.bin"
+  ls -la "$runs/$name.allocs.bin"
 fi
 rm -f RBRRecompAllocLog.on
-echo "slot: $2"
-ls -la ~/rbr-harness-runs/"$1".bin
-if [ "$3" = 1 ]; then ls -la ~/rbr-harness-runs/"$1".peek.bin; fi
-EOF
+echo "slot: $game_dir"
+ls -la "$runs/$name.bin"
+if [ "$has_peek" = 1 ]; then ls -la "$runs/$name.peek.bin"; fi

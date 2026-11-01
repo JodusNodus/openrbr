@@ -7,6 +7,7 @@
 #   one subdir per module.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+source scripts/dev-env.sh
 store=${RBR_VECTOR_STORE:?set RBR_VECTOR_STORE to the vector store (docs/development.md "Set up")}
 only=" $* "
 fail=0

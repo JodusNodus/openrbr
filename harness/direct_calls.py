@@ -10,7 +10,7 @@ format, so a test replays them like a step's records.
     python3 -I harness/direct_calls.py SNAPSHOT OUT.txt --set SET [--addr 0xADDR]... [--this HEX] [--count N] [--seed S]
 
 --addr defaults to every function of the set with a "direct_fuzz" recipe. --this is needed for the others. Needs the
-worktree's .venv (unicorn, numpy) and RBR_REMOTE (the x87 oracle, see notes/verification.md).
+worktree's .venv (unicorn, numpy); new x87 results come from this machine's CPU (replay.py's oracle).
 """
 
 import argparse
