@@ -538,7 +538,7 @@ mod tests {
         }
     }
 
-    // ReadTransform's quaternion on the reference CPU (the test machine's i9-10980HK: x87 at
+    // ReadTransform's quaternion on the reference CPU (i9-10980HK: x87 at
     // 24-bit precision control): angle and axis, then the quaternion, as bits. Six angles each up to 3.2, 7, 100 and
     // 30000 (24 of rt.c's 64 cases; all 64 are equal).
     const READ_TRANSFORM: &[(u32, [u32; 3], [u32; 4])] = &[
