@@ -582,7 +582,10 @@ not ported.
   stage's dust colour against the neutral dust, as the car's dirt does (snow specks keep theirs); radius 1 to 5 mm
   (was 2 to 7), twice as many a unit of spray, the auto wipers at 600; each a ragged blot thinning to its edge with up
   to 4 fine droplets thrown up the glass around it. Seen from inside, a speck behind a sun strip or printed band is
-  hidden (what the glass lets through there, from 0.1 to 0.4).
+  hidden (what the glass lets through there, from 0.1 to 0.4; the printed bands of the Yaris, Fiesta and i20 hide them
+  on damp Sipirkakim). By the stage's wetness (`glass::Mud`): the tint goes from the drying mud to the car's wet dirt
+  colour, the size from 0.7 of the radius dry to 1.2 wet, and seen from inside wet mud lets 0.4 of the light through
+  (`MUD_WET_THROUGH`). Dry tarmac and snow shots byte-identical.
 - Water redone (ours, 2026-10-31; `lens`, `film_cell`, `ribbon` in `glass.wgsl`; `flow`, `merge` in `model.rs`): a drop, bead or
   ribbon is clear water, not a white cap: it lays 0.85 (0.55 for a ribbon's weight) of a lens over what is drawn behind it
   (replacing the pixel left drops darker than the hazy glass), the frame seen mirrored through its centre 5x its offset,

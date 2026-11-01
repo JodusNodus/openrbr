@@ -66,6 +66,15 @@ impl Weather {
         }
     }
 
+    /// How wet the stage is: 0 dry, 0.5 damp, 1 wet (ours).
+    pub fn wetness(self) -> f32 {
+        match self {
+            Weather::Dry => 0.0,
+            Weather::Damp => 0.5,
+            Weather::Wet => 1.0,
+        }
+    }
+
     /// Parses `dry`, `damp` or `wet` (any case).
     pub fn parse(text: &str) -> Option<Weather> {
         Weather::ALL.into_iter().find(|w| w.as_str().eq_ignore_ascii_case(text))

@@ -701,13 +701,15 @@ fn splat(in: Out, per_pixel: mat2x2<f32>) -> vec2<f32> {
 // speck's), and the outside behind it through the mud, filtered by its hue to the power 1.5: `MUD_THROUGH.x` through
 // the thick core, `MUD_THROUGH.y` through the thin rim (`rim` 0 at the centre to 1 at the ragged edge). So a speck is a
 // dark silhouette that glows warm at its edge against the sunlit road or the sky, as backlit mud does, and stays dark
-// against the dark trees.
+// against the dark trees. Wet mud (`frame.outside.z`, the stage's wetness) lets `MUD_WET_THROUGH` of that through.
 const MUD_THROUGH: vec2<f32> = vec2<f32>(0.03, 0.45);
+const MUD_WET_THROUGH: f32 = 0.4;
 
 fn mud_inside(in: Out, rim: f32, soft: f32) -> vec4<f32> {
     let hue = in.color.rgb / max(max(in.color.r, max(in.color.g, in.color.b)), 1e-3);
     let behind = textureSampleLevel(scene, scene_sampler, in.position.xy * frame.screen.zw, 0.0).rgb;
-    let through = behind * hue * sqrt(hue) * mix(MUD_THROUGH.x, MUD_THROUGH.y, smoothstep(0.3, 1.0, rim));
+    let through = behind * hue * sqrt(hue) * mix(MUD_THROUGH.x, MUD_THROUGH.y, smoothstep(0.3, 1.0, rim))
+        * mix(1.0, MUD_WET_THROUGH, frame.outside.z);
     var face = linear(in.color.rgb * frame.light.rgb);
     if (frame.night.w != 0.0) {
         face += in.color.rgb * (night_light(in.centre.xy) * 0.8 + linear(frame.night.rgb) * 0.6);
