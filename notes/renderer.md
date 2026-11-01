@@ -549,6 +549,16 @@ splash never shows on a wet stage.
 - No spray in the cabin (2026-11-01, `fs_soft`): in the in-car views the soft particles fade inside the cabin reach
   (2 to 2.5 m from the eye) as the rain does; the wheels' spray showed through the GC8's footwell gaps (52 rain
   cockpit `--at 4500` now matches `--no-particles` there). Rain chase byte-identical.
+- Dust colour from the stage's road (2026-11-01, `wheel_spray::dust::of_stage`; was a colour by the `PS_*.ini`
+  region name, ours, neutral grey on 29 of 52 readable RSF variants and all MontBlanc and Arctic ones): the
+  area-weighted linear mean of the drawn ground (textures, texture 1's blend, vertex tint) within 3 m of the driveline
+  on gravel, dirt or rough collision, green triangles left out (RSF verges marked loose under grass); luma kept within
+  0.55-0.75 (RSF 417's and 176's O textures carry their light, a third darker than M; wet textures half), no bluer
+  than red (Gabiria's blue-grey verges); neutral under 5% loose road (tarmac, snow). Also tints the car's dirt.
+  Retail measures pale cream in Australia (0.78,0.75,0.70; 1.02's own dust class 0.95,0.91,0.79, not our old red),
+  grey-brown in Britain, grey in Japan, red-brown to tan in the USA. Scan over 86 retail and 52 RSF variants,
+  checked against top-down renders of each road. Load +80 ms at most (621, 580). 34 shots: 12 change by 0.1% RMSE or
+  more (dusty chases and fly-bys, day Gabiria fly-by 1.3%), snow, tarmac cockpits and night byte-identical or nearly.
 Soft-particle cost (2026-10-26, RX 9060 XT): the effects pass is fill-bound (Sipirkakim II `--at 15000`: 926
 quads, ~400 screens of coverage, 35 ms at 1440p, nearly all `fs_soft`; GPU clocks bimodal). Fixes, frames within
 2/255 of before (lamps' code out of the day's pipeline, fragments under 1/1000 alpha discarded, depth after the
