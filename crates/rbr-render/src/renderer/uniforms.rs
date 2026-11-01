@@ -233,6 +233,15 @@ impl Renderer {
         }
     }
 
+    /// The textures' mip bias in `view` (`texture_bias` in `shader.wgsl`): the main view's when the temporal
+    /// anti-aliasing upscales the frame, `log2(frame / output)`, so that they keep the output's detail; else 0.
+    fn upscale_bias(&self, view: View) -> f32 {
+        match view == View::Main && self.taa.as_ref().is_some_and(crate::taa::Taa::upscaling) {
+            true => (self.depth_size.0 as f32 / self.output_size.0 as f32).log2(),
+            false => 0.0,
+        }
+    }
+
     /// The three frame uniforms [`Renderer::write_frames`] writes.
     pub(super) fn frame_uniforms(
         &self,
@@ -346,7 +355,7 @@ impl Renderer {
                 eye: eye.extend(1.0).to_array(),
                 fog_color: a.fog_color.extend(haze).to_array(),
                 fog_range: [start, end, anchored, depth],
-                haze: [if index == 1 { cloud_image } else { 0.0 }, a.cloud_haze(), 0.0, 0.0],
+                haze: [if index == 1 { cloud_image } else { 0.0 }, a.cloud_haze(), self.upscale_bias(view), 0.0],
                 zenith: a.zenith().extend(1.0).to_array(),
                 sun: a.sun_direction.extend(f32::from(u8::from(!overcast))).to_array(),
                 ambient: (a.ambient * a.car_ambient).extend(1.0).to_array(),

@@ -18,7 +18,8 @@ struct Frame {
     fog_range: vec4<f32>,
     // x 1 when the sky's draw lays the volumetric clouds' image over the sky (`cloud_volume_over`, the main view), 2
     // their dome (`cloud_dome_over`, the reflections and mirrors); y how far the
-    // camera-anchored draws (the clouds) fade into the sky (`Atmosphere::cloud_haze`); z, w unused.
+    // camera-anchored draws (the clouds) fade into the sky (`Atmosphere::cloud_haze`); z the textures' mip bias when the
+    // temporal anti-aliasing upscales the frame (`Renderer::upscale_bias`); w unused.
     haze: vec4<f32>,
     zenith: vec4<f32>,
     // The direction the sunlight travels; w = 1 to draw the sun's glow.
@@ -284,6 +285,12 @@ struct Probes {
 @group(1) @binding(4) var shadow_texture: texture_2d<f32>;
 @group(1) @binding(5) var specular_texture: texture_2d<f32>;
 @group(1) @binding(6) var glow_texture: texture_2d<f32>;
+
+// Textures 0 and 1's mip bias: the draw's, and the upscale's.
+fn texture_bias() -> f32 {
+    return mode.mip_bias + frame.haze.z;
+}
+
 // The screen-space reflections' pass (`fs_reflect`): the resolved frame and its depth.
 @group(2) @binding(0) var scene_colour: texture_2d<f32>;
 @group(2) @binding(1) var scene_depth: texture_depth_2d;
@@ -522,7 +529,7 @@ fn is_fence(v: VertexOut) -> bool {
 // A stage draw's colour (`lit_class` 0: the stage, its props and characters' cards), with `under_cloud` of the sun taken
 // by a cloud.
 fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
-    let first = textureSampleBias(texture0, texture_sampler, v.uv0, mode.mip_bias);
+    let first = textureSampleBias(texture0, texture_sampler, v.uv0, texture_bias());
     if (PERF_SHADE == 1.0) {
         var a = first.a;
         if (ALPHA_TEST && mode.alpha_test != 0u && a <= mode.alpha_ref) { discard; }
@@ -541,7 +548,7 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     var alpha = first.a;
     var second = vec4<f32>(0.0);
     if (second_draw()) {
-        second = textureSampleBias(texture1, texture_sampler, v.uv1, mode.mip_bias);
+        second = textureSampleBias(texture1, texture_sampler, v.uv1, texture_bias());
         surface = mix(first.rgb, second.rgb, second.a * v.color.a);
     }
     // The backdrop (the world-anchored sky faces' frame) gets detail its stretched texture lacks.
@@ -877,7 +884,7 @@ const GLASS_WET: f32 = 0.5;
 // `under_cloud` of the sun taken by a cloud. Never water, a sky face nor camera-anchored, with no specular map, and no
 // lamps' light on it (`lamp_sum` is the stage's).
 fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
-    let first = textureSampleBias(texture0, texture_sampler, v.uv0, mode.mip_bias);
+    let first = textureSampleBias(texture0, texture_sampler, v.uv0, texture_bias());
     if (PERF_SHADE == 1.0) {
         var a = first.a;
         if (ALPHA_TEST && mode.alpha_test != 0u && a <= mode.alpha_ref) { discard; }
@@ -888,7 +895,7 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
     var alpha = first.a;
     var second = vec4<f32>(0.0);
     if (second_draw()) {
-        second = textureSampleBias(texture1, texture_sampler, v.uv1, mode.mip_bias);
+        second = textureSampleBias(texture1, texture_sampler, v.uv1, texture_bias());
     }
     let night = frame.night.x != 0.0;
     // The game's vertex light (the relight is the stage's, `relit`).
@@ -951,7 +958,7 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         dirt_share = mix(mix(RUBBER_DIRT_HIGH, 1.0, low), 1.0, metal);
     }
     if (mode.fresnel.w != 0.0 && !(cabin_face && frame.wetness.w != 0.0)) {
-        let mud = textureSampleBias(specular_texture, texture_sampler, v.uv0, mode.mip_bias);
+        let mud = textureSampleBias(specular_texture, texture_sampler, v.uv0, texture_bias());
         let mask = select(mud.a, sqrt(mud.a), frame.wetness.w != 0.0);
         let covered = clamp(mask * frame.wetness.y, 0.0, 1.0) * dirt_share;
         colour = mix(colour, frame.car_dirt.rgb, covered);
@@ -1443,7 +1450,7 @@ fn plant_faded(v: VertexOut, alpha: f32) -> f32 {
 // `own_sun_seen` takes, is written only for the sun's mask (`sun_mask.wgsl`).
 @fragment
 fn fs_prepass(v: VertexOut) -> @location(0) vec4<f32> {
-    let alpha = plant_faded(v, textureSampleBias(texture0, texture_sampler, v.uv0, mode.mip_bias).a);
+    let alpha = plant_faded(v, textureSampleBias(texture0, texture_sampler, v.uv0, texture_bias()).a);
     if (ALPHA_TEST && mode.alpha_test != 0u && alpha <= mode.alpha_ref) {
         discard;
     }
@@ -1463,10 +1470,10 @@ fn crack_normal(n: vec3<f32>, p: vec3<f32>, uv: vec2<f32>) -> vec4<f32> {
     let duv2 = dpdy(uv);
     let texel = max(1.0 / vec2<f32>(textureDimensions(texture0)), max(abs(duv1), abs(duv2)));
     let h = vec4<f32>(
-        textureSampleBias(texture0, texture_sampler, uv + vec2<f32>(texel.x, 0.0), mode.mip_bias).a,
-        textureSampleBias(texture0, texture_sampler, uv - vec2<f32>(texel.x, 0.0), mode.mip_bias).a,
-        textureSampleBias(texture0, texture_sampler, uv + vec2<f32>(0.0, texel.y), mode.mip_bias).a,
-        textureSampleBias(texture0, texture_sampler, uv - vec2<f32>(0.0, texel.y), mode.mip_bias).a,
+        textureSampleBias(texture0, texture_sampler, uv + vec2<f32>(texel.x, 0.0), texture_bias()).a,
+        textureSampleBias(texture0, texture_sampler, uv - vec2<f32>(texel.x, 0.0), texture_bias()).a,
+        textureSampleBias(texture0, texture_sampler, uv + vec2<f32>(0.0, texel.y), texture_bias()).a,
+        textureSampleBias(texture0, texture_sampler, uv - vec2<f32>(0.0, texel.y), texture_bias()).a,
     );
     let slope = vec2<f32>(h.x - h.y, h.z - h.w) * CRACK_BUMP;
     let side2 = cross(dp2, n);
