@@ -41,7 +41,7 @@ build() {
 case $cmd in
   rsf)
     secs=${3:-} auto=${4:-} playback=${5:-} ffb=${FFB:-} fast=${FAST:-}
-    # checked here, as rsf-record checks them there: they are passed to rsf-session.sh
+    # passed on to rsf-session.sh
     [[ "$secs" =~ ^[0-9]+$ && "$auto" =~ ^[0-9]+(\ [0-9]+){3,5}$ && "$playback" =~ ^[A-Za-z0-9_./-]*$ &&
        "$ffb" =~ ^[A-Za-z0-9_]*$ && "$fast" =~ ^[0-9]*$ ]] || { echo "bad SECS, AUTO, PLAYBACK, FFB or FAST" >&2; exit 1; }
     build
@@ -55,7 +55,7 @@ case $cmd in
     token=RBR_FFB_TRACE_RUN=$name.$$
     # as ~/.local/bin/rbr starts the game, with the display of this machine's session and the trace preloaded
     (cd "$game" && export "$token" WINEPREFIX="$prefix" ${proton:+PROTONPATH=$proton} GAMEID=umu-rbr \
-       WINEDLLOVERRIDES="mfc70,mfc71,msvci70,msvcp70,msvcr70,msvcr71=n" \
+       WINEDLLOVERRIDES="mfc70,mfc71,msvci70,msvcp70,msvcp71,msvcr70,msvcr71=n" \
        WAYLAND_DISPLAY=wayland-1 DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/$(id -u) \
        LD_PRELOAD=$trace/ffb_trace.so FFB_TRACE_DIR="$out"
      setsid umu-run ./RichardBurnsRally_SSE.exe >"$out/proton.log" 2>&1 &)

@@ -112,6 +112,8 @@ rbr-recomp `notes/progress/systems.md`; history up to the split: rbr-recomp `LOG
 
 ## Decisions
 
+- 2026-11-01 (user): development runs on one Linux x86_64 PC: no test machine, no ssh; the harness runs the original
+  locally under Wine, its folders in `dev.env` ([verification.md](verification.md#dev-setup)).
 - 2026-11-01 (user): dawn and golden hour keep part of the low sun's warmth: the eye's white balance adapts less to
   warm light ([renderer.md](renderer.md#time-of-day-and-night)).
 - 2026-10-21 (user): ReRBR runs either on an existing RBR/RSF install, read-only, or without RSF (retail, patch,
@@ -125,9 +127,9 @@ rbr-recomp `notes/progress/systems.md`; history up to the split: rbr-recomp `LOG
   to rbr-recomp's `rerbr/`. ReRBR keeps the Rust, the layouts and addresses that key the vectors and bindings, and
   the checks.
 - 2026-10-19 (user): the repository becomes ReRBR, Rust only; the C++ reconstruction moves to rbr-recomp.
-- 2026-10-19: the repository holds no private paths or hosts: the harness runs the original locally under Wine
-  (`RBR_GAME`/`RBR_PREFIX` in `dev.env`; [verification.md](verification.md#dev-setup)), and the test data comes from
-  the player's disc and patch (`rerbr --extract-test-data`).
+- 2026-10-19: the repository holds no private paths or hosts: the harness reaches the test machine through
+  `RBR_REMOTE_*` variables (replaced 2026-11-01 by `dev.env`), and the test data comes from the
+  player's disc and patch (`rerbr --extract-test-data`).
 - 2026-10-19: the documentation is cut to one note per area; detail as of the split stays in rbr-recomp under the
   same paths.
 - 2026-10-17 (user): the goal is RBR with NGP 7 physics and its NGP cars, on the original and the modded stages, all

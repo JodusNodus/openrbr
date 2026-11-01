@@ -135,15 +135,9 @@ def wait_idle(f):
 
 def clean(name):
     """This pair's working files by exact name (not the kept ones in KEEP)."""
-    subprocess.run(["rm", "-f"] + [os.path.join(RUNS, "drive-%s-ap.playback.bin" % name),
-                                     os.path.join(RUNS, "drive-%s.playback.bin" % name),
-                                     os.path.join(RUNS, "drive-%s.bin" % name),
-                                     os.path.join(RUNS, "drive-%s.bin.mask" % name),
-                                     os.path.join(RUNS, "drive-%s.auto" % name),
-                                     os.path.join(RUNS, "%s-rec.bin" % name),
-                                     os.path.join(RUNS, "ref-%s-2.bin" % name),
-                                     os.path.join(RUNS, "drive-%s.harness.log" % name),
-                                     os.path.join(RUNS, "ref-%s-2.harness.log" % name)], check=True)
+    files = ("drive-%s-ap.playback.bin drive-%s.playback.bin drive-%s.bin drive-%s.bin.mask drive-%s.auto %s-rec.bin "
+             "ref-%s-2.bin drive-%s.harness.log ref-%s-2.harness.log" % ((name,) * 9)).split()
+    subprocess.run(["rm", "-f"] + [os.path.join(RUNS, x) for x in files], check=True)
 
 
 def compared_steps(spec, recording, last_post):

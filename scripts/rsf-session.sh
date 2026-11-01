@@ -19,8 +19,8 @@
 # profiles (.acm, .rbr), RBRControls' files, NGPCarMenu.ini and RSF's cars_data.json as the session started, devices.txt the device files the game's prefix holds.
 # Env: RBR_RSF (the RSF install), RBR_RSF_PREFIX (the Wine prefix the game runs in),
 # RSF_LOCK (/tmp/rbr-rsf-run.lock). For tests
-# without a driver: AUTO="map car weather tyre" adds RBRRecompAuto.txt (a stage start), PLAYBACK=<file relative to
-# the home> RBRRecompPlayback.bin (its controls drive; the game quits after them), FAST=N RBRRecompFastForward.txt,
+# without a driver: AUTO="map car weather tyre" adds RBRRecompAuto.txt (a stage start), PLAYBACK=<file>
+# RBRRecompPlayback.bin (its controls drive; the game quits after them), FAST=N RBRRecompFastForward.txt,
 # FFB=1 RBRRecompFfb.on (binds the newest SavedGames/pf*.acm, as the menus would, so force feedback reaches the
 # wheel in an AUTO start, playback too; FFB=<name> binds pf<name>.acm), SNAPS=1 RBRRecompSessionSnaps.on (each
 # attempt's start-state snapshots, about 960 MB).
@@ -63,7 +63,7 @@ case $cmd in
   *) sed -n '2,28p' "$0" >&2; exit 1 ;;
 esac
 
-playback=${PLAYBACK:-}
+playback=${PLAYBACK:+$(realpath -- "$PLAYBACK")}
 fast=${FAST:-}
 [[ "$playback" =~ ^[A-Za-z0-9_./-]*$ && "$fast" =~ ^[0-9]*$ ]] || { echo "bad PLAYBACK or FAST" >&2; exit 1; }
 added=(Plugins/RBRRecompHarness.dll RBRRecompRecord.on RBRRecompSession.on)
@@ -296,7 +296,7 @@ watch() {
   cp "$plugin/RBRRecompHarness.dll" "$game/Plugins/RBRRecompHarness.dll"
   for f in RBRRecompRecord.on RBRRecompSession.on; do touch "$game/$f"; echo "added $f" >>"$run/.manifest"; done
   if [ -n "$auto" ]; then echo "$auto" >"$game/RBRRecompAuto.txt"; echo "added RBRRecompAuto.txt" >>"$run/.manifest"; fi
-  if [ -n "$playback" ]; then cp "$HOME/$playback" "$game/RBRRecompPlayback.bin"; echo "added RBRRecompPlayback.bin" >>"$run/.manifest"; fi
+  if [ -n "$playback" ]; then cp "$playback" "$game/RBRRecompPlayback.bin"; echo "added RBRRecompPlayback.bin" >>"$run/.manifest"; fi
   if [ -n "$fast" ]; then echo "$fast" >"$game/RBRRecompFastForward.txt"; echo "added RBRRecompFastForward.txt" >>"$run/.manifest"; fi
   if [ -n "${FFB:-}" ]; then
     if [ "$FFB" = 1 ]; then acm=$(cd "$game" && ls -t SavedGames/pf*.acm | head -n 1); else acm=SavedGames/pf$FFB.acm; fi

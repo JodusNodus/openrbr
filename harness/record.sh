@@ -82,7 +82,7 @@ echo "starting the game: drive the stage to the end or crash, then quit to deskt
 # as ~/.local/bin/rbr-vanilla, with the rec game folder and prefix; no timeout kill
 (cd "$game_dir"
  export WINEPREFIX=$prefix ${proton:+PROTONPATH=$proton} \
-   GAMEID=umu-rec WINEDLLOVERRIDES="mfc70,mfc71,msvci70,msvcp70,msvcp71,msvcr70,msvcr71=n" \
+   GAMEID=umu-${prefix##*/} WINEDLLOVERRIDES="mfc70,mfc71,msvci70,msvcp70,msvcp71,msvcr70,msvcr71=n" \
    WAYLAND_DISPLAY=wayland-1 DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/$(id -u)
  setsid umu-run ./RichardBurnsRally_SSE.exe >/tmp/rbr-vanilla-run-rec.log 2>&1 &)
 game_pat="[${game_dir:0:1}]${game_dir:1}/RichardBurnsRally_SSE.exe"

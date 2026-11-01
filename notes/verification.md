@@ -88,7 +88,8 @@ python3 -I harness/diverge.py --mask REF NOISE...         # write REF.mask
 Hand drives in RallySimFans (NGP 7.5.779), recorded as fully as the harness can:
 
 ```sh
-scripts/rsf-session.sh start <name>     # locally (builds and installs the plugin; or `rsf-record start <name>` there)
+scripts/rsf-session.sh install          # builds the plugin into $RBR_RSF_PLUGIN (after plugin changes)
+scripts/rsf-session.sh start <name>
 # start RSF (`rbr` or `rbr game`), drive any number of stages, quit the game: that ends the session
 scripts/rsf-session.sh fetch <name>     # to $RBR_RECORDINGS/rsf/<name>
 .venv/bin/python -I -B harness/session.py $RBR_RECORDINGS/rsf/<name>/1/session.bin
@@ -177,6 +178,8 @@ the recording's control, then `StepForward(1)`). `--each` and `--only ADDR` only
 
 Run A is cached in `RBR_STEP_CACHE` (default `cache/run-a/` next to the checkout; deletable; `--no-cache` skips it). A
 missing fsin/fcos is modelled and the step reported unverified; on x86_64 new results are measured locally into the cache.
+The local CPU must give the reference CPU's x87 results: an i9-13900HX matches all 141,591 cached results of the
+published cache (test-data v3, 2026-11-01).
 
 Merge gate: all bindings over the nine tanner-corolla snapshots and snapH.snap-1295, and over tanner-damage's contact
 snapshots, 30 steps, every "run B vs run A" line equal (`*[0-9].bin` leaves out the `-after` dumps):
