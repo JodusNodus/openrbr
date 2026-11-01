@@ -287,6 +287,12 @@ probably fit the wrong hour.
   installed variant, 2026-10-23).
 - The stage's own sun is the fitted bake sun where the fit holds (r from 0.35, `relight::own_sun`): 40 variants'
   `SunDir` lie over 20 degrees off it; weak fits keep `SunDir`.
+- The eye's white balance (`day_light` in `skylight.wgsl`, with `lighting`): CIECAM02's degree of adaptation `D`
+  toward the open ground's light, less toward a warm one (user's call, 2026-11-01): `D` falls to 0.4 of itself as that
+  light's red over blue grows to 1.35 times noon's. At full `D` a low sun's warmth was balanced away (Torre Vecchia
+  337M 05:30, sun 13 degrees up, its light 2.13 times noon's red over blue: the lit road neutral, the shade 0.45 in
+  linear light; frames 0.78-0.89), now 0.84-0.95. Noon, overcast, twilight and night keep the full `D`: 23 of the 34
+  reference shots byte-identical, the golden ones 0.3-1.4 % RMSE (Komarov's lit snow warm), fog 0.01-0.13 %.
 
 - Night albedo (`night_albedo` in `night.wgsl`): textures times vertex luminance over the bake's open-ground light,
   clamped 0.3-1 at 0.25 (0.14 on 45_O to 0.39 on 10_O).
