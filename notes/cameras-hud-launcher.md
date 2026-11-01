@@ -28,6 +28,11 @@ Ours views, nudges and FOV rules in `rbr_render::views`; choices in `rbr_render:
 - Whether RSF itself applies `<car>_personal.ini` `[Cam_*]` overrides is not traced (the loader is
   `rbr_render::car::camera_sections`).
 - The X-key adjust mode is gone; an old `camera adjust` line is ignored (not in code).
+- In-car head (ours, `rbr_render::head`): over the game's seat shake, the view keeps the horizon steadier, on the
+  physics clock (same at any frame rate, in replays and videos); a look into corners and slides was dropped (user,
+  2026-11-01: motion sickness). On by default;
+  `[camera] head = off`, from the pause menu's Camera page (cockpit) or the launcher's Graphics page, gives the
+  car-fixed view. Tuning constants are game feel, not measured.
 
 ## HUD
 

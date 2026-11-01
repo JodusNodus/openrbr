@@ -19,6 +19,7 @@ use crate::coords::physics_to_stage;
 use crate::damage::{self, Cracks, MeshDamage, Zones};
 use crate::damage_parts::Detach;
 use crate::game_camera::Follow;
+use crate::head::Head;
 use crate::lights::{self, Inputs, LampPoint, Lamps};
 use crate::renderer::{mesh_bounds, Renderer};
 use crate::stage::{Mesh, Stage, Vertex};
@@ -192,8 +193,10 @@ pub struct Playback {
     turning: Vec<(crate::taa::Room, usize)>,
     /// The steering wheel's meshes ([`MeshDamage::steering`]) are not drawn (ours, `viewer --hide-wheel`).
     pub hide_wheel: bool,
-    /// The game's chase camera, moved by [`Playback::follow_game_chase`].
+    /// The game's chase camera, moved by [`Playback::follow_cameras`].
     game_chase: Follow,
+    /// The in-car view's head, moved by [`Playback::follow_cameras`].
+    head: Head,
     /// The stage's collision mesh for the cameras' probes and the car's shadow ([`Playback::set_probe`]).
     probe: Option<std::sync::Arc<StageProbe>>,
     /// The car's shadow decal's texture ([`crate::car_shadow::TEXTURE`]), when it reads.
@@ -252,6 +255,7 @@ impl Playback {
             turning: Vec::new(),
             hide_wheel: false,
             game_chase: Follow::new(crate::game_camera::Settings::default()),
+            head: Head::new(true),
             probe: None,
             shadow: data
                 .resolve(crate::car_shadow::TEXTURE)
@@ -535,10 +539,12 @@ impl Playback {
 
     /// The camera of `view`: the chase (the game's, [`crate::game_camera`]) turned about its look point by `look`, at
     /// [`CHASE_FOV_DEGREES`], or one of `mounts` at the horizontal field of view `fov`, radians, shaken in the view
-    /// that takes the seat shake.
+    /// that takes the seat shake, and turned by the head ([`crate::head`]) there.
     pub fn lens(&self, mounts: &Mounts, view: CarView, look: ChaseLook, fov: f32) -> Lens {
         match mounts.of(view) {
-            Some(mount) if view.shakes() => self.mounted(&mount.shaken(self.sample().shake[CAMERA_SHAKE]), fov),
+            Some(mount) if view.shakes() => {
+                self.head.turned(self.mounted(&mount.shaken(self.sample().shake[CAMERA_SHAKE]), fov))
+            }
             Some(mount) if view == CarView::Bonnet => {
                 let mut lens = self.mounted(&mount, fov);
                 if let Some(probe) = &self.probe {
@@ -564,13 +570,20 @@ impl Playback {
         self.game_chase.set_settings(settings);
     }
 
-    /// Moves the game's chase camera (`crate::game_camera`) to the frame shown; `swing` is the start orbit's angle
-    /// while it runs, and `looking_back` the look-back key. The viewer calls it once per frame drawn.
-    pub fn follow_game_chase(&mut self, swing: Option<f32>, looking_back: bool) {
+    /// Moves the game's chase camera (`crate::game_camera`) and the in-car view's head ([`crate::head`]) to the frame
+    /// shown; `swing` is the start orbit's angle while it runs, and `looking_back` the look-back key. The viewer calls
+    /// it once per frame drawn.
+    pub fn follow_cameras(&mut self, swing: Option<f32>, looking_back: bool) {
         let index = self.index();
         let samples = &self.drive.samples;
         let probe = self.probe.as_deref();
         self.game_chase.follow(&self.drive.ends, |i| samples[i].car, index, swing, looking_back, probe);
+        self.head.follow(|i| (samples[i].step, samples[i].car), index, self.drive.clock.step);
+    }
+
+    /// Turns the in-car view's head ([`crate::head`]) on or off.
+    pub fn set_head(&mut self, on: bool) {
+        self.head.set_on(on);
     }
 
     /// Gives the cameras the stage's collision mesh: the game chase's probes and the bonnet view's ground probe.

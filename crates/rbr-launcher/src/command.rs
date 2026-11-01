@@ -733,6 +733,8 @@ impl Form {
                 }
             }
             if self.child.is_none() {
+                // The pause menu's Camera page may have changed it.
+                self.head = !crate::settings::read_settings(&self.paths.settings).camera.head_off;
                 if !replay {
                     self.rally.stage_closed(&self.here());
                 }

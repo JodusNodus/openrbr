@@ -62,6 +62,7 @@ fn playback(frames: &[Vec<u8>]) -> Playback {
         turning: Vec::new(),
         hide_wheel: false,
         game_chase: Follow::new(crate::game_camera::Settings::default()),
+        head: crate::head::Head::new(true),
         probe: None,
         shadow: None,
         mirrors: Vec::new(),
@@ -106,7 +107,7 @@ fn a_wheel_roll_turns_the_top_forward() {
 #[test]
 fn chase_has_its_own_field_of_view_and_the_views_the_setting() {
     let mut p = playback(&[frame(10, 1, 0.0)]);
-    p.follow_game_chase(None, false);
+    p.follow_cameras(None, false);
     let mount = |eye: Vec3, near| Mount { eye, target: eye + Vec3::NEG_Z, up: Vec3::Y, near };
     let mounts = Mounts {
         bonnet: mount(Vec3::new(0.0, 0.8, -2.8), 0.08),

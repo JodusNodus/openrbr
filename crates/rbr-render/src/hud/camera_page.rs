@@ -1,8 +1,8 @@
 //! The pause menu's Camera page, ours (`crate::hud::pause`): a panel at the bottom of the screen over the paused view,
 //! which sets the view and this car's nudges of it ([`crate::camera_prefs`]). Its rows: the view, then sideways,
-//! height, forward and tilt for the cockpit, bonnet and bumper, or height and distance for the chase, then Reset (the
-//! view back to the car's own) and Done. Up and Down pick a row, Left and Right change it; the select acts on Reset
-//! and Done, and the back returns to the menu's first page.
+//! height, forward and tilt for the cockpit, bonnet and bumper, or height and distance for the chase, the head on or
+//! off for the cockpit ([`crate::head`]), then Reset (the view back to the car's own) and Done. Up and Down pick a
+//! row, Left and Right change it; the select acts on Reset and Done, and the back returns to the menu's first page.
 
 use super::pause::Nav;
 use crate::camera_prefs::{Nudges, CHASE_STEP, REACH, STEP, TILT_REACH, TILT_STEP};
@@ -27,6 +27,8 @@ pub enum Row {
     Tilt,
     /// The chase's.
     Distance,
+    /// The cockpit's.
+    Head,
     Reset,
     Done,
 }
@@ -40,6 +42,7 @@ impl Row {
             Row::Forward => "Forward",
             Row::Tilt => "Tilt",
             Row::Distance => "Distance",
+            Row::Head => "Head motion",
             Row::Reset => "Reset",
             Row::Done => "Done",
         }
@@ -50,6 +53,9 @@ impl Row {
 pub fn rows(view: CarView) -> &'static [Row] {
     match view {
         CarView::Chase => &[Row::View, Row::Height, Row::Distance, Row::Reset, Row::Done],
+        CarView::Cockpit => {
+            &[Row::View, Row::Sideways, Row::Height, Row::Forward, Row::Tilt, Row::Head, Row::Reset, Row::Done]
+        }
         _ => &[Row::View, Row::Sideways, Row::Height, Row::Forward, Row::Tilt, Row::Reset, Row::Done],
     }
 }
@@ -63,17 +69,18 @@ pub enum Moved {
     Left,
 }
 
-/// The page: the view shown, the car's nudges and the selected row.
+/// The page: the view shown, the car's nudges, the head and the selected row.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CameraPage {
     pub view: CarView,
     pub nudges: Nudges,
+    pub head: bool,
     row: usize,
 }
 
 impl CameraPage {
-    pub fn new(view: CarView, nudges: Nudges) -> CameraPage {
-        CameraPage { view, nudges, row: 0 }
+    pub fn new(view: CarView, nudges: Nudges, head: bool) -> CameraPage {
+        CameraPage { view, nudges, head, row: 0 }
     }
 
     /// The selected row.
@@ -92,6 +99,10 @@ impl CameraPage {
             (Nav::Left | Nav::Right, Row::View) => {
                 let i = self.view.index() + if nav == Nav::Right { 1 } else { CarView::ALL.len() - 1 };
                 self.view = CarView::ALL[i % CarView::ALL.len()];
+                return Some(Moved::Changed);
+            }
+            (Nav::Left | Nav::Right, Row::Head) => {
+                self.head = !self.head;
                 return Some(Moved::Changed);
             }
             (Nav::Left | Nav::Right, row) => {
@@ -166,6 +177,7 @@ fn value(page: &CameraPage, row: Row) -> String {
         Row::Height => signed(shift.y * 100.0, 0, " cm"),
         Row::Forward => signed(shift.z * 100.0, 0, " cm"),
         Row::Tilt => signed(tilt, 1, "\u{b0}"),
+        Row::Head => if page.head { "On" } else { "Off" }.into(),
         Row::Reset | Row::Done => String::new(),
     }
 }
@@ -211,7 +223,7 @@ mod tests {
     use glam::Vec3;
 
     fn page(view: CarView) -> CameraPage {
-        CameraPage::new(view, Nudges::default())
+        CameraPage::new(view, Nudges::default(), true)
     }
 
     /// Moves `page` to `row`.
@@ -225,7 +237,14 @@ mod tests {
     fn each_view_has_its_rows_and_the_view_row_cycles() {
         let mut p = page(CarView::Cockpit);
         let names = |p: &CameraPage| rows(p.view).iter().map(|&r| value(p, r)).collect::<Vec<_>>();
-        assert_eq!(names(&p), ["Cockpit", "0 cm", "0 cm", "0 cm", "0\u{b0}", "", ""]);
+        assert_eq!(names(&p), ["Cockpit", "0 cm", "0 cm", "0 cm", "0\u{b0}", "On", "", ""]);
+        to(&mut p, Row::Head);
+        assert_eq!(p.nav(Nav::Left), Some(Moved::Changed));
+        assert_eq!(value(&p, Row::Head), "Off");
+        to(&mut p, Row::Reset);
+        assert_eq!(p.nav(Nav::Select), None, "Reset leaves the head");
+        assert!(!p.head);
+        to(&mut p, Row::View);
         assert_eq!(p.nav(Nav::Left), Some(Moved::Changed));
         assert_eq!(p.view, CarView::Chase);
         assert_eq!(rows(p.view), [Row::View, Row::Height, Row::Distance, Row::Reset, Row::Done]);

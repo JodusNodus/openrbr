@@ -669,7 +669,7 @@ impl App {
         let looking_back = self.bindings.get(Action::LookBack).key.is_some_and(|k| self.held.contains(&k))
             || self.pads[Action::LookBack as usize] > bindings::PRESS;
         if let Some(playback) = &mut self.scene.playback {
-            playback.follow_game_chase(self.shown.swing(), looking_back);
+            playback.follow_cameras(self.shown.swing(), looking_back);
         }
         let fov = self.fov;
         let car_lens = draw_car(&mut self.scene, &mut running.renderer, self.shown, self.look, fov);
