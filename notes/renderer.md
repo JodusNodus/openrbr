@@ -525,6 +525,9 @@ splash never shows on a wet stage.
   0.007, day Gabiria and 621 fly-by 0); other particles keep `sun_reach`. Effects pass in the 532 fly-by 2.6 to
   3.7 ms. Tried and dropped: peak alpha 0.9/0.55 to 0.7/0.4 (thinned gab-lit's and Odry's); `DUST_SUN` 2.2 to 1.6
   and a 0.75 far veil (dimmed gab-lit's far more than the 532 plume, so it stays a bright tan body).
+- No spray in the cabin (2026-11-01, `fs_soft`): in the in-car views the soft particles fade inside the cabin reach
+  (2 to 2.5 m from the eye) as the rain does; the wheels' spray showed through the GC8's footwell gaps (52 rain
+  cockpit `--at 4500` now matches `--no-particles` there). Rain chase byte-identical.
 Soft-particle cost (2026-10-26, RX 9060 XT): the effects pass is fill-bound (Sipirkakim II `--at 15000`: 926
 quads, ~400 screens of coverage, 35 ms at 1440p, nearly all `fs_soft`; GPU clocks bimodal). Fixes, frames within
 2/255 of before (lamps' code out of the day's pipeline, fragments under 1/1000 alpha discarded, depth after the
