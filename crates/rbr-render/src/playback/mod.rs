@@ -187,10 +187,6 @@ pub struct Playback {
     /// The interior steering-wheel meshes ([`MeshDamage::steering`]) turn by this matrix, in model space (the
     /// wheel, `characters::incar::Crew::wheel_turn`).
     pub turn: Option<Mat4>,
-    /// The room the steering wheel's meshes turn in ([`Playback::set_wheel_node`]).
-    wheel: Option<crate::taa::Room>,
-    /// The rooms other parts turn in by their motion, each with one of its parts ([`Playback::set_turning`]).
-    turning: Vec<(crate::taa::Room, usize)>,
     /// The steering wheel's meshes ([`MeshDamage::steering`]) are not drawn (ours, `viewer --hide-wheel`).
     pub hide_wheel: bool,
     /// The game's chase camera, moved by [`Playback::follow_cameras`].
@@ -251,8 +247,6 @@ impl Playback {
             headlights: lights::Headlights::Main,
             detached: [None; detach::PARTS.len()],
             turn: None,
-            wheel: None,
-            turning: Vec::new(),
             hide_wheel: false,
             game_chase: Follow::new(crate::game_camera::Settings::default()),
             head: Head::new(true),
@@ -294,26 +288,6 @@ impl Playback {
         let parts = self.parts.iter().filter(|part| part.interior);
         let draws = parts.flat_map(|part| &stage.meshes[part.stage].draws);
         draws.flat_map(|draw| draw.state.textures.into_iter().flatten()).collect()
-    }
-
-    /// The steering wheel's meshes ([`Playback::add_interior`]) turn about `node`
-    /// (`characters::incar::Crew::wheel_node`): the TAA carries what they cover by [`Playback::turn`].
-    pub fn set_wheel_node(&mut self, node: Mat4) {
-        let steering = self.parts.iter().filter(|part| part.interior && part.effect.steering);
-        let points = steering.flat_map(|part| part.rest.iter().map(|v| Vec3::from(v.position)));
-        self.wheel = crate::taa::Room::new(node, points, true);
-    }
-
-    /// The groups of parts ([`Playback::parts_at`]) that turn together by their motion ([`Playback::set_motion`]), each
-    /// about the `z` axis of its node (the wipers): the TAA carries what they cover by their turn.
-    pub fn set_turning(&mut self, groups: &[(Vec<usize>, Mat4)]) {
-        self.turning = groups
-            .iter()
-            .filter_map(|(parts, node)| {
-                let points = parts.iter().flat_map(|&p| self.parts[p].rest.iter().map(|v| Vec3::from(v.position)));
-                Some((crate::taa::Room::new(*node, points, false)?, *parts.first()?))
-            })
-            .collect();
     }
 
     /// Sets the car's lamps (`car::Car::lamp_points`), which light the stage as they switch.
@@ -683,11 +657,6 @@ impl Playback {
             .collect();
         renderer.set_lamps(&lamps);
         renderer.set_car_body(body);
-        let wheel = self.wheel.zip(self.turn).filter(|_| self.interior && !self.hide_wheel);
-        let turning = self.turning.iter().map(|&(room, part)| (room, &self.parts[part]));
-        let turning =
-            turning.filter(|(_, part)| part.interior == self.interior).map(|(room, part)| (room, part.motion));
-        renderer.set_car_rooms(wheel.into_iter().chain(turning));
         let mirrors: Vec<_> = self.mirrors.iter().filter(|_| self.interior).map(|glass| glass.placed(body)).collect();
         renderer.set_mirrors(&mirrors);
         if let (Some(texture), Some(probe)) = (&self.shadow, &self.probe) {

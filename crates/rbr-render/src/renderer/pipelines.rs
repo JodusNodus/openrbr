@@ -19,7 +19,8 @@ pub(crate) const SHADER: &str = concat!(
     include_str!("../mirrors.wgsl"),
     include_str!("../sun_mask.wgsl"),
     include_str!("../cloud_volume.wgsl"),
-    include_str!("../volume_shadow.wgsl")
+    include_str!("../volume_shadow.wgsl"),
+    include_str!("../motion.wgsl")
 );
 
 /// The pipeline state of a draw.

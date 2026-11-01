@@ -66,14 +66,16 @@ impl Renderer {
             }
             self.sun_mask.resize(&self.device, &self.depth_view, size);
             self.cloud_volume.resize(&self.device, &self.depth_view, size);
-            if let Some(taa) = &mut self.taa {
-                taa.resize(&self.device, size, size != output, &self.depth_view);
+            if let (Some(taa), Some(motion)) = (&mut self.taa, &mut self.motion) {
+                motion.resize(&self.device, size);
+                taa.resize(&self.device, size, size != output, &self.depth_view, motion.view());
             }
         }
         // Under the temporal anti-aliasing the main view's draws are jittered; the sun's cascades, the mirrors and
         // the light shafts keep the view.
         let shift = self.taa.as_mut().map_or(Mat4::IDENTITY, crate::taa::Taa::begin);
         let drawn = [shift * view_projection, shift * sky_view_projection];
+        self.prepare_motion(view_projection);
         // At night the moon casts them (`sun_direction` is the moon's then).
         let (light, quality, eye) = (self.shadow_light(), self.sun_quality(), camera::eye(view_projection));
         self.cascades = self.enhance.lighting.then(|| sun::cascades(view_projection, light, quality));
@@ -193,6 +195,11 @@ impl Renderer {
             };
             self.draw_mirrors(&mut profiler, [view_projection, sky_view_projection]);
             let stats = self.draw_frame(&mut scene_encoder, &mut profiler, drawn[0], drawn[1]);
+            if self.motion.is_some() {
+                let t = mark(&mut profiler, &mut scene_encoder);
+                self.draw_motion(&mut scene_encoder, drawn[0]);
+                span(&mut profiler, &mut scene_encoder, "motion", t);
+            }
             let mut span = perf_log::span("finish scene commands");
             let scene = scene_encoder.finish();
             span.next("wait for shadow maps");
@@ -201,10 +208,8 @@ impl Renderer {
             self.queue.submit(shadows.into_iter().chain([scene]));
             stats
         });
-        let car = self.taa.as_ref().and_then(|_| self.car_body.zip(self.car_model_box()));
         if let Some(taa) = &mut self.taa {
-            let frame = crate::taa::Frame { view_projection, car, rooms: &self.car_rooms, outside: self.outside_view };
-            taa.prepare(&self.queue, &frame);
+            taa.prepare(&self.queue, view_projection, self.outside_view);
             let t = mark(&mut profiler, encoder);
             taa.resolve(encoder, &self.post.scene);
             span(&mut profiler, encoder, "taa", t);

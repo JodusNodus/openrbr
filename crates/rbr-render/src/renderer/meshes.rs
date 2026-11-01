@@ -81,10 +81,22 @@ pub(super) struct MeshSlot {
     base_vertex: i32,
 }
 
+impl MeshSlot {
+    /// Its buffer of [`MeshBuffers`].
+    pub(super) fn buffer(self) -> usize {
+        self.buffer
+    }
+
+    /// Its first vertex in its buffer.
+    pub(super) fn base_vertex(self) -> i32 {
+        self.base_vertex
+    }
+}
+
 /// One pair of shared vertex and index buffers.
 pub(super) struct MeshBuffers {
     pub(super) vertices: wgpu::Buffer,
-    indices: wgpu::Buffer,
+    pub(super) indices: wgpu::Buffer,
     /// How many vertices `vertices` holds.
     pub(super) vertex_count: u32,
     /// The vertex ranges of the backdrop's meshes (world-anchored sky faces), which the sky's occlusion weighs against
@@ -247,6 +259,9 @@ impl Renderer {
         );
         mesh.bounds = bounds.map(|b| (b.center, b.half_extent));
         mesh.in_car = None;
+        if let Some(motion) = &mut self.motion {
+            motion.given(*slot, vertices);
+        }
     }
 
     /// Replaces the vertices of stage mesh `index`, a car part that moves only with the car's body, in the body's model
@@ -265,13 +280,16 @@ impl Renderer {
         // An empty part draws nothing wherever it is.
         mesh.in_car = bounds.map(|b| (b.center, b.half_extent));
         mesh.bounds = mesh.in_car.map(|model| placed_box(self.car_body.unwrap_or_default(), model));
+        if let Some(motion) = &mut self.motion {
+            motion.placed(*slot);
+        }
     }
 
     /// Updates supported interactive instances from the live physics pose map. The live layer keeps
     /// the last pose after a solid leaves the awake list, so a sleeping prop remains where it stopped.
     pub fn set_interactive_poses(&mut self, poses: &HashMap<u32, InteractivePose>) {
         if poses.is_empty() {
-            for mesh in &mut self.meshes {
+            for (slot, mesh) in self.meshes.iter_mut().enumerate() {
                 let Some(base) = mesh.interactive.as_mut() else {
                     continue;
                 };
@@ -282,6 +300,9 @@ impl Renderer {
                 let buffer = &self.buffers[mesh.slot.buffer].vertices;
                 self.queue.write_buffer(buffer, vertex_offset(mesh.slot), cast_slice(&vertices));
                 mesh.bounds = mesh_bounds(&vertices).map(|b| (b.center, b.half_extent));
+                if let Some(motion) = &mut self.motion {
+                    motion.given(slot, &vertices);
+                }
             }
             return;
         }
@@ -315,6 +336,9 @@ impl Renderer {
             );
             mesh.bounds = mesh_bounds(&vertices).map(|b| (b.center, b.half_extent));
             base.current_pose = Some(pose);
+            if let Some(motion) = &mut self.motion {
+                motion.given(slot, &vertices);
+            }
         }
     }
 

@@ -53,20 +53,17 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   forest chase 251 / 136 / 230, cockpit 174 / 95 / 120 (TAA roughly halves the aliasing, sharpening restores about
   half; dry, wet, rain and night scenes similar). `--anti-aliasing off` frames are byte-identical to before in
   13 scenes. Tried and removed: a negative texture mip bias (0 to -1; 201 to 205, no change).
-  The steering wheel's pixels move by its turn since the last frame (`taa::Room`, `Playback::set_wheel_node`): its
-  room is measured from its meshes in its node's frame, radius and depth along the column per 8 bands of radius (rims
-  sit 0-13 cm up the column from the node, some meshes take the column down to -0.9 m). Before, a fast turn left
-  translucent spokes and dark smears behind the rim's mark (Delta HF, M3 E30). Stills unchanged (34 shots
-  byte-identical; 4 vary run to run, each matched a baseline render), TAA 0.72 ms either way, the wheel's test forced
-  on too (Delta cockpit 1080p, M3 Pro, 2026-10-31). The turn is undone on the model-space point before the car's
-  motion: a separate wheel-to-previous matrix changed Metal's fast-math code for the car's pixels (a chase still by
-  up to 2/255).
-  The wipers' pixels likewise (2026-11-01; `Playback::set_turning`, `Windscreen::wiper_node`): each wiper's room is
-  measured from its meshes at rest about its turning axis, per band the depth along the axis and the angles about it
-  the arm and blade fill (1 cm margin), tested on the point turned back to rest; up to 4 rooms (the wheel's fills every
-  angle). Before, a blade turning at 3.4 rad/s was carried by the car's motion and drew as a pale see-through ghost
-  with a ladder of its old places (GC8 Luceram heavy rain); now as solid as with `--anti-aliasing off`. TAA 0.71 to
-  0.76 ms (GC8 cockpit 1080p, M3 Pro, 5 runs).
+  Motion (`renderer/motion.rs`, `motion.wgsl`, 2026-11-01, after UE's velocity pass): after the main view's stage pass
+  the meshes that move of themselves are drawn again with `Equal` depth into an `Rgba16Float` target: the uv motion
+  since the last frame, z 1 for moving, 2 for the car's meshes. The car's model-space parts use its previous body; the
+  meshes given in stage space (wheels, steering wheel, wipers, ghost, characters, fences, props) keep their last drawn
+  positions per vertex buffer (vertex buffer 1). Every depth-writing draw, blended too: the gauges' markings and the
+  M3's grille are blended draws that write depth, and without them the glass mask took them new each frame (fog
+  Gabiria M3 cockpit RMSE 698). The resolve takes that motion where z is set, else the camera's from the depth; it
+  replaced the car's screen box and the steering wheel's and wipers' rooms (`taa::Room`). The box gave the road under
+  the car the car's motion (smeared gravel behind a chase car, 208 Helette); the wheels now carry their roll. 34 stills
+  within RMSE 9/65535 of before, `--anti-aliasing off` byte-identical; wipers and wheel as solid as before (GC8 Luceram
+  rain, 8-frame sequence). Pass 0.06-0.34 ms, 1080p RX 9060 XT (208 chase the most); TAA as before.
   Glass over the car (the dash below the windscreen, the cabin behind the windows, lamp lenses) gathers as the rest:
   the mask takes the frame new only where the stage is behind the glass (2026-10-31). The lower windscreen (alpha about
   0.9 at its grazing angle) was taken new every frame, its dash edges and reflected cabin never smoothed; its
