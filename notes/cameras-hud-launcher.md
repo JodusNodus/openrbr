@@ -26,7 +26,8 @@ Ours views, nudges and FOV rules in `rbr_render::views`; choices in `rbr_render:
 `viewer --cameras`).
 
 - Whether RSF itself applies `<car>_personal.ini` `[Cam_*]` overrides is not traced (the loader is
-  `rbr_render::car::camera_sections`).
+  `rbr_render::car::camera_sections`). One looking more than 30 degrees to the side is not taken (the Porsche 911 GT3
+  RS (2010) RGT pack ships a `Cam_internal` 60 degrees left; the 43 installed others are within 5, 2026-11-01).
 - The X-key adjust mode is gone; an old `camera adjust` line is ignored (not in code).
 - In-car head (ours, `rbr_render::head`): over the game's seat shake, the view keeps the horizon steadier, on the
   physics clock (same at any frame rate, in replays and videos); a look into corners and slides was dropped (user,

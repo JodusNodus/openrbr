@@ -248,3 +248,18 @@ fn skip_reasons_follow_name_and_part() {
     assert_eq!(part_for("e_empty", &parts).unwrap_err(), Skip::NoShaderSlots);
     assert!(part_for("e_body", &parts).is_ok());
 }
+
+#[test]
+fn a_personal_camera_looking_out_the_side_is_not_taken() {
+    let section = |pos: &str, target: &str| {
+        let text = format!("[Cam_internal]\nPos = {pos}\nTarget = {target}\n");
+        ini::parse(&text).unwrap().remove(0)
+    };
+    // The Porsche 911 GT3 RS (2010) RGT pack's: 60 degrees left.
+    assert!(!looks_ahead(&section("-0.572096 0.787231 -0.881491", "3.9079 0.826193 -3.50321")));
+    // Its own `Cam_internal`, straight ahead; and one a little to the side.
+    assert!(looks_ahead(&section("0.35 0.897231 -0.901491", "0.35 0.806193 -3.50321")));
+    assert!(looks_ahead(&section("0 0.9 -0.9", "0.5 0.9 -3.5")));
+    // Without a place, as it is.
+    assert!(looks_ahead(&ini::parse("[Cam_internal]\nFOV = 1\n").unwrap().remove(0)));
+}

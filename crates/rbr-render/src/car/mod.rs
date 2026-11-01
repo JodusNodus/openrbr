@@ -566,19 +566,36 @@ pub fn part_sections(data: &Data, name: &str) -> Result<Vec<Section>, Error> {
 
 /// Car `name`'s `.ini` sections with the `[Cam_*]` sections of the `<ini>_personal.ini` beside it in their place:
 /// RallySimFans keeps the player's camera places for a car there (`notes/formats.md` "RSF cars"). Whether RSF's plugin
-/// reads it at load is not traced; ours takes it as the car's camera.
+/// reads it at load is not traced; ours takes it as the car's camera, unless it looks more than [`PERSONAL_YAW_MAX`]
+/// to the side ([`looks_ahead`]).
 pub fn camera_sections(data: &Data, name: &str) -> Result<Vec<Section>, Error> {
     let ini_file = entry(data, name)?.ini_file;
     let mut sections = read_ini(data, &ini_file)?;
     let personal = ini_file.rsplit_once('.').map(|(stem, _)| format!("{stem}_personal.ini"));
     let over = personal.filter(|p| data.resolve(p).is_some()).map(|p| read_ini(data, &p)).transpose()?;
-    for section in over.unwrap_or_default().into_iter().filter(|s| s.name.starts_with("Cam_")) {
+    for section in over.unwrap_or_default().into_iter().filter(|s| s.name.starts_with("Cam_") && looks_ahead(s)) {
         match sections.iter_mut().find(|s| s.name.eq_ignore_ascii_case(&section.name)) {
             Some(old) => *old = section,
             None => sections.push(section),
         }
     }
     Ok(sections)
+}
+
+/// The most a `_personal.ini` camera may look to the side of the car's front, degrees. The 43 installed ones look
+/// within 5 degrees of it but the Porsche 911 GT3 RS (2010) RGT pack's `Cam_internal`, which looks 60 degrees left
+/// (2026-11-01).
+pub const PERSONAL_YAW_MAX: f32 = 30.0;
+
+/// Whether the camera section `section` looks within [`PERSONAL_YAW_MAX`] of the car's front (`-z`) from `Pos` to
+/// `Target`; true without them.
+fn looks_ahead(section: &Section) -> bool {
+    let vector = |key| -> Option<Vec3> {
+        let v = section.get(key)?.split_whitespace().map(str::parse).collect::<Result<Vec<f32>, _>>().ok()?;
+        Some(Vec3::from_slice(v.get(..3)?))
+    };
+    let Some(look) = vector("Pos").zip(vector("Target")).map(|(pos, target)| target - pos) else { return true };
+    look.x.atan2(-look.z).abs() <= PERSONAL_YAW_MAX.to_radians()
 }
 
 /// Car `name`'s `.sgc` model (the in-car glass reads its windscreen and wipers, `crate::glass`).
