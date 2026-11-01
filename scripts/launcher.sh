@@ -7,6 +7,7 @@
 # These override the install folder of the launcher's Settings page (docs/development.md). Arguments go to the launcher.
 # Usage: scripts/launcher.sh [--data DIR] [--viewer PATH] [--standalone PATH] [--list]
 set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/dev-env.sh"
 root=$(cd "$(dirname "$0")/.." && pwd)
 nice -n 10 cargo build -j 4 --release --manifest-path "$root/Cargo.toml"
 main=$(dirname "$(git -C "$root" rev-parse --path-format=absolute --git-common-dir)")
