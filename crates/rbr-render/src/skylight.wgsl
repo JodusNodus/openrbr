@@ -590,7 +590,8 @@ fn cs_light(@builtin(local_invocation_index) index: u32) {
 //
 // The eye's white balance (`balance`, the stage's and the sky's alike): the noon light's colour (`WHITE`) is white, and
 // the eye goes the CIECAM02 degree of adaptation `D` of the way to the open ground's light's colour as it changes (for
-// an adapting luminance of a fifth of the mean light's, an average surround: 0.82 at night to 1 in daylight).
+// an adapting luminance of a fifth of the mean light's, an average surround: 0.82 at night to 1 in daylight), less of
+// the way to a warm light (`WARM_RATIO`).
 const LUMA: vec3<f32> = vec3<f32>(0.2126, 0.7152, 0.0722);
 // The sun's illuminance above the air, lux (Janiczek and DeYoung 1987).
 const SUN_LUX: f32 = 133775.0;
@@ -606,6 +607,13 @@ const NIGHT_PRE_EXPOSURE: f32 = 0.004 * PI / 0.25;
 const OVERCAST_SHARE: f32 = 0.25;
 // The open ground's light's colour at noon (as `NOON_OPEN`).
 const WHITE: vec3<f32> = vec3<f32>(1.06, 0.99, 0.92);
+// The eye adapts less to warm light than to white (a lamp-lit room still looks warm), and the player's eye is adapted
+// to the screen, so a low sun keeps some of its gold, as in a photograph (user's call, 2026-11-01): as the open
+// ground's light's red over blue grows from `WHITE`'s to `WARM_RATIO.y` times it, `D` falls to `WARM_D` of itself (the
+// sun 13 degrees up: 1.29 times, `D` 0.45). Neutral and bluer light (noon, overcast, twilight, night) keeps the full
+// `D`.
+const WARM_RATIO: vec2<f32> = vec2<f32>(1.0, 1.35);
+const WARM_D: f32 = 0.4;
 
 fn day_light(e_sky: vec3<f32>, sun: vec3<f32>) -> array<vec4<f32>, 2> {
     var sky_light = e_sky / sky.shape.z;
@@ -623,7 +631,8 @@ fn day_light(e_sky: vec3<f32>, sun: vec3<f32>) -> array<vec4<f32>, 2> {
     let open = max(dot(open_light, LUMA), 1e-9);
     let mean = max(dot(sky_light, LUMA) + dot(sun_light, LUMA) * (1.0 + up) * 0.25, 1e-9);
     let adapting = 0.2 * mean * SUN_LUX / PI;
-    let d = 1.0 - exp((-adapting - 42.0) / 92.0) / 3.6;
+    let warm = smoothstep(WARM_RATIO.x, WARM_RATIO.y, open_light.r / max(open_light.b, 1e-9) / (WHITE.r / WHITE.b));
+    let d = (1.0 - exp((-adapting - 42.0) / 92.0) / 3.6) * mix(1.0, WARM_D, warm);
     var balance = pow(WHITE, vec3<f32>(d - 1.0)) * pow(max(open_light / open, vec3<f32>(1e-3)), vec3<f32>(-d));
     balance /= dot(open_light / open * balance, LUMA);
     light_out.balance = vec4<f32>(balance, 0.0);
