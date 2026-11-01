@@ -2,7 +2,7 @@
 # One harness recording in the NGP install ($RBR_NGP_GAME, its Wine prefix
 # $RBR_NGP_PREFIX, Proton $RBR_PROTON; notes/ngp.md): auto-start Tanner
 # with the slot-6 car and record. Without PLAYBACK nobody drives: the game runs SECS seconds and is killed. With
-# PLAYBACK (an absolute local RBRRecompPlayback.bin, e.g. from scripts/ngp-synth-playback.py) its controls drive the car
+# PLAYBACK (a local RBRRecompPlayback.bin, e.g. from scripts/ngp-synth-playback.py) its controls drive the car
 # and the game quits by itself after the last one (killed after SECS if it hasn't). With DUMP=1 the exe and NGP.dll
 # images are dumped (scripts/ngp-dump.py) to $RBR_NGP_RUNS/NAME.dump/ after SECS (idle runs only).
 # SNAPSHOT="1520 2300" dumps the process at those steps (RBRRecompSnapshot.txt, as harness/play.sh's RBR_SNAPSHOT)
@@ -36,10 +36,7 @@ replay=${REPLAY:-}
 # Inputs are staged under the run's name and go into the install only once the run holds the lock.
 mkdir -p "$runs"
 if [ -n "${PEEK:-}" ]; then cp "$PEEK" "$runs/.stage-$name.peek"; peek=1; fi
-if [ -n "${PLAYBACK:-}" ]; then
-  [[ "$PLAYBACK" = /* ]] || { echo "bad PLAYBACK (an absolute local path)" >&2; exit 1; }
-  cp "$PLAYBACK" "$runs/.stage-$name.playback"
-fi
+if [ -n "${PLAYBACK:-}" ]; then cp "$PLAYBACK" "$runs/.stage-$name.playback"; fi
 # one of our runs at a time: the install's harness files are shared
 exec 9>/tmp/rbr-ngp-run.lock
 flock -w 7200 9 || { echo "another ngp-run.sh holds the lock" >&2; exit 1; }
