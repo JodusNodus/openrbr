@@ -268,6 +268,11 @@ pub fn speck_color(index: f32) -> [f32; 3] {
     }
 }
 
+/// Mud's mean colour (of [`speck_color`]'s 0 to 3).
+pub fn mud_mean() -> [f32; 3] {
+    std::array::from_fn(|k| MUD_COLORS.iter().map(|c| c[k]).sum::<f32>() / MUD_COLORS.len() as f32)
+}
+
 /// Whether a mud speck of colour index `index` is snow.
 pub fn is_snow(index: f32) -> bool {
     index.max(0.0) as usize % 8 >= 4

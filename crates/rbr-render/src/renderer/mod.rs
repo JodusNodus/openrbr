@@ -684,11 +684,7 @@ impl Renderer {
             quality,
         );
         let draws = || meshes.iter().flat_map(|mesh| &mesh.draws);
-        let wetness = match stage.selection.weather {
-            Weather::Dry => 0.0,
-            Weather::Damp => 0.5,
-            Weather::Wet => 1.0,
-        };
+        let wetness = stage.selection.weather.wetness();
         let rays = enhance.reflections.rays().filter(|_| draws().any(|draw| reflects(draw, wetness)));
         let screen_reflection = rays.map(|rays| {
             ScreenReflection::new(

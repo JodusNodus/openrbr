@@ -78,6 +78,9 @@ const SNOW_INSIDE: f32 = 0.75;
 /// Ours: a mud speck's quad spans this many times its radius, for the droplets around it (`SPLAT_REACH` in
 /// `glass.wgsl`).
 const SPLAT_REACH: f32 = 2.6;
+/// Ours: a mud speck's size on a dry stage and on a wet one, of its radius (dry dust spatters in fine dots, wet mud in
+/// blobs).
+const MUD_SIZE: [f32; 2] = [0.7, 1.2];
 
 /// The windscreen's chart: its mean plane (`origin`, `axes` across, up and out), the glass's height over it on a
 /// grid (`None` off the glass), and its triangles (the chart's x and y, the height in z) and outline in the chart.
@@ -586,8 +589,8 @@ pub struct Drawn {
     last: Option<(usize, u32)>,
     /// The car's acceleration the water feels, physics frame ([`felt_acceleration`]).
     felt: Vec3,
-    /// The stage's dust colour, which tints the mud specks ([`mud_color`]).
-    dust: [f32; 3],
+    /// How the mud specks look.
+    mud: Mud,
 }
 
 impl Drawn {
@@ -597,8 +600,8 @@ impl Drawn {
     }
 
     /// The glass of car `name` in `precipitation`, with the wiper meshes found among `playback`'s interior parts and
-    /// what its windows' faces let through, `tints`, its mud of the stage's `dust` colour
-    /// ([`crate::particles::wheel_spray::dust`]). `None` (reported on stderr) when the car has no windscreen part.
+    /// what its windows' faces let through, `tints`, its mud specks as `mud`. `None` (reported on stderr) when the car
+    /// has no windscreen part.
     /// The wipers start at `switch`; `playback` turns their meshes ([`Playback::set_turning`]).
     pub fn load(
         data: &Data,
@@ -607,7 +610,7 @@ impl Drawn {
         playback: &mut Playback,
         switch: Switch,
         tints: &Tints,
-        dust: [f32; 3],
+        mud: Mud,
     ) -> Option<Drawn> {
         let car = CarGlass::load(data, name).map_err(|e| eprintln!("glass: {e}")).ok()?;
         let [lo, hi] = car.windscreen.bounds;
@@ -664,7 +667,7 @@ impl Drawn {
             sides,
             last: None,
             felt,
-            dust,
+            mud,
         })
     }
 
@@ -784,7 +787,7 @@ impl Drawn {
         let [across, up, _] = outside.unwrap_or(w).axes.map(|a| to_stage.transform_vector3(a));
         // Seen from inside, the mud behind a sun strip or the black band printed on the glass is hidden.
         let inside = |k: usize| outside.is_none().then(|| &self.corners[k].1[..]);
-        let mut drops = pane_drops(&self.glass, w, outside, to_stage, streak, lit, self.dust, inside(0));
+        let mut drops = pane_drops(&self.glass, w, outside, to_stage, streak, lit, self.mud, inside(0));
         for (k, (side, glass)) in self.car.sides.iter().zip(&self.sides).enumerate() {
             // Outside, on the exterior pane over it, when the car has one.
             let on = match outside {
@@ -792,7 +795,7 @@ impl Drawn {
                 None => Some(None),
             };
             if let Some(on) = on {
-                drops.extend(pane_drops(glass, &side.inside, on, to_stage, -streak, lit, self.dust, inside(k + 1)));
+                drops.extend(pane_drops(glass, &side.inside, on, to_stage, -streak, lit, self.mud, inside(k + 1)));
             }
         }
         // The snow each blade carries, along its edge at its angle.
@@ -836,8 +839,8 @@ impl Drawn {
 /// The drops, film and mud of one pane's `glass` at the current frame, stage space (`to_stage` from the car's model),
 /// on its chart `w` inside, or on `outside` at the points over `w`'s. `streak` is the film's streak length, up the
 /// pane, or along it when negative. `lit`: the mud seen from inside lets the outside's light through (kind 5). The mud
-/// takes the stage's `dust` colour ([`mud_color`]); `tints`, inside, what the pane's glass lets through over its film
-/// ([`Tints::film_tints`]), which hides the mud behind its printed bands.
+/// looks as `mud`; `tints`, inside, what the pane's glass lets through over its film ([`Tints::film_tints`]), which
+/// hides the mud behind its printed bands.
 #[allow(clippy::too_many_arguments)]
 fn pane_drops(
     glass: &Glass,
@@ -846,7 +849,7 @@ fn pane_drops(
     to_stage: Mat4,
     streak: f32,
     lit: bool,
-    dust: [f32; 3],
+    mud: Mud,
     tints: Option<&[f32]>,
 ) -> Vec<gpu::Drop> {
     let place = |at: Vec2, lift: f32| match outside {
@@ -929,7 +932,8 @@ fn pane_drops(
             (to(side) * d.radius, to(along) * d.radius * (1.0 + run * STRETCH))
         } else if d.kind == Kind::Mud {
             // The speck's droplets around it (`splat` in `glass.wgsl`).
-            (across * d.radius * SPLAT_REACH, up * d.radius * SPLAT_REACH)
+            let reach = d.radius * SPLAT_REACH * if model::is_snow(d.left) { 1.0 } else { mud.size };
+            (across * reach, up * reach)
         } else {
             (across * d.radius, up * d.radius)
         };
@@ -942,7 +946,7 @@ fn pane_drops(
                     (None, false) => (if lit { 5.0 } else { 3.0 }, MUD_INSIDE),
                     (None, true) => (3.0, SNOW_INSIDE),
                 };
-                let [r, g, b] = mud_color(d.left, dust).map(|c| c * shade);
+                let [r, g, b] = mud.color(d.left).map(|c| c * shade);
                 (kind, tints.map_or(1.0, |t| hidden(through_at(glass, t, d.at))), [r, g, b, 1.0])
             }
             Kind::Snow => (1.0, 0.5 + 0.5 * d.left, [0.95, 0.96, 1.0, 1.0]),
@@ -969,15 +973,37 @@ fn pane_drops(
     drops
 }
 
-/// A mud speck's colour by its colour index ([`model::speck_color`]): mud's tinted by the stage's `dust` against the
-/// neutral dust (as the car's dirt, [`crate::dirt::CarDirt::look`]), snow's as it is.
-fn mud_color(index: f32, dust: [f32; 3]) -> [f32; 3] {
-    let colour = model::speck_color(index);
-    if model::is_snow(index) {
-        return colour;
+/// How the mud specks look on a stage (ours).
+#[derive(Debug, Clone, Copy)]
+pub struct Mud {
+    /// The colour of mud's specks against [`model::speck_color`]'s.
+    tint: [f32; 3],
+    /// Their size against their radius ([`MUD_SIZE`]).
+    size: f32,
+}
+
+impl Mud {
+    /// The specks of a stage of `dust` colour and `wetness` (0 dry, 1 wet): the dust against the neutral dust,
+    /// darkened with the wetness from the specks' drying mud to the car's wet dirt ([`crate::dirt::COLOUR`] against
+    /// mud's mean), as the car's dirt goes ([`crate::dirt::CarDirt::look`]); finer dry, bigger wet.
+    pub fn of(dust: [f32; 3], wetness: f32) -> Mud {
+        let (neutral, mean) = (crate::particles::wheel_spray::NEUTRAL_DUST, model::mud_mean());
+        Mud {
+            tint: std::array::from_fn(|k| {
+                dust[k] / neutral[k] * (1.0 + (crate::dirt::COLOUR[k] / mean[k] - 1.0) * wetness)
+            }),
+            size: MUD_SIZE[0] + (MUD_SIZE[1] - MUD_SIZE[0]) * wetness,
+        }
     }
-    let neutral = crate::particles::wheel_spray::NEUTRAL_DUST;
-    std::array::from_fn(|k| (colour[k] * dust[k] / neutral[k]).min(1.0))
+
+    /// A speck's colour by its colour index ([`model::speck_color`]): mud's tinted, snow's as it is.
+    fn color(self, index: f32) -> [f32; 3] {
+        let colour = model::speck_color(index);
+        if model::is_snow(index) {
+            return colour;
+        }
+        std::array::from_fn(|k| (colour[k] * self.tint[k]).min(1.0))
+    }
 }
 
 /// How much of a speck shows inside behind glass that lets `through` through: all of it over the clear glass, none

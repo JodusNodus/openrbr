@@ -62,7 +62,7 @@ struct FrameUniform {
     /// At night (renderer addition, `Atmosphere::night`): rgb the headlights' glow on the glass, w 1.
     night: [f32; 4],
     /// Seen from outside (ours): x 1, the wet layer of the film (`glass.wgsl`); 0 inside. y how wet the glass has been,
-    /// 0 to 1 (the dried water spots).
+    /// 0 to 1 (the dried water spots); z how wet the stage is (the mud seen from inside).
     outside: [f32; 4],
     /// The eye, stage space.
     eye: [f32; 4],
@@ -315,7 +315,7 @@ impl Pass {
             screen: [w, h, 1.0 / w, 1.0 / h],
             light: light.extend(1.0).to_array(),
             night: if a.night { [NIGHT_GLOW[0], NIGHT_GLOW[1], NIGHT_GLOW[2], 1.0] } else { [0.0; 4] },
-            outside: [f32::from(u8::from(outside)), wet.max(a.precipitation()).clamp(0.0, 1.0), 0.0, 0.0],
+            outside: [f32::from(u8::from(outside)), wet.max(a.precipitation()).clamp(0.0, 1.0), wet, 0.0],
             eye: crate::camera::eye(view_projection).extend(1.0).to_array(),
             sun: (-a.sun_direction.normalize_or_zero()).extend(if a.night { 0.0 } else { 1.0 }).to_array(),
             sun_light: a.diffuse.extend(1.0).to_array(),
