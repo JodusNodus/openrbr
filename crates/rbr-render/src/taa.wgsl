@@ -91,9 +91,9 @@ fn load_scene(pixel: vec2<i32>) -> vec3<f32> {
     return clamp(select(c, vec3<f32>(0.0), c != c), vec3<f32>(0.0), vec3<f32>(64.0));
 }
 
-// Catmull-Rom history sample from 5 bilinear taps (Jimenez 2016), with its glass mask in alpha.
-fn history_at(uv: vec2<f32>) -> vec4<f32> {
-    let px = uv * t.output.xy;
+// `image` (`texels`: w, h, 1/w, 1/h) at `uv`, Catmull-Rom from 5 bilinear taps (Jimenez 2016).
+fn catmull_rom(image: texture_2d<f32>, uv: vec2<f32>, texels: vec4<f32>) -> vec4<f32> {
+    let px = uv * texels.xy;
     let c = floor(px - 0.5) + 0.5;
     let f = px - c;
     let w0 = f * (-0.5 + f * (1.0 - 0.5 * f));
@@ -101,16 +101,21 @@ fn history_at(uv: vec2<f32>) -> vec4<f32> {
     let w2 = f * (0.5 + f * (2.0 - 1.5 * f));
     let w3 = f * f * (-0.5 + 0.5 * f);
     let w12 = w1 + w2;
-    let p0 = (c - 1.0) * t.output.zw;
-    let p3 = (c + 2.0) * t.output.zw;
-    let p12 = (c + w2 / w12) * t.output.zw;
-    var r = textureSampleLevel(history, linear_sampler, vec2<f32>(p12.x, p0.y), 0.0) * (w12.x * w0.y);
-    r += textureSampleLevel(history, linear_sampler, vec2<f32>(p0.x, p12.y), 0.0) * (w0.x * w12.y);
-    r += textureSampleLevel(history, linear_sampler, p12, 0.0) * (w12.x * w12.y);
-    r += textureSampleLevel(history, linear_sampler, vec2<f32>(p3.x, p12.y), 0.0) * (w3.x * w12.y);
-    r += textureSampleLevel(history, linear_sampler, vec2<f32>(p12.x, p3.y), 0.0) * (w12.x * w3.y);
+    let p0 = (c - 1.0) * texels.zw;
+    let p3 = (c + 2.0) * texels.zw;
+    let p12 = (c + w2 / w12) * texels.zw;
+    var r = textureSampleLevel(image, linear_sampler, vec2<f32>(p12.x, p0.y), 0.0) * (w12.x * w0.y);
+    r += textureSampleLevel(image, linear_sampler, vec2<f32>(p0.x, p12.y), 0.0) * (w0.x * w12.y);
+    r += textureSampleLevel(image, linear_sampler, p12, 0.0) * (w12.x * w12.y);
+    r += textureSampleLevel(image, linear_sampler, vec2<f32>(p3.x, p12.y), 0.0) * (w3.x * w12.y);
+    r += textureSampleLevel(image, linear_sampler, vec2<f32>(p12.x, p3.y), 0.0) * (w12.x * w3.y);
     let sum = w12.x * w0.y + w0.x * w12.y + w12.x * w12.y + w3.x * w12.y + w12.x * w3.y;
     return max(r / max(sum, 1.0e-4), vec4<f32>(0.0));
+}
+
+// The history at `uv`, with its glass mask in alpha.
+fn history_at(uv: vec2<f32>) -> vec4<f32> {
+    return catmull_rom(history, uv, t.output);
 }
 
 // `h` clipped toward the box's centre `c` +- `e`, along the line to the centre.
@@ -189,14 +194,15 @@ fn fs_taa(in: Out) -> Resolved {
 // how near their jittered points fell (`gathered`, a Gaussian fit of Blackman-Harris about an output pixel wide), so
 // over the jitter's phases it gathers its own detail. The new frame's share is the base over the scale per unit of that
 // weight: a longer history, about as many samples a pixel as at the frame's size. Where the history was clipped hard
-// (uncovered) the samples count five times, and the history gives way to the frame alone (`alone`: its samples spread
-// over the frame's pixels; the nearest sample's own drew blocks), as where the pixel moves fast, through the glass's mud
-// and drops, or with no history (a reset, off the previous frame). The clip box is the 3x3 samples' (weighted by their
+// (uncovered) the samples count five times, and the history gives way to the frame alone (`alone`: Catmull-Rom over
+// its samples, held within the 3x3's range; the nearest sample's own drew blocks, a Gaussian over the frame's pixels
+// smudged moving foliage), as where the pixel moves fast, through the glass's mud and drops, or with no history (a
+// reset, off the previous frame). The clip box is the 3x3 samples' (weighted by their
 // nearness it clipped the history to the nearest sample's side of an edge: stair-steps, speckled grass); the motion is
 // the nearest of them's (the largest depth, reversed), so an edge moves with what is in front. The rain and the
 // particles, drawn after `Taa::keep` (`over`), are added at the frame's resolution and kept out of the history.
 
-// A sample's weight `d` from the pixel's centre (in output pixels for `gathered`, the frame's for `spread`).
+// A sample's weight `d` output pixels from the pixel's centre.
 fn kernel(d: vec2<f32>) -> f32 {
     return exp(-2.29 * dot(d, d));
 }
@@ -209,7 +215,8 @@ fn fs_upscale(in: Out) -> Resolved {
     let base = vec2<i32>(floor(p + t.jitter.xy));
     let last = vec2<i32>(t.size.xy) - 1;
     var gathered = vec4<f32>(0.0);
-    var spread = vec4<f32>(0.0);
+    var low = vec3<f32>(1.0e9);
+    var high = vec3<f32>(0.0);
     // The clip box's moments.
     var m1 = vec3<f32>(0.0);
     var m2 = vec3<f32>(0.0);
@@ -221,9 +228,9 @@ fn fs_upscale(in: Out) -> Resolved {
             let c = tone(load_scene(q));
             let d = vec2<f32>(q) + 0.5 - t.jitter.xy - p;
             let w = kernel(d * t.jitter.z);
-            let ws = kernel(d);
             gathered += vec4<f32>(c * w, w);
-            spread += vec4<f32>(c * ws, ws);
+            low = min(low, c);
+            high = max(high, c);
             let yc = to_ycocg(c);
             m1 += yc;
             m2 += yc * yc;
@@ -235,7 +242,8 @@ fn fs_upscale(in: Out) -> Resolved {
             }
         }
     }
-    let alone = spread.rgb / spread.w;
+    let sampled = catmull_rom(scene, (p + t.jitter.xy) * t.size.zw, t.size).rgb;
+    let alone = clamp(tone(select(sampled, vec3<f32>(0.0), sampled != sampled)), low, high);
     let mask = clamp(textureLoad(scene, clamp(base, vec2<i32>(0), last), 0).a, 0.0, 1.0);
     if (t.params.w > 1.5) {
         let c = vec4<f32>(vec3<f32>(mask), mask);
