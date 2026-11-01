@@ -979,6 +979,11 @@ top 108 to 85 of 255 (no sheen 86). Cockpit reference shots 1 to 2.6 % RMSE by d
 0.02 to 0.04 %, outside shots byte-identical. The dash still reads blue-grey: near-black texels under the cabin's own
 exposure and the sky through the windscreen.
 
+Cockpit debug view (viewer `--debug-view cabin-sky|cabin-near|cabin-contact|cabin-light`, ours; `renderer::DebugView`):
+the interior set draws one term of its light (`cabin_debug`: the sky share, the near openness, the contact shading, the
+irradiance over the open sky's, half of it mid-grey) as a display grey, past the exposure and the tone curve in
+`post.wgsl` (`DEBUG_VIEW`), every other pixel as normal; the frame without it byte-identical.
+
 The car's sun shadow (2026-10-30, `car_shadow`): a penumbra by the sun's disc and the casters' mean distance (3x3
 search, PCSS as the cascades), taps a texel apart, at most 9 a side and the range's reach. The fixed 4x4 taps 4 cm
 apart over 3 mm texels drew a 1 cm grid of steps where the sun came through the glass (208 binnacle, 19:30). 580 208
