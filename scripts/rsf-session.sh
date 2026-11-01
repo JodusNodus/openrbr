@@ -1,83 +1,68 @@
 #!/bin/bash
-# Record RallySimFans drives on the test machine (notes/verification.md "RSF sessions"): per stage attempt the harness
+# Record RallySimFans drives (notes/verification.md "RSF sessions"): per stage attempt the harness
 # plugin's FRM1 recording and RSS1 session file (RBRRecompSession.on; harness/session.py), the game's audio for the
 # whole session, and the settings that shape input and force feedback.
 #
-#   scripts/rsf-session.sh install          (Mac) build the plugin, copy it, harness/session.py and this script (as
-#                                           rsf-record) to the test machine (RBR_REMOTE_HOST)
+#   scripts/rsf-session.sh install          build the plugin into $RBR_RSF_PLUGIN (with harness/session.py)
 #   scripts/rsf-session.sh start NAME       take the lock, put the plugin and the .on files into the install (a
 #                                           manifest lists them), meta.txt "before", then record the audio once the
 #                                           game runs. Start RSF as usual (`rbr` or `rbr game`), drive any number of
-#                                           stages and quit the game: that ends the session. From the Mac it installs
-#                                           first.
+#                                           stages and quit the game: that ends the session.
 #   scripts/rsf-session.sh stop NAME        end it while the game runs no more (--force: while it runs); a session
 #                                           whose watcher died is ended from its manifest
 #   scripts/rsf-session.sh status           the session holding the lock
-#   scripts/rsf-session.sh fetch NAME [DIR] (Mac) copy ~/rbr-rsf-runs/NAME to DIR (default $RBR_RECORDINGS/rsf/NAME)
+#   scripts/rsf-session.sh fetch NAME [DIR] copy $RBR_RSF_RUNS/NAME to DIR (default $RBR_RECORDINGS/rsf/NAME)
 #
-# The end of a session moves stage attempt n's files to ~/rbr-rsf-runs/NAME/<n>/: physics.bin, session.bin,
+# The end of a session moves stage attempt n's files to $RBR_RSF_RUNS/NAME/<n>/: physics.bin, session.bin,
 # attempt.txt, files/ (the .lsp files its stage load opened) and setup.lsp (the setup its car started on); writes
 # meta.txt's "after" values and harness.log, and removes exactly what the manifest added. config/ holds the controller
-# profiles (.acm, .rbr), RBRControls' files, NGPCarMenu.ini and RSF's cars_data.json as the session started, devices.txt the device files the game's prefix holds. On the
-# test machine the same commands run as `rsf-record ...`. Env: RSF_GAME (default Games/Richard Burns Rally), RSF_PREFIX
-# (Games/prefixes/rbr), both relative to the home of the test machine; RSF_LOCK (/tmp/rbr-rsf-run.lock). For tests
+# profiles (.acm, .rbr), RBRControls' files, NGPCarMenu.ini and RSF's cars_data.json as the session started, devices.txt the device files the game's prefix holds.
+# Env: RBR_RSF (the RSF install), RBR_RSF_PREFIX (the Wine prefix the game runs in),
+# RSF_LOCK (/tmp/rbr-rsf-run.lock). For tests
 # without a driver: AUTO="map car weather tyre" adds RBRRecompAuto.txt (a stage start), PLAYBACK=<file relative to
 # the home> RBRRecompPlayback.bin (its controls drive; the game quits after them), FAST=N RBRRecompFastForward.txt,
 # FFB=1 RBRRecompFfb.on (binds the newest SavedGames/pf*.acm, as the menus would, so force feedback reaches the
 # wheel in an AUTO start, playback too; FFB=<name> binds pf<name>.acm), SNAPS=1 RBRRecompSessionSnaps.on (each
 # attempt's start-state snapshots, about 960 MB).
 set -euo pipefail
-game_rel=${RSF_GAME:-Games/Richard Burns Rally}
-prefix_rel=${RSF_PREFIX:-Games/prefixes/rbr}
+source "$(dirname "${BASH_SOURCE[0]}")/dev-env.sh"
+game=${RBR_RSF:?set RBR_RSF to the RSF install (notes/verification.md)}
+prefix=${RBR_RSF_PREFIX:?set RBR_RSF_PREFIX to the Wine prefix the RSF game runs in (notes/verification.md)}
+plugin=${RBR_RSF_PLUGIN:?set RBR_RSF_PLUGIN to the RSF plugin directory (notes/verification.md)}
+runs=${RBR_RSF_RUNS:?set RBR_RSF_RUNS to the RSF runs directory (notes/verification.md)}
 lock=${RSF_LOCK:-/tmp/rbr-rsf-run.lock}
 auto=${AUTO:-}
 cmd=${1:-}
 name=${2:-}
-[[ "$game_rel" =~ ^[A-Za-z0-9\ ._/-]+$ && "$prefix_rel" =~ ^[A-Za-z0-9\ ._/-]+$ && "$lock" =~ ^/[A-Za-z0-9._/-]+$ ]] ||
-  { echo "bad RSF_GAME, RSF_PREFIX or RSF_LOCK" >&2; exit 1; }
+[[ "$game" =~ ^/[A-Za-z0-9\ ._/-]+$ && "$prefix" =~ ^/[A-Za-z0-9\ ._/-]+$ && "$lock" =~ ^/[A-Za-z0-9._/-]+$ ]] ||
+  { echo "bad RBR_RSF, RBR_RSF_PREFIX or RSF_LOCK" >&2; exit 1; }
 [[ "$auto" =~ ^([0-9]+(\ [0-9]+){3,5})?$ ]] || { echo "bad AUTO" >&2; exit 1; }
 case $cmd in start|stop|fetch|_watch) [[ "$name" =~ ^[A-Za-z0-9_-]+$ ]] || { echo "bad session name" >&2; exit 1; } ;; esac
 
-# ---- on the Mac: build and copy, or run the command on the test machine ----
-if [ ! -d "$HOME/$game_rel" ]; then
-  host=${RBR_REMOTE_HOST:?set RBR_REMOTE_HOST to the ssh host of the test machine (notes/verification.md)}
-  root=$(cd "$(dirname "$0")/.." && pwd)
-  remote() {
-    ssh -o BatchMode=yes "$host" bash -s <<EOF
-export RSF_GAME='$game_rel' RSF_PREFIX='$prefix_rel' RSF_LOCK='$lock' AUTO='$auto'
-exec ~/.local/bin/rsf-record $*
-EOF
-  }
-  install() {
-    RBR_PLUGIN_SDK=${RBR_PLUGIN_SDK:-${RBR_PATCH:+$RBR_PATCH/Plugins/RBRTestPlugin}} "$root/harness/plugin/build.sh"
-    local commit
-    commit=$(git -C "$root" rev-parse HEAD)$(git -C "$root" diff --quiet HEAD -- harness/plugin || echo +dirty)
-    ssh -o BatchMode=yes "$host" "mkdir -p rbr-rsf-plugin .local/bin && cp ${RBR_REMOTE:-rbr-recomp-test}/build/harness/RBRRecompHarness.dll rbr-rsf-plugin/ && echo $commit > rbr-rsf-plugin/commit"
-    scp -q "$0" "$host:.local/bin/rsf-record"
-    scp -q "$root/harness/session.py" "$host:rbr-rsf-plugin/session.py"
-    echo "installed: ~/.local/bin/rsf-record and the plugin ($commit) on $host"
-  }
-  case $cmd in
-    install) install ;;
-    start) install; remote start "$name" ;;
-    stop) remote stop "$name" "${3:-}" ;;
-    status) remote status ;;
-    fetch)
+root=$(cd "$(dirname "$0")/.." && pwd)
+install() {
+  RBR_PLUGIN_SDK=${RBR_PLUGIN_SDK:-${RBR_PATCH:+$RBR_PATCH/Plugins/RBRTestPlugin}} "$root/harness/plugin/build.sh"
+  local commit
+  commit=$(git -C "$root" rev-parse HEAD)$(git -C "$root" diff --quiet HEAD -- harness/plugin || echo +dirty)
+  mkdir -p "$plugin"
+  cp "$root/build/harness/RBRRecompHarness.dll" "$plugin/RBRRecompHarness.dll.tmp" &&
+    mv "$plugin/RBRRecompHarness.dll.tmp" "$plugin/RBRRecompHarness.dll"
+  cp "$root/harness/session.py" "$plugin/session.py"
+  echo "$commit" > "$plugin/commit"
+  echo "installed: the plugin ($commit) and session.py in $plugin"
+}
+run=$runs/$name
+case $cmd in
+  install) install; exit ;;
+  fetch)
       dir=${3:-${RBR_RECORDINGS:?set RBR_RECORDINGS or give DIR}/rsf/$name}
       mkdir -p "$dir"
-      rsync -a "$host:rbr-rsf-runs/$name/" "$dir/"
-      echo "$dir" ;;
-    *) sed -n '2,28p' "$0" >&2; exit 1 ;;
-  esac
-  exit
-fi
+      cp -a "$run/." "$dir/"
+      echo "$dir"; exit ;;
+  start|stop|status|_watch) ;;  # below
+  *) sed -n '2,28p' "$0" >&2; exit 1 ;;
+esac
 
-# ---- on the test machine ----
-game=$HOME/$game_rel
-prefix=$HOME/$prefix_rel
-runs=$HOME/rbr-rsf-runs
-plugin=$HOME/rbr-rsf-plugin
-run=$runs/$name
 playback=${PLAYBACK:-}
 fast=${FAST:-}
 [[ "$playback" =~ ^[A-Za-z0-9_./-]*$ && "$fast" =~ ^[0-9]*$ ]] || { echo "bad PLAYBACK or FAST" >&2; exit 1; }
@@ -347,7 +332,7 @@ watch() {
 
 case $cmd in
   start)
-    [ -f "$plugin/RBRRecompHarness.dll" ] || { echo "no plugin in $plugin: run scripts/rsf-session.sh install on the Mac" >&2; exit 1; }
+    [ -f "$plugin/RBRRecompHarness.dll" ] || { echo "no plugin in $plugin: run scripts/rsf-session.sh install" >&2; exit 1; }
     [ ! -e "$run" ] || { echo "$run exists" >&2; exit 1; }
     mkdir -p "$run"
     setsid "$0" _watch "$name" >>"$run/watch.log" 2>&1 </dev/null &
