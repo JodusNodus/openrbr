@@ -5,12 +5,13 @@
 # stays at the heap-noise baseline; wrong ones: it grows within a few hundred steps.
 # Usage: harness/drive-trial.sh <drive> "<map car weather tyre damage trans>" <tag>
 set -euo pipefail
-host=${RBR_REMOTE_HOST:?set RBR_REMOTE_HOST to the ssh host of the test machine (notes/verification.md)}
+source "$(dirname "${BASH_SOURCE[0]}")/../scripts/dev-env.sh"
+runs=${RBR_RUNS:?set RBR_RUNS to the harness runs directory (notes/verification.md)}
+repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 drive=$1 auto=$2 tag=$3 t=$1-$3
-ssh -o BatchMode=yes "$host" bash -s -- "$drive" "$t" $auto <<'EOF'
-set -euo pipefail
-cd ~/rbr-harness-runs
-[ -f drive-"$1".playback.bin ] || python3 - "$1" <<'PY'
+(
+cd "$runs"
+[ -f drive-"$drive".playback.bin ] || python3 - "$drive" <<'PY'
 import struct, sys
 d = open("drive-%s.bin" % sys.argv[1], "rb").read(); p = 0
 while p + 20 <= len(d):
@@ -20,13 +21,13 @@ while p + 20 <= len(d):
     p += n
 open("drive-%s.playback.bin" % sys.argv[1], "wb").write(d[:p])
 PY
-ln -f drive-"$1".playback.bin drive-"$2".playback.bin
-echo "${*:3}" > drive-"$2".auto
-EOF
-RBR_DRIVE=$t harness/play.sh trial-$t >/tmp/drive-trial-$t.log 2>&1 || true
-ssh -o BatchMode=yes "$host" bash -s -- "$drive" "$t" <<'EOF'
-cd ~/rbr-harness-runs
-python3 - drive-"$1".bin trial-"$2".bin <<'PY'
+ln -f drive-"$drive".playback.bin drive-"$t".playback.bin
+echo "$auto" > drive-"$t".auto
+)
+RBR_DRIVE=$t "$repo/harness/play.sh" trial-$t >/tmp/drive-trial-$t.log 2>&1 || true
+(
+cd "$runs"
+python3 - drive-"$drive".bin trial-"$t".bin <<'PY'
 import struct, sys
 import numpy as np
 def load(path):
@@ -44,5 +45,5 @@ picks = [s for s in common if s in (41, 45, 50, 60, 80, 100, 300, 1000, 3000, 60
 print("steps %d..%d (%d common; drive has %d)" % (common[0], common[-1], len(common), len(a)))
 print("  ".join("%d:%d" % (s, int((a[s] != b[s]).sum())) for s in picks))
 PY
-rm -f drive-"$2".playback.bin drive-"$2".auto
-EOF
+rm -f drive-"$t".playback.bin drive-"$t".auto
+)
