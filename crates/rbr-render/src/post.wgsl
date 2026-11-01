@@ -61,7 +61,8 @@ const LEVELS: f32 = 6.0;
 // outside's light counts the outside's points `IN_CAR_WEIGHT.x` and the cabin's `.y` (a fifth: the outside exposed
 // nearly as seen from outside the car, the cabin's dark still holding it back a little), the cabin's light the cabin's
 // points alone, in the next `BINS` bins. The cabin takes its own exposure, at least the outside's and at most
-// `CABIN_STOPS` over it.
+// `CABIN_STOPS` over it (4 until 2026-11-01, with a toe lifting its darkest values a stop: with the cabin's light
+// weighed toward the windows, `cabin.wgsl`, the user's pick of the cabin looks kept its blacks).
 const METER_GRID: vec2<u32> = vec2<u32>(128u, 64u);
 const BINS: u32 = 128u;
 const ZONE_BINS: u32 = 2u * BINS;
@@ -70,7 +71,7 @@ const EV_SPAN: f32 = 32.0;
 const PERCENTILES: vec2<f32> = vec2<f32>(0.1, 0.9);
 const WEIGHT: u32 = 2u;
 const IN_CAR_WEIGHT: vec2<u32> = vec2<u32>(5u, 1u);
-const CABIN_STOPS: f32 = 4.0;
+const CABIN_STOPS: f32 = 2.5;
 // The exposure, as Unreal's and BeamNG's auto exposure: the metered light, back in luminance (over the pre-exposure),
 // as EV100 (ISO 100, the calibration constant `CALIBRATION`), held within `EV100_RANGE`, is exposed to `KEY`, middle
 // grey (18 percent before `AGX_SCALE`), shifted by the exposure compensation curve (`compensation`). The curve is Krawczyk, Myszkowski and Seidel's (2005) key value
@@ -109,9 +110,6 @@ const ROD_RETINA: f32 = 3000.0;
 // A day's sky seldom reaches it.
 const LOCAL_FROM: f32 = 2.0;
 const LOCAL_GIVE: f32 = 0.6;
-// The cabin's darkest values lifted, as a camera's shadows (user's call, 2026-10-31): `CABIN_TOE.x` stops at black,
-// half of it `CABIN_TOE.y` stops under `KEY`, a sixty-fifth at `KEY`.
-const CABIN_TOE: vec2<f32> = vec2<f32>(1.0, 3.0);
 // How fast the exposure follows the frame, per second: faster down into a bright frame than up into a dark one.
 const ADAPT_SPEED: vec2<f32> = vec2<f32>(3.0, 1.2);
 
@@ -396,13 +394,7 @@ fn fs_composite(v: Out) -> @location(0) vec4<f32> {
     lit = rod_vision(lit / pre) * pre / white;
     // Local exposure (`LOCAL_FROM`).
     let broad = log2(max(luminance(glow) * exposed, 1e-9) / KEY);
-    var linear = max(lit * exposed * exp2(-LOCAL_GIVE * max(broad - LOCAL_FROM, 0.0)), vec3<f32>(0.0));
-    if (cabin) {
-        // The cabin's toe (`CABIN_TOE`).
-        let pivot = KEY * exp2(-CABIN_TOE.y);
-        let y = luminance(linear);
-        linear *= exp2(CABIN_TOE.x * pivot * pivot / (y * y + pivot * pivot));
-    }
+    let linear = max(lit * exposed * exp2(-LOCAL_GIVE * max(broad - LOCAL_FROM, 0.0)), vec3<f32>(0.0));
     let c = agx(linear * AGX_SCALE, compensation(adapting));
     let grey = dot(c, vec3<f32>(0.299, 0.587, 0.114));
     return vec4<f32>(clamp(mix(vec3<f32>(grey), c, SATURATION * meter.grade.y), vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);

@@ -940,7 +940,7 @@ Exposure in the cockpit (user's call, 2026-10-31; was one exposure, the cabin me
 eye adapts to the dash when it looks there. The outside's meter counts the cabin at 1/5 (`IN_CAR_WEIGHT`): at 1/2 the
 dark cabin held the outside 1.5 to 2 stops over (Escort road 168 of 255; metered alone 91). The cabin takes its own
 exposure, eased as the outside's, at least the outside's and at most 4 stops over it (`CABIN_STOPS`), its darkest
-values lifted by a toe (`CABIN_TOE`, 1 stop at black, a sixty-fifth at middle grey), in a composite pipeline of its
+values lifted by a toe (`CABIN_TOE`, 1 stop at black, a sixty-fifth at middle grey; both changed 2026-11-01, below), in a composite pipeline of its
 own (`CABIN`). The glow and the light shafts keep the outside's exposure (at the cabin's they lit the pillars with a
 green haze); a pixel takes the cabin's only when its 3 x 3 are all cabin (a softer blend drew a dark band inside the
 pillars, or a bright halo outside them). Chosen against more cabin light (the light is right, above), a shadow-side
@@ -951,6 +951,24 @@ outside shots byte-identical; 4 s of driving (Escort, Clio) hold the cabin withi
 that writes depth (the Clio Rally3's `CarPlastic` side windows) and the rear-view mirror count as cabin, so what is
 seen in them takes the cabin's exposure (about 1.5 stops over on the Clio); the forest shots' door cards stay dark (5
 to 7 stops under the road, which their light is).
+
+Cabin depth (user's pick of five looks, 2026-11-01, `cabin_day_lit`): the sky share came out near zero on most faces,
+so the bounce, the same on every face, lit nearly all of the cabin and it read flat. Three causes, three changes. The
+bake took the exterior set's own low-detail cabin (Escort Mk II `e_internal`, i20 WRC 2020 `e_tablero`, `e_jaula`;
+never drawn in the in-car view) as solid over the interior's dash: now only the exterior's painted shell
+(`car::cabin::shell`, `Kf` over 0) casts with the interior set (mean sky share Escort 0.070 to 0.076, i20 0.090 to
+0.104). The window light counts twice and the bounce half (`CABIN_WINDOW_LIGHT`, `CABIN_BOUNCE_SHARE`). What the
+cabin's own faces close off nearby takes window light and half as much bounce (`CABIN_NEAR_BOUNCE`; in full it took
+the Fiat 131's tan dash under its hood to black): per vertex, the rays that meet a face within 0.3 m
+(`car::cabin::NEAR`, in `Vertex::occlusion`), and per pixel the contact shading at 0.2 m and strength 2.5 over the
+cabin's depth, which the in-car view now lays in the prepass (`pipelines::prepassed`), read over 3 x 3 half-size texels
+(one texel left a fixed speckle). The cabin's exposure is held to 2.5 stops over the outside's and the toe is gone (the
+look keeps its blacks; alone the change was barely visible), dial faces at least half the open sky's light
+(`CABIN_GAUGE_LEAST`, was a quarter). All 10 cockpit shots change (RMSE 1.7 % nights to 11.6 % fog Alpes GC8): dash tops
+under the glass lit, binnacles, footwells and cage roofs dark, the GC8's blue cage no longer glowing. 1080p cockpit
+scene pass (RX 9060 XT) 3.35 to 2.98 ms on 621 i20, 2.67 to 2.64 on Alpes GC8: the cabin's depth hides the stage
+behind the dash. Tried and dropped: the near occlusion at twice its weight on the bounce too (recessed dash faces
+black), the original textures in place of the upscaler's (grainier, no less flat).
 
 Interior sheen (2026-10-31, `cabin_sheen`): every cabin face but paint open to the sky (the bonnet through the glass,
 `CABIN_OUT`) reflects as a low-gloss plastic, `environment_reflectance` at roughness 0.8 (2 to 3 %) of the cube's
