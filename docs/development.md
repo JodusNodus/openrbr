@@ -116,7 +116,8 @@ cargo test --workspace
 
 That needs nothing else. The first run builds everything (the tests at `opt-level = 3`). A test that reads game
 data or recordings prints "skipping" and passes when its variable
-is unset; `scripts/rust-check.sh` says which are unset. Set them to run those tests too:
+is unset; `scripts/rust-check.sh` says which are unset. Set them in `dev.env` (copy `dev.env.example`; worktrees
+read the main checkout's) to run those tests too:
 
 | Variable | What it is | How to make it |
 | --- | --- | --- |
@@ -166,12 +167,11 @@ eval "$(scripts/fetch-test-data.sh ~/rerbr-test-data snapshots)"    # RBR_SNAPS,
 
 The x87 cache holds the hardware results of the transcendentals (`fsin`, `fcos`, ...) the merge gate reaches,
 measured on the CPU the recordings ran on. A run that reaches a case it lacks models it and reports those steps
-UNVERIFIED; the maintainers measure them on the test machine and publish a new cache, so name them in the pull
+UNVERIFIED; the maintainers measure them locally on x86_64 and publish a new cache, so name them in the pull
 request.
 
 New recordings and snapshots come from the original game through the harness: the plugin in a vanilla 1.02 install
-on a test machine with the original game, driven over ssh ([verification.md](../notes/verification.md#test-machine):
-the machine, its variables, making a drive); the maintainers make them. `scripts/pack-test-data.sh` packs a new set
+on this PC ([verification.md](../notes/verification.md#dev-setup): the folders, making a drive); the maintainers make them. `scripts/pack-test-data.sh` packs a new set
 for a new release: the recordings `data/test-data.recordings` lists, the vector store without its dumps, and the
 snapshots `data/test-data.snapshots` lists. NGP's snapshots hold NGP's code and are not published.
 
@@ -207,7 +207,8 @@ on stdout shows only when redirected: `rerbr.exe --list > list.txt`.
 From the repository root, before a merge:
 
 ```sh
-RBR_DATA=<retail install> RBR_PATCH=<1.02 patch Main_group> RBR_RECORDINGS=<recordings> scripts/rust-check.sh
+cp dev.env.example dev.env   # once; fill in RBR_DATA, RBR_PATCH, RBR_RECORDINGS
+scripts/rust-check.sh
 ```
 
 It runs `cargo fmt --check`, clippy with `-D warnings`, the tests and the physics vectors for the crates the change
@@ -296,7 +297,7 @@ The player's files go to the platform's data folder, not next to the programs (`
 | Path | What |
 | --- | --- |
 | `harness/` | plugin, recorder, playback runs, step replay, hybrid check, vector capture ([README](../harness/README.md)) |
-| `scripts/` | `rust-check.sh`, `rust-vectors.sh`, `fetch-test-data.sh` and `pack-test-data.sh`, `remote-rust.sh` (runs on the test machine), `render-shots.py` (reference shots), `launcher.sh`, `package.sh` and the icon (`packaging/`), generators of Rust tables from the binaries (`gen-*.py`), NGP tools |
+| `scripts/` | `rust-check.sh` (reads `RBR_DATA` etc. from `dev.env` via `dev-env.sh`), `rust-vectors.sh`, `fetch-test-data.sh` and `pack-test-data.sh`, `render-shots.py` (reference shots), `launcher.sh`, `package.sh` and the icon (`packaging/`), generators of Rust tables from the binaries (`gen-*.py`), NGP tools |
 | `notes/` | one note per area (the Crates table above links each crate's) |
 | `data/` | the test data's hashes and file lists, and generator inputs (`physics-lsp-fields.md`, `ngp-lsp-keys.md`) |
 | `original/` | original binaries and game data, gitignored apart from `SHA256SUMS` (the binaries the harness runs) and `retail-1.0/install.SHA256SUMS` (checks an extracted `RBR_DATA`, see Set up) |

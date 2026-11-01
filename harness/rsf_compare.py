@@ -59,6 +59,7 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
+import dev_env  # noqa: E402  (dev.env: RBR_RSF, RBR_NGP_PHYSICS, RBR_DATA)
 import session as rss  # noqa: E402
 
 SECTIONS = ("physics", "input", "ffb", "sound")

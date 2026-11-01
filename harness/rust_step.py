@@ -68,8 +68,8 @@ Usage: .venv/bin/python -I -B harness/rust_step.py SNAPSHOT... [--recording DRIV
 
   x87 results: replay.py's cache (RBR_REPLAY_FPU_CACHE); an fsin/fcos it lacks is modelled (the f64 sin/cos as an
   extended value; it rounds to the hardware's 24-bit result on every cached case). A step that used a modelled
-  result is reported as unverified. With RBR_REMOTE (a work dir on the test machine) the modelled results are
-  fetched from the CPU instead and the runs repeated until none is modelled. --perturb adds DELTA to every x87
+  result is reported as unverified. The modelled results are fetched from this machine's CPU instead (replay.py's
+  oracle) and the runs repeated until none is modelled. --perturb adds DELTA to every x87
   result of a binding (rounded to f32), to show that the comparison sees a wrong port.
 """
 import argparse
@@ -435,7 +435,7 @@ def extended(x):
 
 class Modelled(dict):
     """The oracle's results, with fsin/fcos modelled when the cache lacks them; `used` counts the modelled results
-    handed out, `modelled` holds their keys (to fetch from the test machine)."""
+    handed out, `modelled` holds their keys (to fetch from this machine's CPU)."""
 
     def __init__(self, known):
         super().__init__(known)
@@ -1385,7 +1385,7 @@ def main():
     groups = [[x] for x in a.only or hybrid.bound] if a.each else [a.only]
     o = oracle()
     for path in a.snapshots:
-        # With RBR_REMOTE the modelled x87 results are fetched from the test machine (replay.py's oracle) and the runs
+        # The modelled x87 results are fetched from this machine's CPU (replay.py's oracle) and the runs
         # repeated until none is modelled; only the last round's report is printed.
         for _ in range(8):
             o.known.used, o.known.modelled = 0, set()
@@ -1397,7 +1397,7 @@ def main():
                 else:
                     good, missing = one_step(path, a, hybrid, o, groups), set()
             # the results the cache lacks are fetched as well as the modelled ones
-            if not (o.known.modelled or missing) or not replay.REMOTE:
+            if not (o.known.modelled or missing):
                 break
             o.fetch(o.known.modelled | missing)
         print(out.getvalue(), end="")

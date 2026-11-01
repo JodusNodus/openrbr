@@ -5,44 +5,44 @@ Resumable: a pair already in the CSV is skipped.
   python3 -I -B harness/matrix.py run SPECFILE --csv CSV   run the specs in SPECFILE (lines as `list` prints)
 
 NGP 7.4.778's physics (notes/ngp.md "Load path"), from the stage start only, on NGP's four car slots. A spec is
-`stage car [weather]`, e.g. `track-12_O 2`; the boot has good weather only. Everything runs on the test machine
-(RBR_REMOTE_HOST; Rust under RBR_REMOTE_RUST as scripts/remote-rust.sh, the games as scripts/ngp-run.sh in the NGP test
-install, RBR_REMOTE_NGP_GAME). RBR_REMOTE_BUSY, a pgrep pattern, adds processes it waits on before a game. Up to two Rust
+`stage car [weather]`, e.g. `track-12_O 2`; the boot has good weather only. Everything runs here: Rust as
+target/release/rbr-standalone (built once at the start), the games as scripts/ngp-run.sh in the NGP install
+(RBR_NGP_GAME). RBR_BUSY, a pgrep pattern, adds processes it waits on before a game. Up to two Rust
 runs run together; harness games stay serial. Per pair (name ngp-<surface>-<car>-<map>):
-  1. df on both machines; the batch stops before the test machine would go under 100 GB free (or this one under 40 GB).
-  2. the autopilot at 25 m/s; stuck or off the road: retries at 20 and 16 m/s. It writes the playback on the test machine.
+  1. df; the batch stops before the runs' disk would go under 100 GB free.
+  2. the autopilot at 25 m/s; stuck or off the road: retries at 20 and 16 m/s. It writes the playback in RBR_NGP_RUNS.
      The autopilot presses no ignition (NGP's starter runs on the wall clock, which the port replaces with simulation
      time).
-  3. `scripts/ngp-run.sh` twice in the NGP test install (drive-<name> and ref-<name>-2 in rbr-ngp-runs, compared as
+  3. `scripts/ngp-run.sh` twice in the NGP install (drive-<name> and ref-<name>-2 in $RBR_NGP_RUNS, compared as
      V1_REPEAT does: on the static mask, then also on NGP's noise mask), started once no NGP game runs.
-  4. `rbr-standalone --boot --ngp-physics` (the test install's physics.rbz, ~/$RBR_REMOTE_NGP_GAME/physics.rbz) against
+  4. `rbr-standalone --boot --ngp-physics` (the install's physics.rbz, $RBR_NGP_GAME/physics.rbz) against
      the drive recording through the last controlled step.
-  5. keep rbr-ngp-runs/ngp-matrix/drive-<name>.bin.zst and .auto; delete the rest; one CSV row.
-Rerun a check later: zstd -d the .zst next to its .auto on the test machine and run step 4's command (in the pair's log).
+  5. keep $RBR_NGP_RUNS/ngp-matrix/drive-<name>.bin.zst and .auto; delete the rest; one CSV row.
+Rerun a check later: zstd -d the .zst next to its .auto and run step 4's command (in the pair's log).
 Logs: <csv dir>/ngp-matrix-logs/<name>.log.
 NGP steps at 720 Hz; a pair takes up to 130k steps (about 3 minutes of driving), as the harness's recording stops a little
 past 2 GiB (133k NGP steps); two pairs per group, the next group's autopilots running with this group's games and checks."""
-import concurrent.futures, csv, os, re, shlex, shutil, subprocess, sys, time
+import concurrent.futures, csv, os, re, shlex, shutil, struct, subprocess, sys, time
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import dev_env  # noqa: E402  (dev.env: RBR_NGP_GAME, RBR_NGP_RUNS, RBR_BUSY, RBR_DATA)
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-HOST = os.environ.get("RBR_REMOTE_HOST", "")
-REMOTE_DIR = os.environ.get("RBR_REMOTE_RUST", "")
-REMOTE_RUST = "%s/src/%s" % (REMOTE_DIR, os.path.basename(REPO))
-REMOTE_BIN = "~/%s/target/release/rbr-standalone" % REMOTE_RUST
-RUNS = "rbr-ngp-runs"  # on the test machine, relative to its home
+BIN = os.path.join(REPO, "target", "release", "rbr-standalone")  # built once at the start
+RUNS = os.environ.get("RBR_NGP_RUNS", "")  # absolute (dev.env)
 KEEP = RUNS + "/ngp-matrix"
 PREFIX = "ngp"
 CARS = ["xsara", "accent", "zr", "lancer", "206", "impreza03", "corolla", "impreza00"]
 SLOTS = (2, 4, 5, 6)  # the cars NGP's physics.rbz has
 STEPS = 130000
 GROUP = 2  # pairs whose autopilots and checks run together
-GAME = "%s/RichardBurnsRally_SSE" % os.environ.get("RBR_REMOTE_NGP_GAME", "")  # a harness game's command line
-NGP_PHYSICS = "%s/physics.rbz" % os.environ.get("RBR_REMOTE_NGP_GAME", "")  # on the test machine
+GAME = "%s/RichardBurnsRally_SSE" % os.environ.get("RBR_NGP_GAME", "")  # a harness game's command line
+NGP_PHYSICS = "%s/physics.rbz" % os.environ.get("RBR_NGP_GAME", "")  # in the NGP install
 NGP_SECS = 7200  # a game's time limit
-BUSY = os.environ.get("RBR_REMOTE_BUSY", "")  # other processes the games wait for
+BUSY = os.environ.get("RBR_BUSY", "")  # other processes the games wait for
 TYRES = {"gravel": 4, "tarmac": 0, "snow": 6}  # boot.rs default_tyre
-LOCAL_FLOOR, REMOTE_FLOOR = 40, 100  # GB free
-REMOTE_PAIR = 5  # GB a pair can take on the test machine at its peak (two 130k-step recordings of 2.1 GB and the playback)
+FLOOR = 100  # GB free the runs' disk keeps
+PAIR = 5  # GB a pair can take at its peak (two 130k-step recordings of 2.1 GB and the playback)
 FIELDS = ["stage", "car", "car_name", "surface", "weather", "start", "top_speed", "steps", "finished", "ref1_eq_ref2",
           "rust_equal_compared", "first_difference_or_stop", "wheel_6ec_not_compared", "autopilot_min", "games_min",
           "check_min", "zst_mb", "name", "note", "lane3_masked"]
@@ -102,54 +102,30 @@ def run(f, cmd, env=None):
     return finish(f, start(f, cmd, env))
 
 
-def ssh(cmd):
-    """`cmd` in bash on the test machine (whatever its login shell)."""
-    return subprocess.run(["ssh", "-o", "BatchMode=yes", HOST, "bash -s"], input=cmd, stdout=subprocess.PIPE,
-                          text=True, check=True).stdout
-
-
 def prepare_rust():
-    """Sync and build once, before parallel runs share the release binary."""
-    sources = [os.path.join(REPO, p) for p in ("Cargo.toml", "Cargo.lock", "crates")]
-    subprocess.run(["rsync", "-a", "--delete", "--exclude", "target"] + sources + ["%s:%s/" % (HOST, REMOTE_RUST)],
-                   check=True)
-    ssh("nice -n 10 ~/.cargo/bin/cargo build -q --release -j 4 --manifest-path ~/%s/Cargo.toml --bin rbr-standalone" %
-        REMOTE_RUST)
+    """Build once, before parallel runs share the release binary."""
+    subprocess.run(["cargo", "build", "-q", "--release", "--bin", "rbr-standalone",
+                    "--manifest-path", os.path.join(REPO, "Cargo.toml")], check=True)
 
 
 def rust_cmd(args):
-    args = args + ["--ngp-physics", NGP_PHYSICS]
-    remote = "cd ~ && RBR_DATA=~/%s/data/retail-install RBR_PATCH=~/%s/data/Main_group " \
-             "nice -n 10 %s %s" % (REMOTE_DIR, REMOTE_DIR, REMOTE_BIN, shlex.join(args))
-    return ["ssh", "-o", "BatchMode=yes", HOST, "bash -c " + shlex.quote(remote)]
+    return [BIN] + args + ["--ngp-physics", NGP_PHYSICS]
 
 
 def free_gb():
-    here = shutil.disk_usage("/").free / 1e9
-    remote = int(ssh("df -BG --output=avail ~ | tail -1").strip().rstrip("G"))
-    return here, remote
+    """GB free on the runs' filesystem."""
+    return shutil.disk_usage(RUNS if os.path.isdir(RUNS) else "/").free / 1e9
 
 
-def wait_remote_rust_idle():
-    """Let Rust jobs or builds from an interrupted invocation finish before cleanup or another build."""
-    pattern = "[%s]%s" % (REMOTE_RUST[0], REMOTE_RUST[1:])
-    said = False
-    while ssh("pgrep -f '%s' || true" % pattern).strip():
-        if not said:
-            print("test machine: Rust work from this matrix worktree is still active; waiting", flush=True)
-            said = True
-        time.sleep(30)
-
-
-def wait_remote_idle(f):
-    """Until no NGP game (any slot, anyone's) has run for 60 s. The processes RBR_REMOTE_BUSY matches count too, and
+def wait_idle(f):
+    """Until no NGP game (any slot, anyone's) has run for 60 s. The processes RBR_BUSY matches count too, and
     once they have run for 5 minutes it asks every 10 minutes."""
     idle, busy_since, said = 0, None, False
     pattern = GAME + ("|" + BUSY if BUSY else "")
     while idle < 3:
-        busy = ssh("pgrep -af '%s' | cut -c1-160 || true" % pattern).strip()
+        busy = subprocess.run(["pgrep", "-af", pattern], stdout=subprocess.PIPE, text=True).stdout.strip()
         if busy and not said:
-            log(f, "test machine: a harness game or RBR_REMOTE_BUSY is running; waiting: " + busy.replace("\n", "; "))
+            log(f, "a harness game or RBR_BUSY is running; waiting: " + busy.replace("\n", "; "))
             said = True
         idle = 0 if busy else idle + 1
         busy_since = (busy_since or time.time()) if busy else None
@@ -158,25 +134,24 @@ def wait_remote_idle(f):
 
 
 def clean(name):
-    """This pair's working files on the test machine by exact name (not the kept ones in KEEP)."""
-    ssh("cd ~/%s && rm -f drive-%s-ap.playback.bin drive-%s.playback.bin drive-%s.bin drive-%s.bin.mask drive-%s.auto "
-        "%s-rec.bin ref-%s-2.bin drive-%s.harness.log ref-%s-2.harness.log" % ((RUNS,) + (name,) * 9))
+    """This pair's working files by exact name (not the kept ones in KEEP)."""
+    files = ("drive-%s-ap.playback.bin drive-%s.playback.bin drive-%s.bin drive-%s.bin.mask drive-%s.auto %s-rec.bin "
+             "ref-%s-2.bin drive-%s.harness.log ref-%s-2.harness.log" % ((name,) * 9)).split()
+    subprocess.run(["rm", "-f"] + [os.path.join(RUNS, x) for x in files], check=True)
 
 
 def compared_steps(spec, recording, last_post):
-    """The check's step count: the recording's frames from the start through post `last_post` (read on the test machine)."""
+    """The check's step count: the recording's frames from the start through post `last_post`."""
     first = 1000 if spec["base"] else 0
-    return int(ssh("""python3 -I -B - <<'EOF'
-import struct
-d = open("%s", "rb"); n = 0
-while True:
-    h = d.read(20)
-    if len(h) < 20: break
-    m, pre, post, sub, cs = struct.unpack("<5I", h)
-    n += pre >= %d and post <= %d
-    d.seek(0x20 + cs + 4 * 0xa00, 1)
-print(n)
-EOF""" % (recording, first, last_post)).strip())
+    n, d = 0, open(recording, "rb")
+    while True:
+        h = d.read(20)
+        if len(h) < 20:
+            break
+        m, pre, post, sub, cs = struct.unpack("<5I", h)
+        n += pre >= first and post <= last_post
+        d.seek(0x20 + cs + 4 * 0xA00, 1)
+    return n
 
 
 def autopilot(f, spec, out, top):
@@ -230,10 +205,11 @@ class Check:
         wall = re.findall(r"^real\s+([\d.]+)", text, re.M)
         heap = re.findall(r"(wheel\d\+0x6ec) \((\d+) steps\)", text)
         padding = re.search(r"masked: lane-3 padding \(.*?\): (.*)", text)
-        keep = os.path.basename(KEEP)
-        ssh("mkdir -p ~/%s && cd ~/%s && zstd -q -T4 -f --rm drive-%s.bin -o %s/drive-%s.bin.zst && "
-            "cp drive-%s.auto %s/" % (KEEP, RUNS, name, keep, name, name, keep))
-        zst = int(ssh("stat -c %%s ~/%s/drive-%s.bin.zst" % (KEEP, name)))
+        os.makedirs(KEEP, exist_ok=True)
+        subprocess.run(["zstd", "-q", "-T4", "-f", "--rm", os.path.join(RUNS, "drive-%s.bin" % name),
+                        "-o", os.path.join(KEEP, "drive-%s.bin.zst" % name)], check=True)
+        shutil.copy(os.path.join(RUNS, "drive-%s.auto" % name), KEEP)
+        zst = os.path.getsize(os.path.join(KEEP, "drive-%s.bin.zst" % name))
         row.update(rust_equal_compared=eq, first_difference_or_stop=first, zst_mb="%.0f" % (zst / 1e6),
                    wheel_6ec_not_compared=", ".join("%s %s steps" % w for w in heap) or "none",
                    lane3_masked=padding[1] if padding else "none",
@@ -264,10 +240,10 @@ def prepare_pair(spec, csv_path, reserved_pairs):
     row = dict(stage=spec["stage"], car=car, car_name=CARS[car], surface=surf, weather=spec["weather"], name=name,
                start="snap-1000 of " + spec["base"] if spec["base"] else "boot", note="", zst_mb="-",
                wheel_6ec_not_compared="-", lane3_masked="-", check_min="0", games_min="0")
-    here, remote = free_gb()
-    log(f, "%s: free here %.0f GB, test machine %d GB" % (name, here, remote))
-    if here < LOCAL_FLOOR or remote - REMOTE_PAIR * reserved_pairs < REMOTE_FLOOR:
-        log(f, "stop: a floor would be crossed (here %d GB, test machine %d GB)" % (LOCAL_FLOOR, REMOTE_FLOOR))
+    free = free_gb()
+    log(f, "%s: %.0f GB free" % (name, free))
+    if free - PAIR * reserved_pairs < FLOOR:
+        log(f, "stop: a floor would be crossed (%.0f GB free, floor %d GB)" % (free, FLOOR))
         f.close()
         return False
     return {"spec": spec, "name": name, "f": f, "row": row}
@@ -299,10 +275,11 @@ def pair(state, csv_path, env):
     rc = 0
     if drove["steps"] >= MIN_STEPS:
         t1 = time.time()
-        wait_remote_idle(f)
+        wait_idle(f)
         numbers = "%d %d %d %d 1 0" % (m, car, spec["weather"], TYRES[surf])
         rc, text = ngp_originals(f, name, numbers, env)
-        ssh("rm -f ~/%s/drive-%s-ap.playback.bin ~/%s/drive-%s.playback.bin" % (RUNS, name, RUNS, name))
+        subprocess.run(["rm", "-f", os.path.join(RUNS, "drive-%s-ap.playback.bin" % name),
+                        os.path.join(RUNS, "drive-%s.playback.bin" % name)], check=True)
         row["games_min"] = "%.1f" % ((time.time() - t1) / 60)
         repeat = dict(re.findall(r"^repeat (static|noise): (.*)$", text, re.M))
         row["ref1_eq_ref2"] = "static mask: %s; %s noise mask: %s" % (
@@ -312,7 +289,7 @@ def pair(state, csv_path, env):
     if drove["steps"] < MIN_STEPS:
         row.update(ref1_eq_ref2="-", rust_equal_compared="-", first_difference_or_stop="autopilot: %s" % end)
     else:
-        row.update(rust_equal_compared="-", first_difference_or_stop="v1-drive.sh failed (exit %d)" % rc)
+        row.update(rust_equal_compared="-", first_difference_or_stop="ngp-run.sh failed (exit %d)" % rc)
     clean(name)
     write_row(f, csv_path, row)
     f.close()
@@ -320,28 +297,31 @@ def pair(state, csv_path, env):
 
 
 def ngp_originals(f, name, numbers, env):
-    """V1_REPEAT's step 3 in the NGP test install: the autopilot's playback twice (`scripts/ngp-run.sh`), drive-<name>
-    and ref-<name>-2, compared by diverge.py on the static mask, then also on NGP's noise mask (drive1.bin.mask, notes/ngp.md); ref-2 is
-    deleted. Returns the exit code and the output (with v1-drive.sh's `repeat` lines)."""
-    playback = "%s/drive-%s-ap.playback.bin" % (RUNS, name)
-    renv = dict(env, AUTO=numbers, PLAYBACK_REMOTE=playback)
+    """The autopilot's playback twice in the NGP install (`scripts/ngp-run.sh`), drive-<name> and ref-<name>-2,
+    compared by diverge.py on the static mask, then also on NGP's noise mask (drive1.bin.mask, notes/ngp.md); ref-2
+    is deleted. Returns the exit code and the output (with the `repeat` lines pair() reads)."""
+    playback = os.path.join(RUNS, "drive-%s-ap.playback.bin" % name)
+    renv = dict(env, AUTO=numbers, PLAYBACK=playback)
     for run_name in ("drive-" + name, "ref-%s-2" % name):
-        wait_remote_idle(f)
+        wait_idle(f)
         rc, text = run(f, [os.path.join(REPO, "scripts/ngp-run.sh"), run_name, str(NGP_SECS)], renv)
         if rc:
             return rc, text
-    subprocess.run(["scp", "-q", os.path.join(REPO, "harness/diverge.py"), "%s:/tmp/rbr-diverge-%s.py" % (HOST, name)],
-                   check=True)
-    text = ssh("""set -u
-cd ~/%(runs)s
-echo "%(numbers)s" > drive-%(name)s.auto
-out=$(python3 -I /tmp/rbr-diverge-%(name)s.py drive-%(name)s.bin ref-%(name)s-2.bin 2>&1) || true
-echo "repeat static: ${out//$'\n'/; }"
-ln -sfn ~/rbr-ngp-runs/drive1.bin.mask drive-%(name)s.bin.mask
-out=$(python3 -I /tmp/rbr-diverge-%(name)s.py drive-%(name)s.bin ref-%(name)s-2.bin 2>&1) || true
-echo "repeat noise: ${out//$'\n'/; }"
-rm -f drive-%(name)s.bin.mask ref-%(name)s-2.bin ref-%(name)s-2.harness.log /tmp/rbr-diverge-%(name)s.py
-""" % dict(runs=RUNS, name=name, numbers=numbers))
+    drive, ref = os.path.join(RUNS, "drive-%s.bin" % name), os.path.join(RUNS, "ref-%s-2.bin" % name)
+    with open(os.path.join(RUNS, "drive-%s.auto" % name), "w") as g:
+        g.write(numbers + "\n")
+    div = [sys.executable, "-I", "-B", os.path.join(REPO, "harness/diverge.py")]
+    static = subprocess.run(div + [drive, ref], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True).stdout
+    if os.path.lexists(drive + ".mask"):  # a stale one from an interrupted run
+        os.remove(drive + ".mask")
+    os.symlink(os.path.join(RUNS, "drive1.bin.mask"), drive + ".mask")
+    noise = subprocess.run(div + [drive, ref], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                           text=True).stdout
+    for p in (drive + ".mask", ref, os.path.join(RUNS, "ref-%s-2.harness.log" % name)):
+        if os.path.lexists(p):
+            os.remove(p)
+    text = "repeat static: %s\nrepeat noise: %s" % ("; ".join(static.splitlines()), "; ".join(noise.splitlines()))
     log(f, text.strip())
     return 0, text
 
@@ -366,8 +346,8 @@ def main():
         return
     if len(sys.argv) < 3 or sys.argv[1] != "run" or "--csv" not in sys.argv:
         sys.exit(__doc__)
-    if not HOST or not REMOTE_DIR or not os.environ.get("RBR_REMOTE_NGP_GAME"):
-        sys.exit("matrix.py: set RBR_REMOTE_HOST, RBR_REMOTE_RUST and RBR_REMOTE_NGP_GAME")
+    if not os.environ.get("RBR_NGP_GAME") or not RUNS:
+        sys.exit("matrix.py: set RBR_NGP_GAME and RBR_NGP_RUNS (dev.env)")
     csv_path = sys.argv[sys.argv.index("--csv") + 1]
     done = set()
     if os.path.exists(csv_path):
@@ -384,12 +364,10 @@ def main():
             continue
         specs.append(spec)
 
-    if specs:
-        wait_remote_rust_idle()
     pool = concurrent.futures.ThreadPoolExecutor(max_workers=GROUP)
 
     def setup(offset, built, held):
-        """Prepares the group at `offset` (`held` pairs' recordings still on the test machine) and starts its autopilots.
+        """Prepares the group at `offset` (`held` pairs' recordings still on disk) and starts its autopilots.
         Returns (states, autopilot futures, stop after this group), or None."""
         states, stop_batch = [], False
         for spec in specs[offset:offset + GROUP]:
@@ -401,24 +379,22 @@ def main():
         if not states:
             return None
         if not built:
-            # Do not remove files an interrupted harness game could still be writing. A
-            # previous Rust job was drained before entering this loop.
-            wait_remote_idle(states[0]["f"])
+            # Do not remove files an interrupted harness game could still be writing.
+            wait_idle(states[0]["f"])
             for state in states:
                 clean(state["name"])
             prepare_rust()
         else:
-            wait_remote_idle(states[0]["f"])
+            wait_idle(states[0]["f"])
             for state in states:
                 clean(state["name"])
-        here, remote = free_gb()
-        if here < LOCAL_FLOOR or remote - REMOTE_PAIR * (held + len(states)) < REMOTE_FLOOR:
+        free = free_gb()
+        if free - PAIR * (held + len(states)) < FLOOR:
             for state in states:
-                log(state["f"], "stop: a floor would be crossed (here %d GB, test machine %d GB)" %
-                    (LOCAL_FLOOR, REMOTE_FLOOR))
+                log(state["f"], "stop: a floor would be crossed (%.0f GB free, floor %d GB)" % (free, FLOOR))
                 state["f"].close()
             return None
-        # These pairs share a single synced release binary, built above before the first group.
+        # These pairs share a single built release binary, built above before the first group.
         return states, [pool.submit(run_autopilot, state) for state in states], stop_batch
 
     group = setup(0, False, 0) if specs else None

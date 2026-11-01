@@ -11,6 +11,7 @@
 # RBR_NGP_PHYSICS, RBR_RSF and the release rsf-settings.
 # Usage: scripts/perf-step.sh A_BIN B_BIN [RUNS]
 set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/dev-env.sh"
 a=${1:?usage: scripts/perf-step.sh A_BIN B_BIN [RUNS]}
 b=${2:?usage: scripts/perf-step.sh A_BIN B_BIN [RUNS]}
 runs=${3:-3}
