@@ -10,8 +10,8 @@ Usage: .venv/bin/python -I -B harness/long_run.py --drive tanner-corolla [--from
   the stub heap, its read windows and exclusions (classify); run A against the recording's car and wheels after every
   step. A segment keeps going after a divergence and reports the first: for run B, the step where the first of the
   bytes that fail began to differ; for run A, the first frame. It stops only where the emulator does (a fault, a call
-  with no stub, x87 results missing from the cache). x87 results as rust_step.py: with RBR_REMOTE the missing and
-  modelled ones are fetched from the test machine and the segment repeated.
+  with no stub, x87 results missing from the cache). x87 results as rust_step.py: the missing and
+  modelled ones are fetched from this machine's CPU and the segment repeated.
   --from and --to keep the segments that overlap steps [FROM, TO); a segment always starts at its snapshot, TO cuts
   the last one. -j runs that many segments at once, niced, the longest first. The report (stdout, and --out) holds
   each segment's rust_step.py lines and a table of verdicts, first divergences and runtimes. Each segment prints a
@@ -69,13 +69,13 @@ def segment(job):
     a = argparse.Namespace(recording=recording, steps=steps, only=None, perturb=None, full_fill=False,
                            excluded=False, progress=PROGRESS)
     t = time.time()
-    for _ in range(8):  # as rust_step.py: missing x87 results are fetched from the test machine, then the segment repeated
+    for _ in range(8):  # as rust_step.py: missing x87 results are fetched from this machine's CPU, then the segment repeated
         o.known.used, o.known.modelled = 0, set()
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             res = rust_step.chain(path, a, _hybrid, o)
         missing = res["fpu_missing"] | o.known.modelled
-        if not missing or not replay.REMOTE:
+        if not missing:
             break
         o.fetch(missing)
     return out.getvalue(), res, time.time() - t

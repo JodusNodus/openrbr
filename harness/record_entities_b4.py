@@ -1,6 +1,6 @@
 """Records the entities_b4 set (harness/vector_specs/entities_b4.py) for harness/vcu_vectors.py. The load-time dumps
 (snapshot version 2) are only accepted under --set entities, so this runs the same main() with the B4 specs registered
-under that name. Usage as vcu_vectors.py: RBR_REMOTE=<dir> python3 -I harness/record_entities_b4.py <snapshot> <out> --set entities.
+under that name. Usage as vcu_vectors.py: python3 -I harness/record_entities_b4.py <snapshot> <out> --set entities.
 
 --no-launch (this script only): with --fuzz, keep the launch control off and the step's own fuzzers (GearboxUpdate,
 LaunchClutch, FlagDispatch, StepBasic, QuerySlip) off. vcu_vectors.py turns the launch on whenever a fuzz seed is given,

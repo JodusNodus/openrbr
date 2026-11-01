@@ -128,17 +128,17 @@ def main():
     ap.add_argument("--steps", type=int, required=True)
     a = ap.parse_args()
     o = rust_step.oracle()
-    for _ in range(8):  # as rust_step.py: x87 results the cache lacks are fetched from the test machine, then the run repeated
+    for _ in range(8):  # as rust_step.py: x87 results the cache lacks are fetched from this machine's CPU, then the run repeated
         o.known.used, o.known.modelled = 0, set()
         lines, m, stop = record(a.snapshot, a.recording, a.steps, o)
         missing = set(m.fpu_missing) | o.known.modelled
-        if not missing or not replay.REMOTE:
+        if not missing:
             break
         o.fetch(missing)
     if stop:
         sys.exit("%s: %s" % (a.snapshot, stop))
     if o.known.used:
-        sys.exit("%s: %d modelled x87 results (set RBR_REMOTE to fetch them)" % (a.snapshot, o.known.used))
+        sys.exit("%s: %d modelled x87 results" % (a.snapshot, o.known.used))
     head = "# harness/subtree_tape.py %s --recording %s --steps %d" % (
         os.path.basename(a.snapshot), os.path.basename(a.recording), a.steps)
     with open(a.out, "w") as f:

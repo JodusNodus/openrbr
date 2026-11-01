@@ -36,7 +36,7 @@ Output format (one record per call, hex words, little-endian bytes):
 --set spring-damper records the E48 spring-damper calls. Its --fuzz SEED mode also varies each
 reached helper's inputs and restores the input/output footprint when that call returns.
 
-Needs the worktree's .venv (unicorn, numpy) and the ssh oracle for x87 results (replay.py).
+Needs the worktree's .venv (unicorn, numpy); new x87 results come from this machine's CPU (replay.py's oracle).
 """
 
 import argparse
