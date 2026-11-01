@@ -47,6 +47,9 @@ Model and rules in `rbr_render::hud::model`, sprites in `hud::pace`, layout in `
 Data in `rbr_formats::rsf::gauges`, drawing in `rbr_render::dials` (toggle: `dials`); check
 `rbr-formats/tests/rsf_data.rs` (every sprite and font the configs name is in its atlas).
 
+- A car copied into ReRBR's own folder has no `Plugins/RBRHUD` beside it: its gauges come from the game install's,
+  read in place (`load_dials` in the viewer's `scene.rs`; the M3 E36 GrpA drew none before, 2026-11-01).
+
 ## Launcher
 
 Pages and policy in `crates/rbr-launcher/src/` (`main.rs` doc: command line, weather rules, volumes, co-driver

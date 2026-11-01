@@ -302,7 +302,7 @@ fn load_scene<'scope, 'env>(
                         (cabin_sun, tints, bulkhead) = (sun_in, window_tints, under_glass);
                         car::follow_dents(&interior, &mut interior_damage, &model, &damage);
                         let rsf = args.rsf_install.as_deref().filter(|_| args.dials && args.rsf_car.is_some());
-                        dials = rsf.and_then(|root| load_dials(root, car_name, &mut stage));
+                        dials = rsf.and_then(|root| load_dials(root, data.install(), car_name, &mut stage));
                         for _ in 1..args.gauge_mode {
                             dials.iter_mut().for_each(Dials::next_mode);
                         }
@@ -585,8 +585,11 @@ fn load_crew(data: &Data, car: &str, stage: &mut Stage, args: &Args) -> Option<C
     Some(crew)
 }
 
-/// The car's working dials, reported; `None` when it has no gauges.
-fn load_dials(root: &Path, car: &str, stage: &mut Stage) -> Option<Dials> {
+/// The car's working dials, reported; `None` when it has no gauges. From the RBRHUD beside the car's RSF install
+/// `root`, else the game install's `install`: a pack copied into ReRBR's own folder has none beside it, the install's
+/// is read in place.
+fn load_dials(root: &Path, install: &Path, car: &str, stage: &mut Stage) -> Option<Dials> {
+    let root = [root, install].into_iter().find(|r| rbr_formats::rsf::gauges::variant(r, car).is_some())?;
     let (dials, skipped) = Dials::load(root, car, stage);
     for skip in &skipped {
         eprintln!("dials: config not drawn: {skip:?}");
