@@ -25,11 +25,11 @@ Renault Clio Rally3, Sipirkakim (retail 52), flyby view, 13:00
 
 ![day-sipirkakim-clio-flyby](day-sipirkakim-clio-flyby.jpg)
 
-### day-621-m3-cockpit
+### day-621-i20-cockpit
 
-BMW M3 E30 GrpA, Comb I (RSF 621), cockpit view, 13:00
+Hyundai i20 Coupe WRC 2020, Comb I (RSF 621), cockpit view, 13:00
 
-![day-621-m3-cockpit](day-621-m3-cockpit.jpg)
+![day-621-i20-cockpit](day-621-i20-cockpit.jpg)
 
 ### day-luceram-fiesta-cockpit
 

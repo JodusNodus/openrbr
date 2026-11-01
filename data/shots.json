@@ -24,9 +24,9 @@
   "at": 6500
  },
  {
-  "name": "day-621-m3-cockpit",
+  "name": "day-621-i20-cockpit",
   "stage": 621,
-  "car": "BMW M3 E30 GrpA",
+  "car": "Hyundai i20 Coupe WRC 2020",
   "view": "cockpit-clean",
   "clock": "13:00",
   "settings": {
