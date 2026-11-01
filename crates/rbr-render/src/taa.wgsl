@@ -275,7 +275,7 @@ fn fs_upscale(in: Out) -> Resolved {
         let share = min(gathered.w * rate, 1.0);
         let gathers = clipped * (1.0 - share) + gathered.rgb * select(rate, 1.0 / gathered.w, share == 1.0);
         let speed = length(motion * t.output.xy);
-        var taken = 0.25 * clamp(moved, 0.0, 1.0) + 0.1 * clamp(speed / 16.0, 0.0, 1.0);
+        var taken = 0.25 * clamp(moved, 0.0, 1.0) + 0.75 * clamp(speed / 64.0, 0.0, 1.0);
         // The glass's mud and drops, as in `fs_taa`.
         taken = max(taken, smoothstep(GLASS.x, GLASS.y, max(mask, kept.a)) * (1.0 - previous.z));
         c = vec4<f32>(untone(mix(gathers, alone, taken)), mask);
