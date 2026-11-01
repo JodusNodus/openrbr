@@ -59,6 +59,7 @@ fn playback(frames: &[Vec<u8>]) -> Playback {
         detached: [None; detach::PARTS.len()],
         turn: None,
         wheel: None,
+        turning: Vec::new(),
         hide_wheel: false,
         game_chase: Follow::new(crate::game_camera::Settings::default()),
         probe: None,
