@@ -144,7 +144,7 @@ pub fn load(args: &Args, data: &Data, progress: &mut dyn FnMut(Step)) -> Result<
         // A live screenshot shows its last frame, `--at` payloads after the first; a `--sequence` ends on it.
         (Some(_), Some(playback), Some(_)) => {
             let back = (args.sequence.max(1) as isize - 1) * args.sequence_step.max(0);
-            playback.step(playback.samples().len() as isize - 1 - back)
+            playback.step(playback.samples().len() as isize - 1 - back - playback.index() as isize)
         }
         _ => {}
     }
@@ -408,7 +408,7 @@ fn load_scene<'scope, 'env>(
                     args.enhance.wet && matches!(stage.selection.weather, rbr_render::stage::Weather::Wet),
                 );
             }
-            let glass = match (&playback, car_name) {
+            let glass = match (&mut playback, car_name) {
                 (Some(playback), Some(car)) => {
                     glass::Drawn::load(data, car, precipitation, playback, args.wipers, &tints)
                 }

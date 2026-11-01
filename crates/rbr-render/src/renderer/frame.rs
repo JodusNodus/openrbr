@@ -203,7 +203,7 @@ impl Renderer {
         });
         let car = self.taa.as_ref().and_then(|_| self.car_body.zip(self.car_model_box()));
         if let Some(taa) = &mut self.taa {
-            let frame = crate::taa::Frame { view_projection, car, wheel: self.car_wheel, outside: self.outside_view };
+            let frame = crate::taa::Frame { view_projection, car, rooms: &self.car_rooms, outside: self.outside_view };
             taa.prepare(&self.queue, &frame);
             let t = mark(&mut profiler, encoder);
             taa.resolve(encoder, &self.post.scene);

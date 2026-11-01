@@ -108,8 +108,8 @@ pub struct Renderer {
     /// ([`Renderer::set_car_body`]).
     cabin_sun: Option<crate::car::cabin::SunIn>,
     car_body: Option<Mat4>,
-    /// The car's steering wheel and its turn ([`Renderer::set_car_wheel`]).
-    car_wheel: Option<(crate::taa::Wheel, Mat4)>,
+    /// The car's turning parts and their turns ([`Renderer::set_car_rooms`]).
+    car_rooms: Vec<(crate::taa::Room, Mat4)>,
     /// The camera is outside the car ([`Renderer::set_outside_view`]).
     outside_view: bool,
     /// The sky gradient, drawn first ([`Atmosphere::zenith`] overhead, the fog colour at the horizon).
@@ -746,7 +746,7 @@ impl Renderer {
             car_dirt: Default::default(),
             cabin_sun: None,
             car_body: None,
-            car_wheel: None,
+            car_rooms: Vec::new(),
             outside_view: false,
             screen_reflection,
             skid_marks: None,
@@ -797,7 +797,7 @@ impl Renderer {
     }
 
     /// The windscreen's drops of the next frames (the pass is made on the first call).
-    pub fn set_glass(&mut self, drops: &[glass::gpu::Drop], wipers: [[f32; 4]; 4]) {
+    pub fn set_glass(&mut self, drops: &[glass::gpu::Drop], wipers: glass::gpu::Wipers) {
         let pass = self.glass.get_or_insert_with(|| {
             let sun_map = self.sun.as_ref().map_or_else(|| sun::placeholder(&self.device), |sun| sun.view.clone());
             glass::gpu::Pass::new(&self.device, SCENE_FORMAT, DEPTH_FORMAT, &sun_map)
@@ -1013,10 +1013,11 @@ impl Renderer {
         }
     }
 
-    /// The car's steering wheel and its turn in the car's model space this frame, `None` when it is not drawn: the TAA
-    /// carries what it covers by its turn.
-    pub(crate) fn set_car_wheel(&mut self, wheel: Option<(crate::taa::Wheel, Mat4)>) {
-        self.car_wheel = wheel;
+    /// The car's turning parts drawn this frame (the steering wheel, the wipers) and their turns in the car's model
+    /// space: the TAA carries what each covers by its turn.
+    pub(crate) fn set_car_rooms(&mut self, rooms: impl IntoIterator<Item = (crate::taa::Room, Mat4)>) {
+        self.car_rooms.clear();
+        self.car_rooms.extend(rooms);
     }
 
     /// How much sun gets into the car's cabin by its direction ([`Enhance::cabin`], `crate::car::cabin::SunIn`), which
