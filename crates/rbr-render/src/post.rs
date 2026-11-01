@@ -132,7 +132,8 @@ pub(crate) fn cabin_depth(view_projection: glam::Mat4) -> f32 {
 impl Post {
     /// The post pass into targets of `format`, for frames of `size` and the frame's `depth`; with
     /// `shafts`, the composite adds [`Post::shafts`]; with `sharpen`, it sharpens the scene by [`TAA_SHARPEN`] (the
-    /// temporal resolve's blur).
+    /// temporal resolve's blur); with `debug_view`, the composite passes the cabin's debug grey through (`DEBUG_VIEW`
+    /// in `post.wgsl`).
     pub(crate) fn new(
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
@@ -140,6 +141,7 @@ impl Post {
         depth: &wgpu::TextureView,
         shafts: bool,
         sharpen: bool,
+        debug_view: u32,
     ) -> Post {
         let source_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("post source"),
@@ -232,7 +234,8 @@ impl Post {
             &[],
         );
         let composite = [0.0, 1.0].map(|cabin| {
-            let constants = [("SHAFTS", f64::from(u8::from(shafts))), ("CABIN", cabin)];
+            let constants =
+                [("SHAFTS", f64::from(u8::from(shafts))), ("CABIN", cabin), ("DEBUG_VIEW", f64::from(debug_view))];
             pipeline("fs_composite", &[&source_layout, &composite_layout], format.into(), &constants)
         });
         let meter = ["cs_histogram", "cs_meter"].map(|entry| {

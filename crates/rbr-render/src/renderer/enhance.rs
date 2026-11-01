@@ -70,6 +70,10 @@ pub struct Enhance {
     pub reflections: Reflections,
     /// How much detail the additions draw at (`viewer --detail`, not in [`Enhance::NAMES`]).
     pub detail: Detail,
+    /// What `viewer --debug-view` draws on the cabin's interior-set faces in the in-car view
+    /// (`cabin.wgsl` `cabin_debug`): one term of the cabin's light instead of the shaded colour, passed through
+    /// the post pass unexposed and untonemapped. Presentation only; off by default, not in [`Enhance::NAMES`].
+    pub debug_view: DebugView,
 }
 
 /// How much detail the additions draw at: [`Detail::High`], the frame as tuned, or [`Detail::Ultra`], finer and
@@ -170,6 +174,45 @@ impl AntiAliasing {
     }
 }
 
+/// What `viewer --debug-view` draws on the cabin's interior-set faces in the in-car view where `cabin_day_lit`
+/// runs: one term of the cabin's light instead of the shaded colour, as a display grey past the exposure and the
+/// tone curve (`cabin.wgsl` `cabin_debug`, passed through in `post.wgsl`). Presentation only.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum DebugView {
+    /// The shaded colour, as without the flag.
+    #[default]
+    Off,
+    /// The vertex's open sky share, `1 - v.specular.z`.
+    Sky,
+    /// The per-vertex near openness, `1 - v.sky.z` (`car::cabin::NEAR`).
+    Near,
+    /// The screen-space contact shading the cabin reads (`cabin_contact`).
+    Contact,
+    /// The cabin's irradiance, as a luminance mapped so a face lit like open sky reads mid-grey.
+    Light,
+}
+
+impl DebugView {
+    /// The `--debug-view` modes, [`DebugView`] without [`DebugView::Off`].
+    pub const MODES: [&'static str; 4] = ["cabin-sky", "cabin-near", "cabin-contact", "cabin-light"];
+
+    /// The mode `text` names, `None` without one.
+    pub fn parse(text: &str) -> Option<DebugView> {
+        Some(match text {
+            "cabin-sky" => DebugView::Sky,
+            "cabin-near" => DebugView::Near,
+            "cabin-contact" => DebugView::Contact,
+            "cabin-light" => DebugView::Light,
+            _ => return None,
+        })
+    }
+
+    /// `DEBUG_VIEW` in `cabin.wgsl` and `post.wgsl`: 0 off, else the mode's number.
+    pub(crate) fn code(self) -> u32 {
+        self as u32
+    }
+}
+
 impl Enhance {
     pub const NAMES: [&str; 15] = [
         "anisotropy",
@@ -215,6 +258,7 @@ impl Enhance {
                         anti_aliasing: enhance.anti_aliasing,
                         reflections: enhance.reflections,
                         detail: enhance.detail,
+                        debug_view: enhance.debug_view,
                     }
                 }
                 "anisotropy" => enhance.anisotropy = true,

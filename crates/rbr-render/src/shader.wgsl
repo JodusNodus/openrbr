@@ -1004,6 +1004,12 @@ fn shade_car(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
         body_visible = visible;
     }
     if (cabin_face && day_on()) {
+        // The cabin debug view (`viewer --debug-view`, `cabin_debug` in `cabin.wgsl`): the term alone as a
+        // display grey, passed through unexposed and untonemapped by `post.wgsl`, with no reflection, sheen,
+        // glow or fog on it.
+        if (DEBUG_VIEW != 0u) {
+            return vec4<f32>(vec3<f32>(cabin_debug(v, n, shadowed, under_cloud, outside)), 1.0);
+        }
         shaded = cabin_day_lit(colour, v, n, shadowed, under_cloud, outside);
     } else {
         shaded = lit(colour, n, view, sunlit, around.rgb, v.world);

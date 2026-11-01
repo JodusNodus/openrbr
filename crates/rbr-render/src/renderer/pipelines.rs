@@ -198,6 +198,8 @@ pub(super) struct Context<'a> {
     /// and the draws after the prepass reading the sun's shadow and the contact shading from their mask (`SUN_MASK`,
     /// `renderer::sun_mask`).
     pub(super) lighting: bool,
+    /// [`DebugView`] (`DEBUG_VIEW` in `cabin.wgsl`): 0 draws the shaded colour, as without the flag.
+    pub(super) debug_view: u32,
     /// The surroundings cube's mip levels past [`REFLECTION_SIZE`](super::reflection::REFLECTION_SIZE)'s: 1 at
     /// [`Detail::Ultra`](super::Detail::Ultra) (`CUBE_SHIFT`).
     pub(super) cube_shift: u32,
@@ -316,6 +318,7 @@ impl Context<'_> {
                         ("GROUND", f64::from(u8::from(self.ground))),
                         ("GRASS", f64::from(u8::from(self.grass))),
                         ("LIGHTING", f64::from(u8::from(self.lighting))),
+                        ("DEBUG_VIEW", f64::from(self.debug_view)),
                         ("MIRRORS", f64::from(u8::from(key.mirror))),
                         ("LAMPS", f64::from(u8::from(key.lamps))),
                         ("LIT", f64::from(key.lit)),
