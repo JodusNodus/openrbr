@@ -112,6 +112,8 @@ rbr-recomp `notes/progress/systems.md`; history up to the split: rbr-recomp `LOG
 
 ## Decisions
 
+- 2026-11-01 (user): dawn and golden hour keep part of the low sun's warmth: the eye's white balance adapts less to
+  warm light ([renderer.md](renderer.md#time-of-day-and-night)).
 - 2026-10-21 (user): ReRBR runs either on an existing RBR/RSF install, read-only, or without RSF (retail, patch,
   NGP and locally installed content). Downloaded packs are copied into ReRBR's user content directories; existing
   RSF content is read in place; player settings, saves and edits always belong to ReRBR.
