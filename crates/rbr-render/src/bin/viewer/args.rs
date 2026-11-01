@@ -212,7 +212,7 @@ pub const USAGE: &str = "usage: RBR_DATA=<install> [RBR_PATCH=<patch>] viewer [S
   look:       --weather dry|damp|wet  --wear new|normal|worn  --sky SECTION  --fog off|light|heavy  --wipers off|intermittent|continuous|auto
               --clouds clear|partly|light|heavy  --precipitation none|light|moderate|heavy
               --present mailbox|fifo|immediate  --max-fps N
-              --enhance LIST  --mirrors off|1|2|3  --anti-aliasing taa|off  --reflections high|medium|low|off  --detail high|ultra  --render-scale S  --textures DIR  --upscale-textures DIR  --no-particles  --no-fences  --no-dials  --gauge-mode N  --hide-wheel
+              --enhance LIST  --mirrors off|1|2|3  --anti-aliasing taa|fsr|off  --reflections high|medium|low|off  --detail high|ultra  --render-scale S  --textures DIR  --upscale-textures DIR  --no-particles  --no-fences  --no-dials  --gauge-mode N  --hide-wheel
               --clock HH:MM  --no-relight
   sound, HUD: --no-sound  --volume V  --volumes E,C,F,T  --no-codriver  --no-hud  --mph  --fps
               --codriver-mod DIR  --codriver-voice NAME  --codriver-style FILE  --codriver-ranges FILE  --pacenotes FILE
@@ -428,8 +428,9 @@ pub fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String
                     rbr_render::mirrors::Rate::parse(&value).ok_or(format!("--mirrors {value}: off, 1, 2 or 3"))?;
             }
             "--anti-aliasing" => {
-                let value = args.next().ok_or("--anti-aliasing needs taa or off")?;
-                anti_aliasing = AntiAliasing::parse(&value).ok_or(format!("--anti-aliasing {value}: taa or off"))?;
+                let value = args.next().ok_or("--anti-aliasing needs taa, fsr or off")?;
+                anti_aliasing =
+                    AntiAliasing::parse(&value).ok_or(format!("--anti-aliasing {value}: taa, fsr or off"))?;
             }
             "--reflections" => {
                 let value = args.next().ok_or("--reflections needs high, medium, low or off")?;

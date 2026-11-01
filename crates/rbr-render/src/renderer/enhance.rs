@@ -148,15 +148,18 @@ pub enum AntiAliasing {
     /// edges, the cut-outs' included, at about the cost of [`AntiAliasing::Off`].
     #[default]
     Taa,
+    /// [`AntiAliasing::Taa`]'s jittered frames gathered by AMD's FSR 3 instead ([`crate::fsr`]), at the output's size:
+    /// with a render scale below 100 %, an upscaler.
+    Fsr,
     /// One sample a pixel, the cut-outs alpha-tested as in 1.02: cheaper, with jagged edges.
     Off,
 }
 
 impl AntiAliasing {
     /// The choices offered, in the launcher's order.
-    pub const ALL: [AntiAliasing; 2] = [AntiAliasing::Taa, AntiAliasing::Off];
+    pub const ALL: [AntiAliasing; 3] = [AntiAliasing::Taa, AntiAliasing::Fsr, AntiAliasing::Off];
 
-    /// `taa` or `off`.
+    /// `taa`, `fsr` or `off`.
     pub fn parse(text: &str) -> Option<AntiAliasing> {
         AntiAliasing::ALL.into_iter().find(|a| a.name() == text)
     }
@@ -165,6 +168,7 @@ impl AntiAliasing {
     pub fn name(self) -> &'static str {
         match self {
             AntiAliasing::Taa => "taa",
+            AntiAliasing::Fsr => "fsr",
             AntiAliasing::Off => "off",
         }
     }

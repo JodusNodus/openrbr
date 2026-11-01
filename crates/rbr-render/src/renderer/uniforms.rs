@@ -343,7 +343,7 @@ impl Renderer {
                 eye: eye.extend(1.0).to_array(),
                 fog_color: a.fog_color.extend(haze).to_array(),
                 fog_range: [start, end, anchored, depth],
-                haze: [if index == 1 { cloud_image } else { 0.0 }, a.cloud_haze(), 0.0, 0.0],
+                haze: [if index == 1 { cloud_image } else { 0.0 }, a.cloud_haze(), self.upscale_bias(view), 0.0],
                 zenith: a.zenith().extend(1.0).to_array(),
                 sun: a.sun_direction.extend(f32::from(u8::from(!overcast))).to_array(),
                 ambient: (a.ambient * a.car_ambient).extend(1.0).to_array(),

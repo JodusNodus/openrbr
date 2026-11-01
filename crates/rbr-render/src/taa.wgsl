@@ -212,3 +212,33 @@ fn fs_taa(in: Out) -> Resolved {
     let c = vec4<f32>(untone(mix(from_ycocg(clipped), s0, share)), mask);
     return Resolved(c, c);
 }
+
+// FSR 3 in place of the resolve (`fsr.rs`): each pixel's motion, to where it was (uv, the previous minus this), and the
+// share FSR takes new (reactive): the glass's mud and drops but not over the car (as the resolve's), and the rain and
+// the particles, where they changed the frame drawn before them (`opaque`, the frame itself without them). Clean glass
+// gathers as the rest (as in the resolve; FSR's composition mask over it blurred the view through the windscreen).
+@group(1) @binding(0) var opaque: texture_2d<f32>;
+
+struct Motion {
+    @location(0) motion: vec2<f32>,
+    @location(1) reactive: f32,
+};
+
+// FSR's most for a reactive pixel (its guide's 0.9), and the change the effects made from which it is that.
+const REACTIVE: vec2<f32> = vec2<f32>(0.9, 0.1);
+
+@fragment
+fn fs_motion(in: Out) -> Motion {
+    let pixel = vec2<i32>(in.position.xy);
+    let uv = in.position.xy * t.size.zw;
+    let ndc = vec2<f32>(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
+    let here = vec4<f32>(ndc, textureLoad(depth, pixel, 0), 1.0);
+    let before = textureLoad(opaque, pixel, 0);
+    let mask = clamp(before.a, 0.0, 1.0);
+    let c = clamp(select(before.rgb, vec3<f32>(0.0), before.rgb != before.rgb), vec3<f32>(0.0), vec3<f32>(64.0));
+    let d = abs(tone(load_scene(pixel)) - tone(c));
+    let effects = smoothstep(0.0, REACTIVE.y, max(d.r, max(d.g, d.b)));
+    let previous = previous_uv(uv, here);
+    let glass = smoothstep(GLASS.x, GLASS.y, mask) * (1.0 - previous.z);
+    return Motion(previous.xy - uv, max(glass, effects) * REACTIVE.x);
+}

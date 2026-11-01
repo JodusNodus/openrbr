@@ -1,0 +1,1 @@
+# Upstream's formatting (rustfmt defaults), not ours: the vendored crate stays as received.

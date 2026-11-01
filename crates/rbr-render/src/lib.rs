@@ -27,6 +27,7 @@ mod effects;
 pub mod fences;
 pub mod ffb;
 mod foliage;
+mod fsr;
 pub mod game_camera;
 pub mod ghost;
 pub mod glass;

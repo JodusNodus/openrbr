@@ -2,7 +2,7 @@
 """Reference shots: renders the shots of data/shots.json (1080p, every enhancement) into a folder.
 
     scripts/render-shots.py [--out DIR] [--only NAME...] [--jobs N] [--list] [--compare OLD_DIR] [--dry]
-                            [--previews DIR [--no-render]] [--gallery FILE] [--diff DIR]
+                            [--previews DIR [--no-render]] [--gallery FILE] [--diff DIR] [--viewer-args ARGS]
 
 Each shot is a stage, a car, a `view` (VIEWS), the clock, a launcher selection (weather), viewer arguments and the
 drive frame (`at`) the autopilot has reached; the shot is one `viewer --screenshot` of a live run in lockstep, so the same build gives the
@@ -19,7 +19,7 @@ exact command) and DIR/manifest.json (build and tool versions). `--previews DIR`
 writes the markdown page of the shots (docs/shots/README.md). `--compare OLD_DIR` prints each shot's RMSE against an
 earlier render, worst first; with `--diff DIR` it also writes the difference, times 8, as a 1080p JPEG.
 """
-import argparse, json, os, subprocess, sys, tempfile, time
+import argparse, json, os, shlex, subprocess, sys, tempfile, time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -86,7 +86,7 @@ def launcher_command(build, home, shot, size):
     return tmp, done.stdout.splitlines()
 
 
-def shot_command(build, lines, shot, out, size):
+def shot_command(build, lines, shot, out, size, extra=()):
     """(environment, viewer command) from the launcher's lines: its variables, the viewer's arguments with the
     screenshot's changes, then the live process's, driven by the autopilot."""
     env, i = dict(os.environ), 0
@@ -105,7 +105,7 @@ def shot_command(build, lines, shot, out, size):
         j += 1
     rest[1] = str(build / 'rbr-standalone')
     clock = ['--clock', shot['clock']] if 'clock' in shot else []
-    command += ['--size', size, '--screenshot', str(out)] + COMMON + VIEWS[shot['view']] + clock + shot.get('args', []) + ['--at', str(shot['at'])]
+    command += ['--size', size, '--screenshot', str(out)] + COMMON + VIEWS[shot['view']] + clock + shot.get('args', []) + list(extra) + ['--at', str(shot['at'])]
     return env, command + rest + ['--pilot', 'autopilot']
 
 
@@ -200,6 +200,8 @@ def main():
     ap.add_argument('--size', default=SIZE, help='WIDTHxHEIGHT (3840x2160 for marketing renders)')
     ap.add_argument('--only', nargs='*', default=[], metavar='NAME')
     ap.add_argument('--jobs', type=int, default=JOBS, help=f'shots rendered at once (default {JOBS}; each takes up to 5 GB)')
+    ap.add_argument('--viewer-args', default='', metavar='ARGS',
+                    help="more viewer arguments, after each shot's (e.g. '--anti-aliasing fsr --render-scale 0.67')")
     ap.add_argument('--list', action='store_true')
     ap.add_argument('--dry', action='store_true', help='print each command instead of running it')
     ap.add_argument('--previews', type=Path, metavar='DIR', help='also write JPEGs of the shots to DIR')
@@ -240,7 +242,7 @@ def render(a, home, shots):
         png = a.out / f"{shot['name']}.png"
         tmp, lines = launcher_command(a.build, home, shot, a.size)
         try:
-            env, command = shot_command(a.build, lines, shot, png, a.size)
+            env, command = shot_command(a.build, lines, shot, png, a.size, shlex.split(a.viewer_args))
             check_car(command, shot)
             if a.dry:
                 print(' '.join(map(repr, command)))

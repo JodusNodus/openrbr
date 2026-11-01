@@ -1,0 +1,11 @@
+[package]
+name = "wgpu-ffx-shaders-spv"
+version = "0.1.0"
+edition = "2024"
+authors = ["wgpu-ffx developers", "Advanced Micro Devices, Inc."]
+license = "MIT"
+repository = "https://github.com/cwfitzgerald/wgpu-ffx"
+description = "Pre-compiled SPIR-V shaders for wgpu-ffx"
+
+[lints.clippy]
+too_many_arguments = "allow"

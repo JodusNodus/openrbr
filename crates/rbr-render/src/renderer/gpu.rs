@@ -54,8 +54,12 @@ pub fn request_gpu(instance: &wgpu::Instance, compatible_surface: Option<&wgpu::
     }
     let (device, queue) = futures_executor::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
         label: Some("rbr-render"),
+        // FSR (`fsr.rs`) keeps its history in storage formats past WebGPU's, where the adapter has them.
         required_features: wgpu::Features::TEXTURE_COMPRESSION_BC
-            | adapter.features() & (wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS),
+            | adapter.features()
+                & (wgpu::Features::TIMESTAMP_QUERY
+                    | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS
+                    | wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES),
         // The reflection probes take six layers each (`probes::MOST`).
         // The reflections' fragment stage reads 17 sampled textures, past the default 16, which wgpu 30 checks at
         // the pipeline layout; Metal and desktop Vulkan allow far more.

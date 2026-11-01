@@ -1,0 +1,48 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index a657bba..a9479cd 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -33,4 +33,4 @@ thiserror = "2"
+ toml = { version = "1.0", features = ["preserve_order"] }
+ log = "0.4"
+ xshell = "0.2"
+-wgpu = { version = "29", default-features = false }
++wgpu = { version = "30", default-features = false }
+diff --git a/wgpu-ffx/src/lib.rs b/wgpu-ffx/src/lib.rs
+index 606c85d..8c45189 100644
+--- a/wgpu-ffx/src/lib.rs
++++ b/wgpu-ffx/src/lib.rs
+@@ -1511,7 +1511,7 @@ fn run_one_frame_read_frame_info(
+         .poll(wgpu::PollType::wait_indefinitely())
+         .expect("poll");
+ 
+-    let mapped = staging.slice(..).get_mapped_range();
++    let mapped = staging.slice(..).get_mapped_range().expect("mapped");
+     let frame_info: [f32; 4] = *bytemuck::from_bytes(&mapped[..16]);
+     drop(mapped);
+     staging.unmap();
+diff --git a/wgpu-ffx/src/pass.rs b/wgpu-ffx/src/pass.rs
+index bb63a23..a8e2c46 100644
+--- a/wgpu-ffx/src/pass.rs
++++ b/wgpu-ffx/src/pass.rs
+@@ -70,14 +70,13 @@ pub(crate) fn create_shader_module(
+         ShaderDelivery::SpirvPassthrough => unsafe {
+             device.create_shader_module_passthrough(wgpu::ShaderModuleDescriptorPassthrough {
+                 label: Some(label),
+-                num_workgroups: (0, 0, 0),
++                // Vulkan reads the workgroup size from the SPIR-V; wgpu only checks the name.
++                entry_points: Cow::Borrowed(&[wgpu::PassthroughShaderEntryPoint {
++                    name: Cow::Borrowed("main"),
++                    workgroup_size: (0, 0, 0),
++                }]),
+                 spirv: Some(Cow::Borrowed(bytemuck::cast_slice(spirv))),
+-                dxil: None,
+-                msl: None,
+-                hlsl: None,
+-                glsl: None,
+-                wgsl: None,
+-                metallib: None,
++                ..Default::default()
+             })
+         },
+         ShaderDelivery::Naga => device.create_shader_module(wgpu::ShaderModuleDescriptor {

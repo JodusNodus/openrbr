@@ -101,6 +101,7 @@ impl Choice for AntiAliasing {
     fn label(self) -> &'static str {
         match self {
             AntiAliasing::Taa => "Temporal",
+            AntiAliasing::Fsr => "FSR 3",
             AntiAliasing::Off => "Off",
         }
     }

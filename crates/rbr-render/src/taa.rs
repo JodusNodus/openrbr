@@ -15,6 +15,9 @@
 //! the eye jumps further than [`CUT`] in a frame (a camera change, a restart), or on
 //! [`Renderer::reset_history`](crate::renderer::Renderer::reset_history). A frame drawn again of the same view (a
 //! pause, a screenshot's frames) keeps gathering samples.
+//!
+//! Under [`AntiAliasing::Fsr`](crate::renderer::AntiAliasing::Fsr) FSR 3 ([`crate::fsr`]) gathers the frame instead,
+//! from the same motion, at the output's size.
 
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Vec2, Vec3, Vec4};
@@ -157,6 +160,8 @@ pub(crate) struct Frame {
     pub(crate) wheel: Option<(Wheel, Mat4)>,
     /// The camera is outside the car.
     pub(crate) outside: bool,
+    /// The frame's time, seconds.
+    pub(crate) time: f32,
 }
 
 pub(crate) struct Taa {
@@ -175,15 +180,26 @@ pub(crate) struct Taa {
     frame: u32,
     /// The frame's size and the output's.
     size: (u32, u32),
-    upscaling: bool,
+    output: (u32, u32),
     last: Option<Last>,
+    /// FSR in place of the resolve, and what its dispatch takes of the frame being drawn.
+    fsr: Option<(crate::fsr::Fsr, crate::fsr::Dispatch)>,
+    /// The last frame's time, seconds.
+    time: Option<f32>,
     /// `RBR_TAA_DEBUG=motion` or `mask`: show the motion or the car glass's mask instead of the frame (0: the frame).
     debug: f32,
 }
 
 impl Taa {
-    /// The resolve for frames of `size` (drawn below the output's size with `upscaling`) and their `depth`.
-    pub(crate) fn new(device: &wgpu::Device, size: (u32, u32), upscaling: bool, depth: &wgpu::TextureView) -> Taa {
+    /// The resolve for frames of `size` for an `output` and their `depth`; FSR's with `fsr`.
+    pub(crate) fn new(
+        gpu: &crate::renderer::Gpu,
+        size: (u32, u32),
+        output: (u32, u32),
+        depth: &wgpu::TextureView,
+        fsr: bool,
+    ) -> Taa {
+        let device = &gpu.device;
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("taa"),
             entries: &[
@@ -244,6 +260,12 @@ impl Taa {
             ..Default::default()
         });
         let (raw, history, groups) = targets(device, &layout, &uniform, &sampler, depth, size);
+        let fsr = fsr.then(|| {
+            let fsr = crate::fsr::Fsr::new(gpu, &layout, &module, [&raw, depth], size, output);
+            let dispatch =
+                crate::fsr::Dispatch { view_projection: Mat4::IDENTITY, jitter: Vec2::ZERO, reset: true, delta: 0.0 };
+            (fsr, dispatch)
+        });
         Taa {
             layout,
             pipeline,
@@ -255,8 +277,10 @@ impl Taa {
             current: 0,
             frame: 0,
             size,
-            upscaling,
+            output,
             last: None,
+            fsr,
+            time: None,
             debug: match std::env::var("RBR_TAA_DEBUG").as_deref() {
                 Ok("motion") => 1.0,
                 Ok("mask") => 2.0,
@@ -265,17 +289,20 @@ impl Taa {
         }
     }
 
-    /// For frames of `size` (below the output's with `upscaling`) and their `depth`; the history starts again.
+    /// For frames of `size` for an `output` and their `depth`; the history starts again.
     pub(crate) fn resize(
         &mut self,
         device: &wgpu::Device,
         size: (u32, u32),
-        upscaling: bool,
+        output: (u32, u32),
         depth: &wgpu::TextureView,
     ) {
         (self.raw, self.history, self.groups) =
             targets(device, &self.layout, &self.uniform, &self.sampler, depth, size);
-        (self.size, self.upscaling, self.last) = (size, upscaling, None);
+        (self.size, self.output, self.last) = (size, output, None);
+        if let Some((fsr, _)) = &mut self.fsr {
+            fsr.resize([&self.raw, depth], size, output);
+        }
     }
 
     /// The target the frame is drawn into.
@@ -291,7 +318,28 @@ impl Taa {
     /// Begins a frame: the shift its main view's view-projection takes ([`shift`]).
     pub(crate) fn begin(&mut self) -> Mat4 {
         self.frame = self.frame.wrapping_add(1);
-        shift(jitter(self.frame, self.upscaling), self.size)
+        let jitter = match &mut self.fsr {
+            // FSR's phases: the same Halton points, more of them the further below the output the frame is.
+            Some((fsr, dispatch)) => {
+                let phases = fsr.phases();
+                dispatch.jitter = wgpu_ffx::get_jitter_offset((self.frame % phases) as i32, phases as i32).into();
+                dispatch.jitter
+            }
+            None => jitter(self.frame, self.size != self.output),
+        };
+        shift(jitter, self.size)
+    }
+
+    /// Whether FSR gathers the frames ([`crate::fsr`]).
+    pub(crate) fn fsr(&self) -> bool {
+        self.fsr.is_some()
+    }
+
+    /// Under FSR, keeps the frame before the rain and the particles are drawn over it ([`crate::fsr::Fsr::keep_opaque`]).
+    pub(crate) fn keep_opaque(&mut self, encoder: &mut wgpu::CommandEncoder) {
+        if let Some((fsr, _)) = &mut self.fsr {
+            fsr.keep_opaque(encoder);
+        }
     }
 
     /// Writes the resolve's uniform for `frame`.
@@ -331,6 +379,13 @@ impl Taa {
         let reset = f32::from(u8::from(last.is_none()));
         uniform.params = [BLEND, CLIP_SIGMAS, reset, self.debug];
         queue.write_buffer(&self.uniform, 0, bytemuck::bytes_of(&uniform));
+        if let Some((_, dispatch)) = &mut self.fsr {
+            dispatch.view_projection = frame.view_projection;
+            dispatch.reset = last.is_none();
+            // FSR wants 1 ms at least: a still's frames are drawn at one time.
+            dispatch.delta = self.time.map_or(16.6, |time| ((frame.time - time) * 1000.0).clamp(1.0, 1000.0));
+        }
+        self.time = Some(frame.time);
         self.last = Some(Last {
             view_projection: frame.view_projection,
             car: frame.car.map(|(body, _)| body),
@@ -339,8 +394,12 @@ impl Taa {
         });
     }
 
-    /// Resolves the frame in [`Taa::raw`] into `scene` and the next history.
+    /// Resolves the frame in [`Taa::raw`] into `scene` and the next history (under FSR, `scene` is the output's size).
     pub(crate) fn resolve(&mut self, encoder: &mut wgpu::CommandEncoder, scene: &wgpu::TextureView) {
+        if let Some((fsr, dispatch)) = &mut self.fsr {
+            fsr.resolve(encoder, &self.groups[self.current], scene, dispatch);
+            return;
+        }
         let write = 1 - self.current;
         let attachment = |view| {
             Some(wgpu::RenderPassColorAttachment {
@@ -380,10 +439,12 @@ fn targets(
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format: SCENE_FORMAT,
-                // The reflections pass copies into the frame (as into the post pass's scene).
+                // The reflections pass copies into the frame (as into the post pass's scene); FSR copies it
+                // (`Fsr::keep_opaque`).
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT
                     | wgpu::TextureUsages::TEXTURE_BINDING
-                    | wgpu::TextureUsages::COPY_DST,
+                    | wgpu::TextureUsages::COPY_DST
+                    | wgpu::TextureUsages::COPY_SRC,
                 view_formats: &[],
             })
             .create_view(&Default::default())

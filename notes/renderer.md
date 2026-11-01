@@ -69,6 +69,16 @@ rbr-recomp `rust/rbr-render/README.md`, `notes/visual-enhancements.md`.
   Dark specks on the car's silhouette in a still chase view (3 pixels over 20 luma below their neighbours; 34 with
   off) are the thin dark sliver's real coverage, not a history lock: the raw jittered frames alternate dark and
   bright at those pixels.
+- `--anti-aliasing fsr` (`AntiAliasing::Fsr`, proof of concept, 2026-11-01): AMD FSR 3 (`fsr.rs`, vendored
+  `vendor/wgpu-ffx`, upstream's unreleased Metal branch moved to wgpu 30) in place of the TAA resolve, from the same
+  jitter and motion (`fs_motion` in `taa.wgsl`), at the output's size, so the render scale upscales; reactive mask: the
+  glass's mud and drops (not over the car) and where the rain and particles, drawn before it, changed the frame; RCAS
+  0.8 instead of the post pass's sharpening; textures biased `log2(scale) - 1` when upscaling (`texture_bias` in
+  `shader.wgsl`). Measured on the last of 30 frames at 60 a second (RX 9060 XT radv, 1080p, every enhancement,
+  Laplacian variance, chase / flyby / rain cockpit): TAA 21.8k / 14.0k / 19.4k, FSR 21.7k / 18.4k / 14.2k; at 50 %
+  scale TAA 2.5k / 1.3k / 3.7k, FSR 4.9k / 3.4k / 4.7k. Cost at 1080p: TAA 0.23 ms, FSR 1.50 ms; at 50 % the scene
+  1.57 to 0.97 ms and FSR 0.90 ms. FSR's composition mask over clean glass blurred the view through the windscreen
+  (dropped); with inverted depth it takes near and far swapped, and a frame time of 1 ms at least. Untested on Metal.
 - Pipelines are specialised by override constants (`pipelines.rs` `PipelineKey`: `LIT`, `INSIDE`, `CABIN_SET`,
   `FRAME_KIND`, `KNOWN`, `DRAW_*`; each carries only the code it runs).
   Dead code still held registers: 200-470 byte spills per thread in the stage and car pipelines on an M1 Pro (Metal System Trace, no Dynamic Caching). Native x 0.75 on the M1 Pro, every enhancement: road and chase

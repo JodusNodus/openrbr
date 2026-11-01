@@ -1,5 +1,7 @@
 [workspace]
 members = ["crates/*"]
+# Third-party crates kept as received (`vendor/*/README.md`), outside our checks.
+exclude = ["vendor"]
 # `cargo build --release` builds what a player needs: the launcher (`rerbr`), the viewer and rbr-standalone.
 # `cargo build --workspace` builds everything.
 default-members = ["crates/rbr-launcher", "crates/rbr-render", "crates/rbr-standalone"]

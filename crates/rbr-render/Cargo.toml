@@ -42,6 +42,8 @@ glam = "0.33"
 png = "0.18"
 sha2 = "0.10"
 wgpu = "30"
+# FSR 3 for `--anti-aliasing fsr` (`fsr.rs`; vendored, `vendor/wgpu-ffx/README.md`).
+wgpu-ffx = { path = "../../vendor/wgpu-ffx/wgpu-ffx" }
 winit = "0.30"
 gilrs = "0.11"
 hound = "3.5"

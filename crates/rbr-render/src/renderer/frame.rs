@@ -57,7 +57,9 @@ impl Renderer {
             if let Some(ssr) = &mut self.screen_reflection {
                 ssr.resize(&self.device, SCENE_FORMAT, size, &self.depth_view);
             }
-            self.post.resize(&self.device, size, &self.depth_view);
+            // FSR gathers the frame at the output's size, which the post pass then takes.
+            let fsr = self.taa.as_ref().is_some_and(crate::taa::Taa::fsr);
+            self.post.resize(&self.device, if fsr { output } else { size }, &self.depth_view);
             if let Some(shafts) = &mut self.light_shafts {
                 shafts.resize(&self.device, &self.post.scene, size, &self.depth_view);
             }
@@ -67,7 +69,7 @@ impl Renderer {
             self.sun_mask.resize(&self.device, &self.depth_view, size);
             self.cloud_volume.resize(&self.device, &self.depth_view, size);
             if let Some(taa) = &mut self.taa {
-                taa.resize(&self.device, size, size != output, &self.depth_view);
+                taa.resize(&self.device, size, output, &self.depth_view);
             }
         }
         // Under the temporal anti-aliasing the main view's draws are jittered; the sun's cascades, the mirrors and
@@ -202,13 +204,29 @@ impl Renderer {
             stats
         });
         let car = self.taa.as_ref().and_then(|_| self.car_body.zip(self.car_model_box()));
+        let late = self.late_effects();
         if let Some(taa) = &mut self.taa {
-            let frame = crate::taa::Frame { view_projection, car, wheel: self.car_wheel, outside: self.outside_view };
+            let frame = crate::taa::Frame {
+                view_projection,
+                car,
+                wheel: self.car_wheel,
+                outside: self.outside_view,
+                time: self.time,
+            };
             taa.prepare(&self.queue, &frame);
+            // FSR takes them in the frame, as reactive (`fsr.rs`): its scene is past the depth's size.
+            let fsr = taa.fsr();
+            if late && fsr {
+                taa.keep_opaque(encoder);
+                let t = mark(&mut profiler, encoder);
+                self.draw_late_effects(encoder, self.taa.as_ref().expect("above").raw());
+                span(&mut profiler, encoder, "particles, rain", t);
+            }
+            let taa = self.taa.as_mut().expect("above");
             let t = mark(&mut profiler, encoder);
             taa.resolve(encoder, &self.post.scene);
-            span(&mut profiler, encoder, "taa", t);
-            if self.late_effects() {
+            span(&mut profiler, encoder, if fsr { "fsr" } else { "taa" }, t);
+            if late && !fsr {
                 let t = mark(&mut profiler, encoder);
                 self.draw_late_effects(encoder, &self.post.scene);
                 span(&mut profiler, encoder, "particles, rain", t);
@@ -370,6 +388,16 @@ impl Renderer {
         }
         if let Some(glass) = &self.glass {
             glass.draw(&self.device, &mut pass, scene, (&self.mirrors.view, &self.mirrors.uniform));
+        }
+    }
+
+    /// The textures' mip bias under FSR's upscale of the main view: its guide's `log2(render / display) - 1`, so that
+    /// they keep the output's detail; 0 at the output's size and without FSR (as before).
+    pub(super) fn upscale_bias(&self, view: View) -> f32 {
+        let fsr = self.taa.as_ref().is_some_and(crate::taa::Taa::fsr);
+        match view == View::Main && fsr && self.render_scale < 1.0 {
+            true => self.render_scale.log2() - 1.0,
+            false => 0.0,
         }
     }
 

@@ -1,0 +1,481 @@
+use std::borrow::Cow;
+
+use crate::{
+    FormatProfile, FrameKind, FsrContextFlags, FsrDispatchInfo,
+    resources::{AccessType, FsrResourceName, FsrResources},
+};
+
+use wgpu_ffx_shaders_spv::fsr3upscaler::Shaders;
+
+pub(crate) struct FsrPass {
+    kind: FsrPassKind,
+    pipeline: wgpu::ComputePipeline,
+    bgl: wgpu::BindGroupLayout,
+}
+
+/// How a [`wgpu::Device`] consumes the crate's SPIR-V shaders.
+///
+/// `PASSTHROUGH_SHADERS` being present does *not* mean the active backend
+/// accepts SPIR-V passthrough — wgpu's passthrough is per-language and only the
+/// Vulkan backend consumes the `spirv` slot (DX12 wants DXIL/HLSL, Metal wants
+/// MSL/metallib). Every other backend must route the SPIR-V through naga
+/// instead. This is derived once from the adapter backend and threaded into
+/// pipeline creation so the choice is made in exactly one place.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ShaderDelivery {
+    /// The backend consumes our SPIR-V directly via
+    /// [`wgpu::Device::create_shader_module_passthrough`] (Vulkan).
+    SpirvPassthrough,
+    /// The SPIR-V is handed to naga for translation to the backend's native
+    /// language (Metal/MSL, GL/GLSL, …) via [`wgpu::ShaderSource::SpirV`].
+    Naga,
+}
+
+impl ShaderDelivery {
+    /// Pick the delivery mode for `backend`. Only the Vulkan backend consumes
+    /// the SPIR-V passthrough slot, and only when the device actually enabled
+    /// `PASSTHROUGH_SHADERS`; everything else goes through naga.
+    pub(crate) fn for_backend(backend: wgpu::Backend, device: &wgpu::Device) -> ShaderDelivery {
+        let passthrough = device
+            .features()
+            .contains(wgpu::Features::PASSTHROUGH_SHADERS);
+        if backend == wgpu::Backend::Vulkan && passthrough {
+            ShaderDelivery::SpirvPassthrough
+        } else {
+            ShaderDelivery::Naga
+        }
+    }
+
+    /// Whether this delivery mode can compile FFX's single-pass SPD shaders,
+    /// which decorate a read-write storage *image* `coherent` for cross-
+    /// workgroup reads. naga rejects memory decorations on anything but the
+    /// `storage` address space (an `image` is `Handle`-space), so the
+    /// single-pass SPD is only usable on the passthrough path; naga backends
+    /// must fall back to the write-only Core mip chain.
+    pub(crate) fn supports_single_pass_spd(self) -> bool {
+        matches!(self, ShaderDelivery::SpirvPassthrough)
+    }
+}
+
+/// Create a compute shader module from SPIR-V, using the passthrough path when
+/// the active backend consumes SPIR-V passthrough (Vulkan) and otherwise
+/// routing through naga. Shared by [`FsrPass`] and the Core SPD pyramid.
+pub(crate) fn create_shader_module(
+    device: &wgpu::Device,
+    delivery: ShaderDelivery,
+    label: &'static str,
+    spirv: &'static [u8],
+) -> wgpu::ShaderModule {
+    match delivery {
+        ShaderDelivery::SpirvPassthrough => unsafe {
+            device.create_shader_module_passthrough(wgpu::ShaderModuleDescriptorPassthrough {
+                label: Some(label),
+                // Vulkan reads the workgroup size from the SPIR-V; wgpu only checks the name.
+                entry_points: Cow::Borrowed(&[wgpu::PassthroughShaderEntryPoint {
+                    name: Cow::Borrowed("main"),
+                    workgroup_size: (0, 0, 0),
+                }]),
+                spirv: Some(Cow::Borrowed(bytemuck::cast_slice(spirv))),
+                ..Default::default()
+            })
+        },
+        ShaderDelivery::Naga => device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some(label),
+            source: wgpu::ShaderSource::SpirV(Cow::Borrowed(bytemuck::cast_slice(spirv))),
+        }),
+    }
+}
+
+impl FsrPass {
+    pub fn new(
+        device: &wgpu::Device,
+        delivery: ShaderDelivery,
+        kind: FsrPassKind,
+        flags: FsrContextFlags,
+        format_profile: FormatProfile,
+        shaders: &Shaders,
+    ) -> Self {
+        let shader_module =
+            create_shader_module(device, delivery, kind.label(), kind.shader(shaders));
+
+        let resources = kind.resources(flags);
+
+        let bgl_entries: Vec<_> = resources
+            .into_iter()
+            .enumerate()
+            .map(|(i, access)| {
+                access
+                    .name
+                    .to_bgl_entry(i as u32, access.access_type, format_profile)
+            })
+            .collect();
+
+        let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some(&format!("{} Bind Group Layout", kind.label())),
+            entries: &bgl_entries,
+        });
+
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some(&format!("{} Pipeline Layout", kind.label())),
+            bind_group_layouts: &[Some(&bgl)],
+            immediate_size: 0,
+        });
+
+        let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some(kind.label()),
+            layout: Some(&pipeline_layout),
+            module: &shader_module,
+            entry_point: Some("main"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
+        Self {
+            kind,
+            pipeline: compute_pipeline,
+            bgl,
+        }
+    }
+
+    #[expect(clippy::too_many_arguments)]
+    pub fn dispatch(
+        &self,
+        device: &wgpu::Device,
+        pass: &mut wgpu::ComputePass<'_>,
+        resources: &FsrResources,
+        info: &FsrDispatchInfo,
+        flags: FsrContextFlags,
+        frame_kind: FrameKind,
+        x: u32,
+        y: u32,
+    ) {
+        let resources_list = self.kind.resources(flags);
+        let resources: Vec<_> = resources_list
+            .into_iter()
+            .map(|access| resources.to_view(info, access, frame_kind))
+            .collect();
+
+        let bind_group_entries: Vec<_> = resources
+            .iter()
+            .enumerate()
+            .map(|(i, owned_resource)| wgpu::BindGroupEntry {
+                binding: i as u32,
+                resource: owned_resource.into(),
+            })
+            .collect();
+
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some(&format!("{} Bind Group", self.kind.label())),
+            layout: &self.bgl,
+            entries: &bind_group_entries,
+        });
+
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(0, &bind_group, &[]);
+        pass.dispatch_workgroups(x, y, 1);
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum FsrPassKind {
+    /// A pass which prepares game inputs for later passes
+    PrepareInputs,
+    /// A pass which generates the luminance mipmap chain for the current frame.
+    LumaPyramid,
+    /// A pass which generates the shading change detection mipmap chain for the current frame.
+    ShadingChangePyramid,
+    /// A pass which estimates shading changes for the current frame
+    ShadingChange,
+    /// A pass which prepares accumulation relevant information
+    PrepareReactivity,
+    /// A pass which estimates temporal instability of the luminance changes.
+    LumaInstability,
+    /// A pass which performs upscaling.
+    Accumulate,
+    /// A pass which performs upscaling, without writing to the output color target.
+    /// Used when RCAS sharpening is enabled — RCAS writes the final output instead.
+    AccumulateSharpen,
+    /// A pass which performs sharpening.
+    Rcas,
+    /// A pass which draws some internal resources, for debugging purposes
+    DebugView,
+    /// An optional pass to generate a reactive mask.
+    GenerateReactive,
+}
+
+impl FsrPassKind {
+    pub fn label(&self) -> &'static str {
+        match self {
+            FsrPassKind::PrepareInputs => "FSR3 Prepare Inputs",
+            FsrPassKind::LumaPyramid => "FSR3 Luma Pyramid",
+            FsrPassKind::ShadingChangePyramid => "FSR3 Shading Change Pyramid",
+            FsrPassKind::ShadingChange => "FSR3 Shading Change",
+            FsrPassKind::PrepareReactivity => "FSR3 Prepare Reactivity",
+            FsrPassKind::LumaInstability => "FSR3 Luma Instability",
+            FsrPassKind::Accumulate => "FSR3 Accumulate",
+            FsrPassKind::AccumulateSharpen => "FSR3 Accumulate Sharpen",
+            FsrPassKind::Rcas => "FSR3 RCAS",
+            FsrPassKind::DebugView => "FSR3 Debug View",
+            FsrPassKind::GenerateReactive => "FSR3 Generate Reactive",
+        }
+    }
+
+    pub fn shader(&self, shaders: &Shaders) -> &'static [u8] {
+        match self {
+            FsrPassKind::PrepareInputs => shaders.prepare_inputs,
+            FsrPassKind::LumaPyramid => shaders.luma_pyramid,
+            FsrPassKind::ShadingChangePyramid => shaders.shading_change_pyramid,
+            FsrPassKind::ShadingChange => shaders.shading_change,
+            FsrPassKind::PrepareReactivity => shaders.prepare_reactivity,
+            FsrPassKind::LumaInstability => shaders.luma_instability,
+            FsrPassKind::Accumulate => shaders.accumulate,
+            FsrPassKind::AccumulateSharpen => shaders.accumulate_sharpen,
+            FsrPassKind::Rcas => shaders.rcas,
+            FsrPassKind::DebugView => shaders.debug_view,
+            FsrPassKind::GenerateReactive => todo!(),
+        }
+    }
+
+    pub fn resources(&self, flags: FsrContextFlags) -> Vec<ResourceAccess> {
+        use crate::resources::AccessType::*;
+        use crate::resources::FsrResourceName::*;
+
+        let motion_vectors = if flags.contains(FsrContextFlags::DISPLAY_RESOLUTION_MOTION_VECTORS) {
+            OutputDilatedMotionVectors
+        } else {
+            InputMotionVectors
+        };
+
+        #[rustfmt::skip]
+        let mut ret = match self {
+            FsrPassKind::Accumulate | FsrPassKind::AccumulateSharpen => vec![
+                ResourceAccess { name: InputExposure, access_type: Srv, desc: None },
+                ResourceAccess { name: DilatedReactiveMasks, access_type: Srv, desc: None },
+                ResourceAccess { name: motion_vectors, access_type: Srv, desc: None },
+                ResourceAccess { name: InternalUpscaledPrevious, access_type: Srv, desc: None },
+                ResourceAccess { name: Lanczos2Lut, access_type: Srv, desc: None },
+                ResourceAccess { name: FarthestDepthMip1, access_type: Srv, desc: None },
+                ResourceAccess { name: Luma, access_type: Srv, desc: None },
+                ResourceAccess { name: LumaInstability, access_type: Srv, desc: None },
+                ResourceAccess { name: InputColor, access_type: Srv, desc: None },
+                ResourceAccess { name: InternalUpscaledCurrent, access_type: Uav, desc: None },
+                ResourceAccess { name: OutputColor, access_type: Uav, desc: None },
+                ResourceAccess { name: NewLocks, access_type: Uav, desc: None },
+                ResourceAccess { name: Constants, access_type: Srv, desc: None },
+            ],
+            FsrPassKind::GenerateReactive => todo!("Need to map FfxFsr3UpscalerGenerateReactiveDescription"),
+            FsrPassKind::DebugView => vec![
+                ResourceAccess { name: DilatedReactiveMasks, access_type: Srv, desc: None },
+                ResourceAccess { name: OutputDilatedMotionVectors, access_type: Srv, desc: None },
+                ResourceAccess { name: OutputDilatedDepth, access_type: Srv, desc: None },
+                ResourceAccess { name: InternalUpscaledPrevious, access_type: Srv, desc: None },
+                ResourceAccess { name: InputExposure, access_type: Srv, desc: None },
+                ResourceAccess { name: OutputColor, access_type: Uav, desc: None },
+                ResourceAccess { name: Constants, access_type: Srv, desc: None },
+            ],
+            FsrPassKind::LumaInstability => vec![
+                ResourceAccess { name: InputExposure, access_type: Srv, desc: None },
+                ResourceAccess { name: DilatedReactiveMasks, access_type: Srv, desc: None },
+                ResourceAccess { name: OutputDilatedMotionVectors, access_type: Srv, desc: None },
+                ResourceAccess { name: FrameInfo, access_type: Srv, desc: None },
+                ResourceAccess { name: LumaHistoryPrevious, access_type: Srv, desc: None },
+                ResourceAccess { name: FarthestDepthMip1, access_type: Srv, desc: None },
+                ResourceAccess { name: Luma, access_type: Srv, desc: None },
+                ResourceAccess { name: LumaHistoryCurrent, access_type: Uav, desc: None },
+                ResourceAccess { name: LumaInstability, access_type: Uav, desc: None },
+                ResourceAccess { name: Constants, access_type: Srv, desc: None },
+            ],
+            FsrPassKind::LumaPyramid => vec![
+                ResourceAccess { name: Luma, access_type: Srv, desc: None },
+                ResourceAccess { name: FarthestDepth, access_type: Srv, desc: None },
+                ResourceAccess { name: SpdAtomicCount, access_type: Uav, desc: None },
+                ResourceAccess { name: FrameInfo, access_type: Uav, desc: None },
+                ResourceAccess {
+                    name: SpdMips,
+                    access_type: Uav,
+                    desc: Some(wgpu::TextureViewDescriptor {
+                        aspect: wgpu::TextureAspect::All,
+                        base_mip_level: 0,
+                        mip_level_count: Some(1),
+                        ..Default::default()
+                    }),
+                },
+                ResourceAccess {
+                    name: SpdMips,
+                    access_type: Uav,
+                    desc: Some(wgpu::TextureViewDescriptor {
+                        aspect: wgpu::TextureAspect::All,
+                        base_mip_level: 1,
+                        mip_level_count: Some(1),
+                        ..Default::default()
+                    }),
+                },
+                ResourceAccess {
+                    name: SpdMips,
+                    access_type: Uav,
+                    desc: Some(wgpu::TextureViewDescriptor {
+                        aspect: wgpu::TextureAspect::All,
+                        base_mip_level: 2,
+                        mip_level_count: Some(1),
+                        ..Default::default()
+                    }),
+                },
+                ResourceAccess {
+                    name: SpdMips,
+                    access_type: Uav,
+                    desc: Some(wgpu::TextureViewDescriptor {
+                        aspect: wgpu::TextureAspect::All,
+                        base_mip_level: 3,
+                        mip_level_count: Some(1),
+                        ..Default::default()
+                    }),
+                },
+                ResourceAccess {
+                    name: SpdMips,
+                    access_type: Uav,
+                    desc: Some(wgpu::TextureViewDescriptor {
+                        aspect: wgpu::TextureAspect::All,
+                        base_mip_level: 4,
+                        mip_level_count: Some(1),
+                        ..Default::default()
+                    }),
+                },
+                ResourceAccess {
+                    name: SpdMips,
+                    access_type: Uav,
+                    desc: Some(wgpu::TextureViewDescriptor {
+                        aspect: wgpu::TextureAspect::All,
+                        base_mip_level: 5,
+                        mip_level_count: Some(1),
+                        ..Default::default()
+                    }),
+                },
+                ResourceAccess { name: FarthestDepthMip1, access_type: Uav, desc: None },
+                ResourceAccess { name: Constants, access_type: Srv, desc: None },
+            ],
+            FsrPassKind::PrepareInputs => vec![
+                ResourceAccess { name: InputMotionVectors, access_type: Srv, desc: None },
+                ResourceAccess { name: InputDepth, access_type: Srv, desc: None },
+                ResourceAccess { name: InputColor, access_type: Srv, desc: None },
+                ResourceAccess { name: OutputDilatedMotionVectors, access_type: Uav, desc: None },
+                ResourceAccess { name: OutputDilatedDepth, access_type: Uav, desc: None },
+                ResourceAccess { name: OutputReconstructedPreviousDepth, access_type: Uav, desc: None },
+                ResourceAccess { name: FarthestDepth, access_type: Uav, desc: None },
+                ResourceAccess { name: Luma, access_type: Uav, desc: None },
+                ResourceAccess { name: Constants, access_type: Srv, desc: None },
+            ],
+            FsrPassKind::PrepareReactivity => vec![
+                ResourceAccess { name: OutputReconstructedPreviousDepth, access_type: Srv, desc: None },
+                ResourceAccess { name: OutputDilatedMotionVectors, access_type: Srv, desc: None },
+                ResourceAccess { name: OutputDilatedDepth, access_type: Srv, desc: None },
+                ResourceAccess { name: InputReactiveMask, access_type: Srv, desc: None },
+                ResourceAccess { name: InputTransparencyAndComposition, access_type: Srv, desc: None },
+                ResourceAccess { name: AccumulationPrevious, access_type: Srv, desc: None },
+                ResourceAccess { name: ShadingChange, access_type: Srv, desc: None },
+                ResourceAccess { name: Luma, access_type: Srv, desc: None },
+                ResourceAccess { name: InputExposure, access_type: Srv, desc: None },
+
+                ResourceAccess { name: DilatedReactiveMasks, access_type: Uav, desc: None },
+                ResourceAccess { name: NewLocks, access_type: Uav, desc: None },
+                ResourceAccess { name: AccumulationCurrent, access_type: Uav, desc: None },
+
+                ResourceAccess { name: Constants, access_type: Srv, desc: None },
+            ],
+            FsrPassKind::Rcas => vec![
+                ResourceAccess { name: InputExposure, access_type: Srv, desc: None },
+                ResourceAccess { name: InternalUpscaledCurrent, access_type: Srv, desc: None },
+                ResourceAccess { name: OutputColor, access_type: Uav, desc: None },
+                ResourceAccess { name: Constants, access_type: Srv, desc: None },
+            ],
+            FsrPassKind::ShadingChange => vec![
+                ResourceAccess { name: SpdMips, access_type: Srv, desc: None },
+                ResourceAccess { name: ShadingChange, access_type: Uav, desc: None },
+                ResourceAccess { name: Constants, access_type: Srv, desc: None },
+            ],
+            FsrPassKind::ShadingChangePyramid => vec![
+                // SRV bindings
+                ResourceAccess { name: FsrResourceName::Luma, access_type: AccessType::Srv, desc: None },
+                ResourceAccess { name: FsrResourceName::PreviousLuma, access_type: AccessType::Srv, desc: None },
+                ResourceAccess { name: FsrResourceName::OutputDilatedMotionVectors, access_type: AccessType::Srv, desc: None },
+                ResourceAccess { name: FsrResourceName::InputExposure, access_type: AccessType::Srv, desc: None },
+                ResourceAccess { name: FsrResourceName::SpdAtomicCount, access_type: AccessType::Uav, desc: None },
+                ResourceAccess {
+                    name: FsrResourceName::SpdMips,
+                    access_type: AccessType::Uav,
+                    desc: Some(wgpu::TextureViewDescriptor {
+                        base_mip_level: 0,
+                        mip_level_count: Some(1),
+                        ..Default::default()
+                    }),
+                },
+                ResourceAccess {
+                    name: FsrResourceName::SpdMips,
+                    access_type: AccessType::Uav,
+                    desc: Some(wgpu::TextureViewDescriptor {
+                        base_mip_level: 1,
+                        mip_level_count: Some(1),
+                        ..Default::default()
+                    }),
+                },
+                ResourceAccess {
+                    name: FsrResourceName::SpdMips,
+                    access_type: AccessType::Uav,
+                    desc: Some(wgpu::TextureViewDescriptor {
+                        base_mip_level: 2,
+                        mip_level_count: Some(1),
+                        ..Default::default()
+                    }),
+                },
+                ResourceAccess {
+                    name: FsrResourceName::SpdMips,
+                    access_type: AccessType::Uav,
+                    desc: Some(wgpu::TextureViewDescriptor {
+                        base_mip_level: 3,
+                        mip_level_count: Some(1),
+                        ..Default::default()
+                    }),
+                },
+                ResourceAccess {
+                    name: FsrResourceName::SpdMips,
+                    access_type: AccessType::Uav,
+                    desc: Some(wgpu::TextureViewDescriptor {
+                        base_mip_level: 4,
+                        mip_level_count: Some(1),
+                        ..Default::default()
+                    }),
+                },
+                ResourceAccess {
+                    name: FsrResourceName::SpdMips,
+                    access_type: AccessType::Uav,
+                    desc: Some(wgpu::TextureViewDescriptor {
+                        base_mip_level: 5,
+                        mip_level_count: Some(1),
+                        ..Default::default()
+                    }),
+                },
+                ResourceAccess { name: FsrResourceName::Constants, access_type: AccessType::Srv, desc: None },
+            ]
+        };
+
+        // All passes bind the samplers at the end
+
+        ret.push(ResourceAccess {
+            name: FsrResourceName::SamplerPointClamp,
+            access_type: AccessType::Srv,
+            desc: None,
+        });
+        ret.push(ResourceAccess {
+            name: FsrResourceName::SamplerLinearClamp,
+            access_type: AccessType::Srv,
+            desc: None,
+        });
+
+        ret
+    }
+}
+
+pub(crate) struct ResourceAccess {
+    pub name: FsrResourceName,
+    pub access_type: AccessType,
+    pub desc: Option<wgpu::TextureViewDescriptor<'static>>,
+}

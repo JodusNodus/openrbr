@@ -151,7 +151,7 @@ pub struct Renderer {
     /// `None` when no draw reflects ([`reflects`]).
     screen_reflection: Option<ScreenReflection>,
     post: Post,
-    /// `None` unless [`AntiAliasing::Taa`] ([`crate::taa`]).
+    /// `None` under [`AntiAliasing::Off`] ([`crate::taa`]; with FSR under [`AntiAliasing::Fsr`]).
     taa: Option<crate::taa::Taa>,
     /// `None` unless [`Enhance::lighting`] ([`crate::light_shafts`]).
     light_shafts: Option<crate::light_shafts::LightShafts>,
@@ -231,7 +231,7 @@ impl Renderer {
         let sun = (enhance.lighting || timed).then(|| SunShadow::new(&device, &texture_layout, quality));
         let sun_range = sun.as_ref().map(|sun| shadows::ShadowRange::sun(&device, &queue, &sun.view, quality));
         let sun_view = sun.as_ref().map_or_else(|| sun::placeholder(&device), |sun| sun.view.clone());
-        let taa = enhance.anti_aliasing == AntiAliasing::Taa;
+        let taa = enhance.anti_aliasing != AntiAliasing::Off;
         let ultra = enhance.detail == Detail::Ultra;
         let surroundings_side = if ultra { reflection::ULTRA_SIZE } else { reflection::REFLECTION_SIZE };
         let reflection = Reflection::new(&device, format, reflection::REFLECTION_SIZE);
@@ -699,13 +699,16 @@ impl Renderer {
                 ultra,
             )
         });
-        let post = Post::new(&device, output_format, depth_size, &depth_view, enhance.lighting, taa);
+        // FSR sharpens its own output (`fsr::SHARPNESS`).
+        let sharpen = enhance.anti_aliasing == AntiAliasing::Taa;
+        let post = Post::new(&device, output_format, depth_size, &depth_view, enhance.lighting, sharpen);
         let light_shafts = enhance.lighting.then(|| {
             let clouds = cloud_volume.shadow_map();
             crate::light_shafts::LightShafts::new(&device, &post.scene, depth_size, &depth_view, &sun_view, clouds)
         });
         let effects = enhance.particles.then(|| Effects::new(&device, format, &depth_view, &sun_view));
-        let taa = taa.then(|| crate::taa::Taa::new(&device, depth_size, false, &depth_view));
+        let fsr = enhance.anti_aliasing == AntiAliasing::Fsr;
+        let taa = taa.then(|| crate::taa::Taa::new(gpu, depth_size, depth_size, &depth_view, fsr));
         Renderer {
             device,
             queue,
