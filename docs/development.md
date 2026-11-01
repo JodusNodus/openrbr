@@ -250,7 +250,9 @@ change, rebuild and render into a second folder (`--only` for a subset); `--comp
 ImageMagick RMSE per shot and writes a diff image for each changed one. When the change is wanted, regenerate the
 committed set with `--out DIR --no-render --previews docs/shots --gallery docs/shots/README.md`. The JPEGs are for
 eyeballing and the README, not for comparing. Settings other than the shot's come from the script's table, not the
-player's file, and the camera is the default seat, so a shot is the same on any machine with the same install. The
+player's file, and the camera is the default seat, so a shot is the same on any machine with the same install, up to
+the GPU's and the C library's rounding (a Mac and an AMD desktop: mean difference 2-3 of 255, foliage edges and dust;
+compare renders made on one machine). The
 renders are game content: the PNG renders stay out of the repository; the list and the JPEGs of
 [`docs/shots/`](shots/README.md) (`--previews docs/shots`) are committed.
 

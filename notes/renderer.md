@@ -194,6 +194,11 @@ Rally3 Evo, 1280x720: 63.9 fps render, replay 16920 of 16920 frames equal, video
   484's backdrop is 16384 x 8192, RX 9060 XT allows 32768; checked capped at 8192, 2026-10-27).
 - Ours: ground detail noise, the backdrop's own texture as its detail (`backdrop_detail` in `shader.wgsl`), road
   shine on specular slots 6 and 8 (the game's formula, our `c90`); the wet film is the `wet` addition.
+- Shader hashes (`hash`, `landing_hash` in `shader.wgsl`, `soft_hash` in particles) are Hoskins's "Hash without Sine"
+  (2026-11-01). The sine hash's large arguments came out differently on Metal and RADV, so the ground detail's
+  patches (up to 22 %) and the exposure after them differed: the same shot at the same commit was mean 13-14 of 255
+  apart between the Mac and the desktop, now 2.2-3.2 (Gabiria fly-by, Komarov chase; the rest foliage edges and the
+  CPU particles' libm).
 - Terrain detail (ours, always on; `terrain_detail.wgsl`, `terrain_detail.rs`, 2026-10-28): the draw's most
   detailed texture window tiled mirrored and triplanar adds its high pass on the near ground (RSF Luceram's 4096
   `z*` atlases, past the upscaler's cap). Load 63-72 ms (52M, 417O); scene pass 1080p 417O rain fly-by 2.74 to 2.84
