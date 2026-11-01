@@ -387,6 +387,14 @@ pub fn parse(bytes: &[u8]) -> Result<ColFile, Error> {
         cell.graft = resolve_graft(&root_tree, cell.flags).ok_or(Error::BadGraft { cell: i })?;
     }
 
+    // The loader reads only `cell_count` table words: bytes after them up to the next region are unused (one word,
+    // 0xc4b64040, in the four RSF Pribram files; none in retail).
+    let table_end = table_off + table_len;
+    if let Some(next) = spans.iter().map(|s| s.start).filter(|&s| s > table_end).min() {
+        if !spans.iter().any(|s| s.start <= table_end && table_end < s.end) {
+            spans.push(Span { start: table_end, end: next });
+        }
+    }
     check_tiling(spans, bytes.len())?;
     Ok(ColFile { root: Root { tree: root_tree, mesh_a, mesh_b, brake_wall }, cells })
 }

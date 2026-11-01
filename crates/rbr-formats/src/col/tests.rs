@@ -160,6 +160,15 @@ fn trailing_byte_is_a_gap() {
 }
 
 #[test]
+fn unread_word_after_the_table_is_allowed() {
+    // As RSF's Pribram: one word between the cell table and the first cell.
+    let mut b = minimal();
+    b.splice(0x9c..0x9c, 0xc4b6_4040u32.to_le_bytes());
+    put_u32(&mut b, 0x98, 0xa0);
+    assert_eq!(parse(&b).map(|f| f.cells.len()), Ok(1));
+}
+
+#[test]
 fn vertex_index_out_of_range_rejected() {
     let mut b = minimal();
     put(&mut b, 0x134, &[3u8, 0]);
