@@ -259,6 +259,11 @@ impl Particles {
         }))
     }
 
+    /// The wheel spray's dust colour ([`wheel_spray::dust`]).
+    pub fn dust(&self) -> [f32; 3] {
+        self.dust
+    }
+
     /// The weather's rain or snow.
     pub fn precipitation(&self) -> Option<Precipitation> {
         self.precipitation

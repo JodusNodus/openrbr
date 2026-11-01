@@ -622,13 +622,25 @@ fn fs_main(in: Out) -> @location(0) vec4<f32> {
         return lens(screen_up(o, rr), o, look, size, in.centre.xy, LENS_MAG, 0.6, 1.0, in.seed)
             * ((1.0 - smoothstep(1.0 - 0.8 / size, 1.0, rr)) * in.alpha);
     }
-    let edge = ragged(in.local, in.seed, select(0.35, 0.25, in.kind == 1));
-    if (r > edge) {
-        discard;
+    var soft: f32;
+    var rim: f32;
+    if (in.kind == 3 || in.kind == 5) {
+        let s = splat(in, per_pixel);
+        soft = s.x;
+        rim = s.y;
+        if (soft <= 0.0) {
+            discard;
+        }
+    } else {
+        let edge = ragged(in.local, in.seed, select(0.35, 0.25, in.kind == 1));
+        if (r > edge) {
+            discard;
+        }
+        soft = 1.0 - smoothstep(edge * 0.75, edge, r);
+        rim = r / edge;
     }
-    let soft = 1.0 - smoothstep(edge * 0.75, edge, r);
     if (in.kind == 5) {
-        return mud_inside(in, r / edge, soft);
+        return mud_inside(in, rim, soft);
     }
     var colour = in.color.rgb * frame.light.rgb;
     if (in.kind == 2) {
@@ -641,6 +653,48 @@ fn fs_main(in: Out) -> @location(0) vec4<f32> {
     }
     let alpha = soft * in.alpha * in.color.a;
     return vec4<f32>(lit * alpha, alpha);
+}
+
+// A speck of mud or slush (kinds 3 and 5, ours): the drop that hit the glass, its outline ragged and drawn out its own
+// way (`outline`), thick at its core and thinner to its edge (`SPLAT_THIN`), and up to `SPLAT_DROPLETS` fine droplets
+// it threw around it, most up the glass with the airflow. The quad spans `SPLAT_REACH` of the drop's radius
+// (`glass::SPLAT_REACH`). Returns its cover (0 to 1, its edge a pixel soft, so the specks a pixel across stay steady)
+// and how far out to its edge the point lies (0 the core, 1 the edge and the droplets), for the light through it.
+const SPLAT_REACH: f32 = 2.6;
+const SPLAT_RAGGED: f32 = 0.3;
+const SPLAT_THIN: f32 = 0.7;
+const SPLAT_DROPLETS: u32 = 4u;
+// A droplet's chance, its distance out from the drop's centre and its radius, in the drop's radii; its cover.
+const DROPLET_CHANCE: f32 = 0.6;
+const DROPLET_OUT: vec2<f32> = vec2<f32>(1.3, 2.4);
+const DROPLET_SIZE: vec2<f32> = vec2<f32>(0.1, 0.3);
+const DROPLET_COVER: f32 = 0.75;
+
+fn splat(in: Out, per_pixel: mat2x2<f32>) -> vec2<f32> {
+    let p = in.local * SPLAT_REACH;
+    // A pixel, in the drop's radii.
+    let pixel = max(max(length(per_pixel[0]), length(per_pixel[1])) * SPLAT_REACH, 1e-4);
+    let rr = outline(p, in.seed, SPLAT_RAGGED);
+    var cover = (1.0 - smoothstep(1.0 - pixel, 1.0 + pixel, rr)) * mix(1.0, SPLAT_THIN, smoothstep(0.2, 1.0, rr));
+    var rim = min(rr, 1.0);
+    let salt = u32(in.seed * 16777216.0);
+    for (var k = 0u; k < SPLAT_DROPLETS; k++) {
+        let h = hash4(salt + k * 7919u);
+        if (h.w > DROPLET_CHANCE) {
+            continue;
+        }
+        // Up the glass, within 80 degrees either side.
+        let a = 1.5708 + (h.x * 2.0 - 1.0) * 1.4;
+        let at = vec2<f32>(cos(a), sin(a)) * mix(DROPLET_OUT.x, DROPLET_OUT.y, h.y);
+        let size = mix(DROPLET_SIZE.x, DROPLET_SIZE.y, h.z * h.z);
+        let d = length(p - at);
+        let dot = (1.0 - smoothstep(size - pixel, size + pixel, d)) * DROPLET_COVER;
+        if (dot > cover) {
+            cover = dot;
+            rim = 1.0;
+        }
+    }
+    return vec2<f32>(cover, rim);
 }
 
 // Mud seen from inside (kind 5, ours): the side stuck to the glass in its shade (`color`, `glass::MUD_INSIDE` of the

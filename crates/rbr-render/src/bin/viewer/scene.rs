@@ -410,7 +410,8 @@ fn load_scene<'scope, 'env>(
             }
             let glass = match (&mut playback, car_name) {
                 (Some(playback), Some(car)) => {
-                    glass::Drawn::load(data, car, precipitation, playback, args.wipers, &tints)
+                    let dust = particles.as_ref().map_or(particles::wheel_spray::NEUTRAL_DUST, |p| p.particles.dust());
+                    glass::Drawn::load(data, car, precipitation, playback, args.wipers, &tints, dust)
                 }
                 _ => None,
             };
