@@ -189,14 +189,17 @@ impl Quality {
     }
 }
 
-/// The render scales the Graphics & sound page offers, percent of the window's width and height (`viewer --render-scale`): the
-/// frame is drawn smaller and the post pass scales it up, for high refresh rates at 1440p and above. 100, the first,
-/// is the default.
-pub const RENDER_SCALES: [u32; 4] = [100, 75, 67, 50];
+/// The render scales the Graphics & sound page offers, percent of the window's width and height (`viewer --render-scale`): below
+/// 100 the frame is drawn smaller and the temporal anti-aliasing upscales it (without it, the post pass stretches it), for
+/// high refresh rates at 1440p and above. 100, the first, is the default.
+pub const RENDER_SCALES: [u32; 5] = [100, 87, 75, 67, 50];
 
 /// A render scale's label.
 fn scale_label(percent: u32) -> String {
-    format!("{percent}%")
+    match percent {
+        100 => "100% (native)".into(),
+        percent => format!("{percent}%"),
+    }
 }
 
 /// A detail choice's label.
@@ -313,10 +316,13 @@ impl Form {
             });
             ui.end_row();
 
-            let tip = "Draws the 3D view at this share of the window's size and scales it up: softer, but faster, for \
-                       high refresh rates at 1440p and above";
+            let tip = "Draws the 3D view at this share of the window's size, which the temporal anti-aliasing \
+                       upscales to it over the frames: faster, for high refresh rates at 1440p and above; the lower, \
+                       the softer, and fast-moving edges grow rougher. Without anti-aliasing the view is only \
+                       stretched, much softer";
             ui.label("Render scale").on_hover_text(tip);
-            combo(ui, "render scale", None, &mut self.render_scale, &RENDER_SCALES, scale_label).on_hover_text(tip);
+            combo(ui, "render scale", QUALITY_FIELD, &mut self.render_scale, &RENDER_SCALES, scale_label)
+                .on_hover_text(tip);
             ui.end_row();
 
             let tip =

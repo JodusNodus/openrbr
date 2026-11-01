@@ -1234,6 +1234,7 @@ mod tests {
         assert_eq!(Settings::parse("[launcher]\nmirrors = off\n").mirrors, Some(Rate::Off));
         assert_eq!(Settings::parse("[launcher]\nrender_scale = 80\n").render_scale, None);
         assert_eq!(render_scale_args(67), ["--render-scale", "0.67"]);
+        assert_eq!(render_scale_args(87), ["--render-scale", "0.87"]);
         assert!(render_scale_args(100).is_empty());
         assert_eq!(Settings::parse("[launcher]\nrender_scale = 0\n").render_scale, None);
         assert!(text.contains("damage = realistic\nauto_gears = on\ngear_guard = off\n"));
@@ -1455,6 +1456,7 @@ mod tests {
         assert_eq!(Settings::parse("[launcher]\npace_stack = 4\n").pace_stack, Some(4));
         assert_eq!(Settings::parse("[launcher]\npace_stack = 5\n").pace_stack, None);
         assert_eq!(Settings::parse("[launcher]\nrender_scale = 50\n").render_scale, Some(50));
+        assert_eq!(Settings::parse("[launcher]\nrender_scale = 87\n").render_scale, Some(87));
         assert_eq!(Settings::parse("[launcher]\nrender_scale = 80\n").render_scale, None);
         assert_eq!(Settings::parse("[launcher]\nchampionship_team = 6\n").championship_team, Some(6));
         assert_eq!(Settings::parse("[launcher]\nchampionship_team = 7\n").championship_team, None);

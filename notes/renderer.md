@@ -762,7 +762,8 @@ medium; high), `grass` as "Dense grass" on High and Ultra (user decision 2026-10
 field cost more frame time than the full one at 4K, so no middle setting), `windscreen` as "Windscreen" on High and
 Ultra (user decision 2026-10-30: one switch for the pane and its reflection). Removed: `lens`; `ao`, `msaa`, `taa`,
 `wind` (user decision 2026-10-19); `hdr` (2026-10-26: float targets, bloom, exposure and AgX are always on). Older settings and names are
-not read (user decision). The launcher's render scale is 100 % by default. The default frame was
+not read (user decision). The launcher's render scale is 100 % (native) by default, else 87, 75, 67 or 50 %, which the
+TAA upscales (user, 2026-11-01: at least 50 %; 75 kept, older settings hold it). The default frame was
 byte-identical before and after (chase, cockpit, heavy rain, 1920x1080).
 
 | Name | What |
