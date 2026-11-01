@@ -353,7 +353,8 @@ probably fit the wrong hour.
 `car/` reads `Cars/Cars.ini`, the `.sgc`, `<car>.ini`, `<car>_shaders.ini` and textures.
 
 - State per `SShaderMaterial::SetupRenderState`, order wheels, opaque, transparent (`car/shading.rs`): an opacity
-  channel means blend, test `> 0`, no depth write; `CarPlastic` writes depth, two-sided; `CarIntGlass` two-sided.
+  channel means blend, test `> 0`, no depth write; `CarPlastic` writes depth, two-sided; `CarIntGlass` two-sided,
+  and opaque without one (the 911 GT3 RS (2010) RGT's inner door panels, the only installed pack with that, 2026-11-01).
 - Not drawn (`car/`, `CHH_Car::Render`): `ghost_*`, `texture_*`, `Plane_*`, switched parts not in their state,
   gravel/snow/spare wheels, `k_` and `d_` parts; the interior `i_*` only in the cockpit, the bonnet view draws the
   exterior (user). `--hide-wheel` drops the interior parts the steering turns (one mesh on the 911 SC Grp4 and the

@@ -347,6 +347,7 @@ fn load_set(
                         dirt,
                         grime: crate::dirt::grime(&mesh.node.name, shader),
                         spatter: crate::dirt::spatter(&mesh.node.name),
+                        tint: shade.tint && opacity,
                         ..shade
                     }),
                     pass: pass_for(shader, opacity),

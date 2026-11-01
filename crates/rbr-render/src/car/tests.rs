@@ -205,7 +205,8 @@ fn the_glass_gets_an_inner_side_drawn_before_it() {
 
 #[test]
 fn passes_and_lists_follow_class_and_opacity() {
-    assert_eq!(pass_for("CarIntGlass", false), Pass::InteriorGlass);
+    assert_eq!(pass_for("CarIntGlass", true), Pass::InteriorGlass);
+    assert_eq!(pass_for("CarIntGlass", false), Pass::TwoSided);
     assert_eq!(pass_for("CarGlass", true), Pass::Blended);
     assert_eq!(pass_for("CarTextureNoDirt", true), Pass::Blended);
     assert_eq!(pass_for("CarGlass", false), Pass::Opaque);
@@ -217,6 +218,8 @@ fn passes_and_lists_follow_class_and_opacity() {
     let plastic = draw_state(None, None, Pass::Plastic, None);
     assert!(plastic.blend && plastic.depth_write && !plastic.cull_back);
     assert!(!draw_state(None, None, Pass::InteriorGlass, None).cull_back);
+    let two_sided = draw_state(None, None, Pass::TwoSided, None);
+    assert!(two_sided.depth_write && !two_sided.blend && two_sided.alpha_ref.is_none() && !two_sided.cull_back);
     let opaque = draw_state(None, None, Pass::Opaque, None);
     assert!(opaque.depth_write && !opaque.blend && opaque.alpha_ref.is_none());
 

@@ -56,7 +56,7 @@ pub(super) fn draw_state(
     pass: Pass,
     shade: Option<Shade>,
 ) -> DrawState {
-    let blend = pass != Pass::Opaque;
+    let blend = !matches!(pass, Pass::Opaque | Pass::TwoSided);
     DrawState {
         textures: [texture, scrape],
         shadow: None,
@@ -65,10 +65,10 @@ pub(super) fn draw_state(
         alpha_ref: (blend && pass != Pass::Crack).then_some(0),
         // `CShaderCarBase::Load` sets the diffuse sampler's bias for every class with a diffuse bitmap.
         mip_bias: texture.is_some(),
-        cull_back: !matches!(pass, Pass::Plastic | Pass::InteriorGlass),
+        cull_back: !matches!(pass, Pass::Plastic | Pass::InteriorGlass | Pass::TwoSided),
         blend,
         depth_test: true,
-        depth_write: matches!(pass, Pass::Opaque | Pass::Plastic),
+        depth_write: matches!(pass, Pass::Opaque | Pass::Plastic | Pass::TwoSided),
         shade,
         specular: None,
     }
@@ -90,8 +90,10 @@ pub(super) enum Pass {
     Blended,
     /// `CarPlastic` with an opacity map: blended, alpha test `> 0`, z write, no culling.
     Plastic,
-    /// `CarIntGlass`: blended, alpha test `> 0`, no z write, no culling.
+    /// `CarIntGlass` with an opacity map: blended, alpha test `> 0`, no z write, no culling.
     InteriorGlass,
+    /// `CarIntGlass` without one: opaque, no culling (the Porsche 911 GT3 RS (2010) RGT pack's inner door panels).
+    TwoSided,
     /// A window's crack overlay (`m_damageRes`, `InitDamage`): blended, no alpha test, back faces culled, clamped uvs.
     /// The game writes z (with `LESSEQUAL`); the overlay does not, so the second half's overlay on the same pane is
     /// not hidden by the first under the renderer's `Less`.
@@ -101,7 +103,8 @@ pub(super) enum Pass {
 /// The pass of a face with shader class `shader`, whose material has an opacity map when `opacity`.
 pub(super) fn pass_for(shader: &str, opacity: bool) -> Pass {
     match (shader, opacity) {
-        ("CarIntGlass", _) => Pass::InteriorGlass,
+        ("CarIntGlass", true) => Pass::InteriorGlass,
+        ("CarIntGlass", false) => Pass::TwoSided,
         ("CarPlastic", true) => Pass::Plastic,
         (_, true) => Pass::Blended,
         (_, false) => Pass::Opaque,
