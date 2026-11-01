@@ -204,9 +204,12 @@ Rally3 Evo, 1280x720: 63.9 fps render, replay 16920 of 16920 frames equal, video
   texels (`TERRAIN_BANK_WIDE`; the fall-line bands average out, the along-slope patches stay), structured by the
   window's triplanar luma high pass, the paved road kept out (`paved_share`). The footprint there is minified 2 to
   4 times yet streaked, so no magnification gate, and the ground mark covers only half of 135's bank, so no ground
-  gate (both tried). 135's cockpit bank loses its smears for mottled grass (Clio, 19:30, frame 4900); scene pass
-  1080p 3.66 to 3.75 ms there; 32 of the 34 reference shots change (Sipirkakim pair byte-identical), banks
-  everywhere calmer, snow and rock keeping their colour.
+  gate (both tried). Weighted per texture by its bank share (`terrain_detail::bank_shares`, `mode.bank`, 2026-11-01):
+  of its steep near-ground faces, how few stand within about 12 degrees of vertical. Ground atlases under 1 %
+  (135, Luceram, Sturec), Sardian's facades and Sturec's walls 99 to 100 %: ungated they turned windows plaid and
+  stone walls to mush. A uv test (projected from above or not) failed: the banks' uvs follow their faces, the
+  streaks are painted in. 135's cockpit bank loses its smears for mottled grass (Clio, 19:30, frame 4900; the gate
+  keeps 92 to 100 % of it); scene pass 1080p 3.66 to 3.75 ms there; Sardian byte-identical, banks elsewhere calmer.
 
 ## Atmosphere and sky
 

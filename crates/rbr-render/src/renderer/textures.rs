@@ -159,6 +159,8 @@ pub(super) struct Views {
     pub(super) glows: BTreeMap<TextureRef, Glow>,
     /// The near ground's detail windows ([`crate::terrain_detail::window`]).
     pub(super) detail: BTreeMap<TextureRef, [f32; 4]>,
+    /// The near ground textures' bank shares ([`crate::terrain_detail::bank_shares`]).
+    pub(super) banks: BTreeMap<TextureRef, f32>,
 }
 
 impl Views {
@@ -225,6 +227,13 @@ pub(super) fn bind_group(
         detail: match key.textures[0] {
             Source::Texture(texture) if key.mip_bias => views.detail.get(&texture).copied().unwrap_or_default(),
             _ => [0.0; 4],
+        },
+        bank: {
+            let [a, b] = key.textures.map(|source| match source {
+                Source::Texture(texture) if key.mip_bias => views.banks.get(&texture).copied().unwrap_or_default(),
+                _ => 0.0,
+            });
+            [a, b, 0.0, 0.0]
         },
     };
     let glow = glow.map_or(&views.white, |g| &g.view);

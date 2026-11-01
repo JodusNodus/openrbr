@@ -375,6 +375,7 @@ impl Renderer {
             missing: solid_texture(&device, &queue, MISSING).create_view(&Default::default()),
             glows,
             detail,
+            banks: terrain_detail::bank_shares(&stage.meshes),
         };
         let start_board = stage.start_board().and_then(|texture| {
             let Some(Image::Dds(bytes)) = stage.textures.get(&texture)?.image.as_ref() else { return None };
