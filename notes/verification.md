@@ -3,27 +3,30 @@
 How ReRBR stays bit-exact against the original 1.02 game (the oracle): a plugin records its runs, an x86 emulator replays them, Rust compared per call (vectors), per step (hybrid check), per drive (standalone). Allowed
 differences are in `notes/rust-plan.md` ("Done means"); [Masks](#masks) tells where each is applied.
 
-## Test machine
+## Dev setup
 
-The original runs on a test machine in vanilla 1.02 (retail data plus the 1.02 patch;
-[development.md](../docs/development.md#the-original-binaries)), reached over ssh and started with Proton's `umu-run`
-(a Windows machine would need its own launch lines). Paths are relative to its home:
+One Linux x86_64 PC. Copy `dev.env.example` to `dev.env` (gitignored; worktrees read the main checkout's);
+`scripts/dev-env.sh` loads it for the scripts and the harness (`harness/dev_env.py`), filling the folders below
+from `RBR_DEV` (`~/rerbr-dev`). All values are absolute paths. The original runs vanilla 1.02 (retail data plus the
+1.02 patch; [development.md](../docs/development.md#the-original-binaries)), started with Proton's `umu-run`.
 
 | Variable | What |
 | --- | --- |
-| `RBR_REMOTE_HOST` | its ssh host; every script needing the original or its CPU |
-| `RBR_REMOTE_GAME`, `RBR_REMOTE_PREFIX` | vanilla 1.02 install and Wine prefix; slots add `-s<N>`, `record.sh` `-rec` |
-| `RBR_REMOTE_PROTON` | `PROTONPATH` `umu-run` starts the game with |
-| `RBR_REMOTE_NGP_GAME`, `RBR_REMOTE_NGP_PREFIX` | NGP 7.4.778 install and prefix (`scripts/ngp-run.sh`, `matrix.py`) |
-| `RBR_REMOTE` | work dir (`scripts/remote-setup.sh`) linking `toolchain/` (MSVC 7.1 for the plugin, per rbr-recomp's `notes/toolchain.md`), `original/` (the 1.02 exe) and `.venv` from `~/rbr-recomp-test`: the x87 oracle and plugin build run there |
-| `RBR_REMOTE_RUST` | Rust runs (`scripts/remote-rust.sh`, `matrix.py`): `src/<worktree>/`, `data/retail-install`, `data/Main_group` |
-| `RBR_REMOTE_BUSY` | optional `pgrep` pattern other processes `matrix.py` waits for |
+| `RBR_GAME`, `RBR_PREFIX` | vanilla 1.02 install and Wine prefix; slots add `-s<N>`, `record.sh` `-rec` |
+| `RBR_NGP_GAME`, `RBR_NGP_PREFIX` | NGP 7.4.778 install and prefix |
+| `RBR_RSF_PREFIX` | the Wine prefix `RBR_RSF`'s game runs in |
+| `RBR_PROTON` | `PROTONPATH` `umu-run` starts the games with |
+| `RBR_TOOLCHAIN` | MSVC 7.1 (`msvc71/`) and its Wine prefix (`wineprefix/`) for the plugin build, per rbr-recomp's `notes/toolchain.md` |
+| `RBR_RUNS`, `RBR_NGP_RUNS`, `RBR_RSF_RUNS` | recordings, playbacks, snapshots and run outputs |
+| `RBR_HARNESS_PLUGIN`, `RBR_RSF_PLUGIN` | the harness DLL (`RBRRecompHarness.dll`) `play.sh` installs, rsf-session's plugin build |
+| `RBR_APITRACE`, `RBR_FFB_TRACE` | capture outputs |
+| `RBR_BUSY` | optional `pgrep` pattern other processes `matrix.py` waits for |
 
-Fixed folders there: `~/rbr-harness-runs/` (recordings, snapshots), `~/rbr-harness-plugin/`, `~/rbr-ngp-runs/`, `~/rbr-emu/` (`harness/remote.sh`), `~/rbr-apitrace/`. Here `RBR_ORIG_EXE` names the 1.02 exe (default `$RBR_PATCH/RichardBurnsRally_SSE.exe`), `RBR_SNAPS` the snapshots (default `/tmp/rbr-snaps`). `harness/slots.sh [N]` copies the install into parallel slots (default 4).
+`RBR_ORIG_EXE` names the 1.02 exe (default `$RBR_PATCH/RichardBurnsRally_SSE.exe`), `RBR_SNAPS` the snapshots (default `/tmp/rbr-snaps`). `harness/slots.sh [N]` copies the install into parallel slots (default 4).
 
 ## Plugin
 
-`harness/plugin/` builds `RBRRecompHarness.dll` (MSVC 7.1 on the test machine: `harness/plugin/build.sh [--install]`), patching the running game in memory only when every replaced byte matches; the exe on disk stays untouched. Log: `RBRRecompHarness.log`. Always on: Wine force feedback fix (`SetFFBValue` 0x4c6b40) and unfocused running (`E03WndProc` 0x447ab0).
+`harness/plugin/` builds `RBRRecompHarness.dll` (MSVC 7.1 locally: `harness/plugin/build.sh [--install]`), patching the running game in memory only when every replaced byte matches; the exe on disk stays untouched. Log: `RBRRecompHarness.log`. Always on: Wine force feedback fix (`SetFFBValue` 0x4c6b40) and unfocused running (`E03WndProc` 0x447ab0).
 
 One file in the game folder, written by `harness/play.sh` from an environment variable, switches a mode on:
 
@@ -46,7 +49,7 @@ The transplant, count, shadow, capture and load-time dump modes run the C++ reco
 
 FRM1, one frame per `CPhysics::StepForward` call. Layout: `crates/rbr-recording/src/lib.rs` (little-endian; `FRM1` magic, pre/post step counters, the `StepForward` argument substeps, car block, the 0x20 car-control payload, the car, four 0xa00 wheel blocks). The car is `CCar` (`*0x8ef660`); each wheel the first 0xa00 bytes of a `CWheel` (car+0x470), zeroes where the pointer was invalid. No frame boundaries. Reader: `crates/rbr-recording` (`rec_info`, `drive_path`).
 
-Recordings live in `RBR_RECORDINGS` (not in git) as `drive-<name>.bin` with `drive-<name>.auto` (the `StartGame` numbers). On the test machine each drive also has `drive-<name>.playback.bin`; the older drives have two identical playback runs `ref-<name>-1/2.bin` and `ref-<name>-1.bin.mask` (tanner-corolla: `ref1.bin`, `ref1.bin.mask`), made by rbr-recomp's `drive-setup.sh`.
+Recordings live in `RBR_RECORDINGS` (not in git) as `drive-<name>.bin` with `drive-<name>.auto` (the `StartGame` numbers). Each drive also has `drive-<name>.playback.bin`; the older drives have two identical playback runs `ref-<name>-1/2.bin` and `ref-<name>-1.bin.mask` (tanner-corolla: `ref1.bin`, `ref1.bin.mask`), made by rbr-recomp's `drive-setup.sh`.
 
 ### Making a drive
 
@@ -82,10 +85,10 @@ python3 -I harness/diverge.py --mask REF NOISE...         # write REF.mask
 
 ### RSF sessions
 
-Hand drives in RallySimFans (NGP 7.5.779) on the test machine, recorded as fully as the harness can:
+Hand drives in RallySimFans (NGP 7.5.779), recorded as fully as the harness can:
 
 ```sh
-scripts/rsf-session.sh start <name>     # from the Mac (builds and installs the plugin; or `rsf-record start <name>` there)
+scripts/rsf-session.sh start <name>     # locally (builds and installs the plugin; or `rsf-record start <name>` there)
 # start RSF (`rbr` or `rbr game`), drive any number of stages, quit the game: that ends the session
 scripts/rsf-session.sh fetch <name>     # to $RBR_RECORDINGS/rsf/<name>
 .venv/bin/python -I -B harness/session.py $RBR_RECORDINGS/rsf/<name>/1/session.bin
@@ -147,8 +150,7 @@ Standalone check for `rbr-standalone` and `rbr-hybrid` changes:
 ```
 
 It must print physics PASS 84084/84084 and exit 0, as only when every exact check of the run sections passes (release
-builds of `rbr-standalone` and `rsf-settings`). `scripts/remote-rust.sh BIN [args]` runs a Rust binary on the test
-machine (release build, that machine's retail data; paths relative to its home, recordings in `rbr-harness-runs/`).
+builds of `rbr-standalone` and `rsf-settings`). Rust binaries run from the local `target/release/` with the local `RBR_DATA`/`RBR_PATCH`.
 
 ## Step replay
 
@@ -174,7 +176,7 @@ bindings, the two stack fills, `classify`'s exclusion rules) are its docstring; 
 the recording's control, then `StepForward(1)`). `--each` and `--only ADDR` only locate a divergence.
 
 Run A is cached in `RBR_STEP_CACHE` (default `cache/run-a/` next to the checkout; deletable; `--no-cache` skips it). A
-missing fsin/fcos is modelled and the step reported unverified; with `RBR_REMOTE` it is fetched from the CPU.
+missing fsin/fcos is modelled and the step reported unverified; on x86_64 new results are measured locally into the cache.
 
 Merge gate: all bindings over the nine tanner-corolla snapshots and snapH.snap-1295, and over tanner-damage's contact
 snapshots, 30 steps, every "run B vs run A" line equal (`*[0-9].bin` leaves out the `-after` dumps):
@@ -187,7 +189,7 @@ cargo build --release -p rbr-hybrid
     --recording $RBR_RECORDINGS/drive-tanner-damage.bin --steps 30
 ```
 
-`harness/long_run.py` runs the same rules over a drive's whole chain, one segment per snapshot to the next. It reports the first divergence per segment and ends with the worklist. It reports
+`harness/long_run.py` runs the same rules over a drive's whole chain, one segment per snapshot to the next. It reports
 the first divergence per segment and ends with the worklist. Drives: tanner-corolla, tanner-damage, tarmac-lancer,
 arctic-snow.
 
@@ -195,9 +197,6 @@ arctic-snow.
 .venv/bin/python -I -B harness/long_run.py --drive tanner-corolla -j 2 --out /tmp/long-run.md
 .venv/bin/python -I -B harness/long_run.py --drive tanner-corolla --from 2000 --to 2400
 ```
-
-`harness/remote.sh <name> <script> <args...>` runs a harness script on the test machine (sync, `rbr-hybrid` build,
-snapshot and recording paths rewritten to shared caches; at most four at once). Each parallel run needs its own name.
 
 ## Vectors
 
@@ -221,7 +220,7 @@ Records are not committed. They live in the vector store `RBR_VECTOR_STORE` (mai
 the test's `RBR_<MODULE>_VECTORS` variable (`RBR_ENT_VECTORS` is `entities`).
 
 ```sh
-RBR_REMOTE=<dir on the test machine> .venv/bin/python -I harness/vcu_vectors.py snap-572.bin out.txt --set vcu --fuzz 1
+.venv/bin/python -I harness/vcu_vectors.py snap-572.bin out.txt --set vcu --fuzz 1
 scripts/rust-vectors.sh car_body tyre     # named modules; no argument runs every vector target
 ```
 
