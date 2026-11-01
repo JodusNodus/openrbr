@@ -829,6 +829,7 @@ impl Form {
             size,
             sizes: vec![size],
             fov,
+            head: !settings.camera.head_off,
             volume,
             engine_volume,
             codriver_volume,

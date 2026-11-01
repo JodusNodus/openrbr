@@ -31,6 +31,7 @@ pub mod game_camera;
 pub mod ghost;
 pub mod glass;
 pub mod grass;
+pub mod head;
 mod height_fog;
 pub mod hud;
 pub mod icon;

@@ -242,7 +242,7 @@ mod tests {
     use crate::views::CarView;
 
     fn open(record: Record) -> PauseMenu {
-        PauseMenu::open(record, CameraPage::new(CarView::Cockpit, Default::default()))
+        PauseMenu::open(record, CameraPage::new(CarView::Cockpit, Default::default(), true))
     }
 
     fn quick(driving: bool) -> PauseMenu {

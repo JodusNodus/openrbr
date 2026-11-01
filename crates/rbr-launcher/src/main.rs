@@ -454,6 +454,8 @@ struct Form {
     sizes: Vec<(u32, u32)>,
     /// Every view's horizontal field of view, degrees.
     fov: f32,
+    /// The in-car view's head (`[camera] head`, `rbr_render::head`), written when changed: the viewer owns the section.
+    head: bool,
     /// The sound volume, linear (`viewer --volume`).
     volume: f32,
     /// The sound group volumes, linear (`viewer --volumes E,C,F,T`).

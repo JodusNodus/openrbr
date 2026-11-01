@@ -223,7 +223,7 @@ fn draw_frame(
         _ => args.camera,
     };
     if let Some(playback) = &mut scene.playback {
-        playback.follow_game_chase(shown.swing(), args.look_back);
+        playback.follow_cameras(shown.swing(), args.look_back);
     }
     let aspect = size.0 as f32 / size.1 as f32;
     let (view_projection, _) = match camera {

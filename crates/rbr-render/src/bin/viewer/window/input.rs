@@ -184,7 +184,10 @@ impl App {
         let Some(process) = &mut self.scene.live else {
             return;
         };
-        self.menu = Some(PauseMenu::open(process.menu, CameraPage::new(self.view, self.scene.cameras.nudges())));
+        self.menu = Some(PauseMenu::open(
+            process.menu,
+            CameraPage::new(self.view, self.scene.cameras.nudges(), self.scene.cameras.head()),
+        ));
         process.pause();
         if let Some(sound) = &self.sound {
             sound.set_paused(true);
@@ -226,13 +229,13 @@ impl App {
         }
     }
 
-    /// Shows the view and the car's nudges the Camera page set, and writes them to the file.
+    /// Shows the view, the car's nudges and the head the Camera page set, and writes them to the file.
     fn camera_changed(&mut self) {
         let Some(page) = self.menu.as_ref().and_then(PauseMenu::camera) else {
             return;
         };
         self.view = page.view;
-        self.scene.cameras.set(page.view, page.nudges);
+        self.scene.cameras.set(page.view, page.nudges, page.head);
         self.scene.cameras.save();
         if let (Some(mounts), Some(playback)) = (&mut self.scene.mounts, &mut self.scene.playback) {
             self.scene.cameras.apply(mounts, playback);
