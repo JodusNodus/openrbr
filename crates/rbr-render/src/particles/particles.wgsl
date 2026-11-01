@@ -241,7 +241,11 @@ fn fs_soft(in: Out) -> @location(0) vec4<f32> {
     let erosion = select(select(EROSION, WISP_EROSION, wisp), mix(EROSION, DUST_CLOSE_EROSION, close), dust);
     let eaten = clamp((density - erosion * (1.0 - grain) * (1.0 - density)) / max(density, 1e-3), 0.0, 1.0);
     let near = select(1.0, smoothstep(in.radius, 3.0 * in.radius, distance(in.centre, effects.eye.xyz)), wisp);
-    let visible = density * eaten * near;
+    // In the in-car views nothing is drawn inside the cabin (as the rain in `rain.wgsl`): the wheels' spray would
+    // show through the interior's gaps.
+    let cabin = select(1.0, smoothstep(effects.ambient.w, effects.ambient.w + 0.5, distance(in.world, effects.eye.xyz)),
+        effects.ambient.w > 0.0);
+    let visible = density * eaten * near * cabin;
     if (visible < NEGLIGIBLE) {
         discard;
     }
