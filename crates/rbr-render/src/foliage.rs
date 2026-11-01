@@ -86,12 +86,14 @@ impl Cut {
     /// Whether a piece over the uv rectangle `low` to `high`, spanning `from` to `to` in the stage, is a plant's: its
     /// texels are cut out ([`Cut::under`]) and they do not look like a structure's ([`Marks::structure`]).
     fn plant(&self, low: [f32; 2], high: [f32; 2], from: Vec3, to: Vec3) -> bool {
+        let (height, across) = (to.y - from.y, (to.x - from.x).max(to.z - from.z));
         self.under(low, high)
-            && !self
-                .shape
-                .as_ref()
-                .and_then(|shape| shape.marks(low, high))
-                .is_some_and(|marks| marks.structure(to.y - from.y, (to.x - from.x).max(to.z - from.z)))
+            && !(height <= TALLEST
+                && self
+                    .shape
+                    .as_ref()
+                    .and_then(|shape| shape.marks(low, high))
+                    .is_some_and(|marks| marks.structure(height, across)))
     }
 
     /// Whether the texels under the uv rectangle `low` to `high` are cut out (the texture repeats).
@@ -170,6 +172,10 @@ fn texels_at(stage: &Stage, texture: TextureRef, widest: u32) -> Option<(usize, 
     Some((width, rgba))
 }
 
+/// Pieces taller than this, metres, are not tested for structures ([`Marks::structure`]): tree lines and snowy firs
+/// looked like fences, and the tall structures (pylons, power lines) are named ([`STRUCTURES`]). Testing only the
+/// pieces under it also spares the large parts (hedges, tree-line panels): 394's load spent 8 s of one thread on them.
+const TALLEST: f32 = 9.0;
 /// A [`Shape`] texel's bit: drawn (above the alpha reference).
 const DRAWN: u8 = 1;
 /// A [`Shape`] texel's bit: green (hue 50 to 170 degrees, saturation over 0.12).
@@ -291,13 +297,10 @@ impl Marks {
     /// Whether a piece showing these marks, `height` tall and `across` wide (metres), is a structure rather than a
     /// plant: people, signs, fences, poles, buildings and vehicles, which the RSF object atlases hold next to their
     /// trees. Leaves leave gaps in a cut-out, structures' outlines are smooth or straight, and plants are mostly green
-    /// but for dry grass, stalks and bare twigs, which are many separate pieces. Nothing over 9 m is: tree lines and
-    /// snowy firs looked like fences, and the tall structures (pylons, power lines) are named ([`STRUCTURES`]). Fitted
-    /// to labelled RSF pieces (`notes/renderer.md`).
+    /// but for dry grass, stalks and bare twigs, which are many separate pieces. Fitted to labelled RSF pieces no taller
+    /// than [`TALLEST`] (`notes/renderer.md`).
     fn structure(self, height: f32, across: f32) -> bool {
-        if height > 9.0 {
-            false
-        } else if self.holes <= 0.17 {
+        if self.holes <= 0.17 {
             if self.green <= 0.74 {
                 self.blobs <= 0.3
             } else {
