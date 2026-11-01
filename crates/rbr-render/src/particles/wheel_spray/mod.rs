@@ -3,7 +3,8 @@
 //! by its surface ([`ground::material`]: kind, wetness, how loose), its slip (`rubber`, +0x80), the car's speed and
 //! the standing water under it:
 //!
-//! - dry loose ground: a dust trail that hangs and drifts, in the region's colour ([`dust_colour`]), more with slip;
+//! - dry loose ground: a dust trail that hangs and drifts, in the colour of the stage's loose road ([`dust::of_stage`]),
+//!   more with slip;
 //! - snow: powder clouds, as the dust;
 //! - wet road: a grey mist plume and thin streaked drops off every tyre, more with speed; wet loose ground: the same
 //!   in the ground's brown ([`MUD_SHADE`]), coarser and with less mist (a damp road: a third of the mist, no drops);
@@ -13,6 +14,7 @@
 //! The particles live in the stage's [`Simulation`] pools of their own, drawn lit and soft like the rest, with
 //! sprites drawn here ([`sprites`]).
 
+pub mod dust;
 pub mod ground;
 pub mod sprites;
 
@@ -119,24 +121,8 @@ const BURST_RISE: f32 = 0.25;
 /// How far below the wheel a cloud (dust, powder, mist) may sink before it is dropped, m.
 const CLOUD_FLOOR: f32 = 4.0;
 
-/// The dust's colour by the stage's particle file (`PS_Australia.ini`, ...): red in Australia, brown in Britain,
-/// grey in Japan, tan in the USA, otherwise [`NEUTRAL_DUST`] (display colour, tinting the sprite's white).
-pub fn dust_colour(particle_file: &str) -> [f32; 3] {
-    let file = particle_file.to_ascii_lowercase();
-    if file.contains("australia") {
-        [0.82, 0.56, 0.38]
-    } else if file.contains("british") {
-        [0.64, 0.57, 0.47]
-    } else if file.contains("japan") {
-        [0.68, 0.66, 0.62]
-    } else if file.contains("usa") {
-        [0.74, 0.63, 0.49]
-    } else {
-        NEUTRAL_DUST
-    }
-}
-
-/// The dust's colour on the other stages: a neutral grey-brown.
+/// The dust's colour on a stage with too little loose road to measure ([`dust::of_stage`]): a neutral grey-brown
+/// (display colour, tinting the sprite's white).
 pub const NEUTRAL_DUST: [f32; 3] = [0.7, 0.66, 0.6];
 
 /// The spray's pools in the simulation and each wheel's carried fraction of a particle per pool.
@@ -645,7 +631,7 @@ mod tests {
             1 17 em 0 5 0 0 0 0 0.5 0 0 1 0 -10 1 8 \
             0 1 6 17 0 1 17 0 0 0 0 -7 0.02 0.02 em 0 $";
         let mut sim = Simulation::new(&rbr_formats::pss::parse(text).unwrap(), 1);
-        let mut spray = WheelSpray::new(&mut sim, dust_colour("PS_Japan.ini"), false, false);
+        let mut spray = WheelSpray::new(&mut sim, NEUTRAL_DUST, false, false);
         let wet_gravel =
             (0..256).find(|&id| ground::material(id).kind == Kind::Gravel && ground::material(id).wet == 1.0);
         let payload = TyreParticles { surfaces: [wet_gravel.unwrap(); 2], contact: true, ..TyreParticles::default() };

@@ -92,7 +92,7 @@ pub struct CarDirt {
     pub level: f32,
     pub mass: f32,
     pub thrown: Thrown,
-    /// The stage's dust colour (`particles::wheel_spray::dust_colour`), which tints its mud.
+    /// The stage's dust colour (`particles::wheel_spray::dust::of_stage`), which tints its mud.
     pub dust: [f32; 3],
 }
 

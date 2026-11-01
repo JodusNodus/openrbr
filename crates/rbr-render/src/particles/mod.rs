@@ -180,8 +180,8 @@ pub struct Particles {
     smoke: VecDeque<(usize, usize, Vec3, Vec3)>,
     /// The stage's track emitters (`.dls` table 4).
     track: TrackEmitters,
-    /// The stage's particle file name, for the wheel spray's dust colour.
-    file_name: String,
+    /// The wheel spray's dust colour, which also tints the car's dirt ([`Drawn::load`] measures it).
+    dust: [f32; 3],
     /// Our wheel spray in place of the file's tyre handlers ([`Particles::use_wheel_spray`]).
     wheel_spray: Option<WheelSpray>,
 }
@@ -254,7 +254,7 @@ impl Particles {
             rescue_pools: Default::default(),
             smoke: VecDeque::new(),
             track,
-            file_name: path.file_name().unwrap().to_string_lossy().into_owned(),
+            dust: wheel_spray::NEUTRAL_DUST,
             wheel_spray: None,
         }))
     }
@@ -286,8 +286,7 @@ impl Particles {
     /// Throws our wheel spray in place of the file's tyre handlers (ours, the renderer's particles:
     /// [`wheel_spray`]); `puddles` when the renderer draws them, `film` its wet tarmac.
     pub fn use_wheel_spray(&mut self, puddles: bool, film: bool) {
-        self.wheel_spray =
-            Some(WheelSpray::new(&mut self.sim, wheel_spray::dust_colour(&self.file_name), puddles, film));
+        self.wheel_spray = Some(WheelSpray::new(&mut self.sim, self.dust, puddles, film));
     }
 
     /// Lights the stage's chimneys (ours, the renderer's particles: [`track`]).
@@ -569,7 +568,13 @@ impl Drawn {
         let (chosen, ground) = (stage.atmosphere.rain, stage.collision.clone());
         let loaded = Particles::load(data, &stage.name, stage.selection, section, car, chosen, ground);
         let loaded = loaded.and_then(|particles| {
-            let Some(particles) = particles else { return Ok(None) };
+            let Some(mut particles) = particles else { return Ok(None) };
+            // The dust by the kind of surface, which a weather without its own `.mat` entry takes from the dry one.
+            let maps = data.install().join("Maps");
+            let ground = crate::stage::marking(particles.ground.as_ref(), &maps, &stage.name, stage.selection);
+            if let Some(ground) = ground {
+                particles.dust = wheel_spray::dust::of_stage(stage, &ground);
+            }
             let mut sprites = gpu::Sprites::decode(&sprite_files(data, &particles.sprites)?);
             let splash = sprite_files(data, &["splashcolor.dds".to_owned()])?.pop().flatten();
             let alpha = std::fs::read(data.install().join("Textures").join("splashalpha.tga")).ok();
@@ -629,8 +634,7 @@ impl Drawn {
             }
         }
         renderer.set_particles(&self.sprites, &billboards, &waves);
-        let dust = wheel_spray::dust_colour(&self.particles.file_name);
-        renderer.set_car_dirt(self.particles.spray.car(playback.index(), dust));
+        renderer.set_car_dirt(self.particles.spray.car(playback.index(), self.particles.dust));
     }
 }
 

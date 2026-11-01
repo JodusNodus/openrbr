@@ -551,7 +551,12 @@ fn collision(maps: &Path, name: &str, selection: Selection) -> Option<Arc<Ground
 
 /// The collision ground to mark the surfaces by: the `weather`'s, or the dry entry's where the `.mat` has none for the
 /// weather (460M): only the kind of surface counts.
-fn marking(weather: Option<&Arc<Ground>>, maps: &Path, name: &str, selection: Selection) -> Option<Arc<Ground>> {
+pub(crate) fn marking(
+    weather: Option<&Arc<Ground>>,
+    maps: &Path,
+    name: &str,
+    selection: Selection,
+) -> Option<Arc<Ground>> {
     let dry = || collision(maps, name, Selection { weather: Weather::Dry, ..selection });
     weather.filter(|g| g.has_surfaces()).cloned().or_else(dry)
 }
