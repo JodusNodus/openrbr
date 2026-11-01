@@ -141,6 +141,8 @@ struct Mode {
     detail: vec4<f32>,
     // A lit lamp's part's glow colour (`stage::Shade::glow`), times `LAMP_GLOW`; w the share of it kept by day.
     lamp: vec4<f32>,
+    // x and y texture 0's and texture 1's bank shares (`terrain_detail::bank_shares`; `terrain_bank`).
+    bank: vec4<f32>,
 }
 
 // False for a pipeline whose draws have no alpha test (`renderer::PipelineKey::alpha_test`): its shader then has no
@@ -614,6 +616,25 @@ fn shade_stage(v: VertexOut, front: bool, under_cloud: f32) -> vec4<f32> {
             even = mix(even, surface, paved_line);
         }
         surface = even;
+        // On the steep banks the texture painted from above streaks down the fall line: a triplanar sampling of the
+        // draw's own window takes its place (`terrain_bank`), weighted by the steepness and by how far the textures'
+        // steep faces are banks (`mode.bank`: not a facade's, a wall's or a fence's). The flat reads 0 steepness,
+        // the crisp and the paved road keep theirs bit for bit (the branch is skipped).
+        let bank_share = select(mode.bank.x, mix(mode.bank.x, mode.bank.y, second.a * v.color.a), second_draw());
+        let bank_weight = steep * (1.0 - paved_share) * bank_share;
+        let bank_dx = dpdx(v.world);
+        let bank_dy = dpdy(v.world);
+        let bank_ax = dpdx(v.uv0);
+        let bank_ay = dpdy(v.uv0);
+        let bank_bx = dpdx(v.uv1);
+        let bank_by = dpdy(v.uv1);
+        if (bank_weight > 0.0) {
+            surface = mix(
+                surface,
+                terrain_bank(v, second.a * v.color.a, bank_dx, bank_dy, bank_ax, bank_ay, bank_bx, bank_by),
+                bank_weight
+            );
+        }
         if (GROUND) {
             var mean = terrain_even(texture0, v.uv0, levels.x, GROUND_MEAN).rgb;
             if (second_draw()) {

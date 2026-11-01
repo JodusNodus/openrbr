@@ -46,6 +46,9 @@ pub(super) struct ModeUniform {
     /// A lit lamp's part's glow colour and the share of it kept by day (`Shade::glow`, `LAMP_GLOW` in `night.wgsl`
     /// times it).
     pub(super) lamp: [f32; 4],
+    /// `x` and `y` texture 0's and texture 1's bank shares
+    /// ([`terrain_detail::bank_shares`](crate::terrain_detail::bank_shares)).
+    pub(super) bank: [f32; 4],
 }
 
 /// The frame uniform (`Frame` in `shader.wgsl`): the clip matrix and its inverse, the eye, and the stage's haze and

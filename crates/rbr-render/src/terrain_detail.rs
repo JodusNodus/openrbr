@@ -2,7 +2,10 @@
 //! near ground tiles as its own fine structure. An RSF stage's ground atlases (Luceram's 4096 `z*`) hold leaf litter
 //! and stones next to flat padding and road strips; tiled whole, the flat parts left the detail patchy.
 
+use crate::stage::{Mesh, TextureRef};
+use glam::Vec3;
 use rbr_formats::dds::{self, Format};
+use std::collections::BTreeMap;
 
 /// The window's side in the texture's own texels: an eighth of the texture, at least 256 (or all of it).
 fn window_texels(width: u32) -> u32 {
@@ -57,4 +60,43 @@ pub(crate) fn window(dds: &dds::Dds) -> Option<[f32; 4]> {
         .max_by(|a, b| a.0.total_cmp(&b.0))?;
     let (_, x, y) = best;
     Some([(x * cell) as f32 / w as f32, (y * cell) as f32 / h as f32, side as f32 / w as f32, side as f32 / h as f32])
+}
+
+/// Each texture's bank share, 0 to 1 (`terrain_bank` in `terrain_detail.wgsl` weighs by it): how far its steep faces
+/// in the near ground (the biased draws, as texture 0 or 1; past about 32 degrees) lean back rather than stand. A
+/// ground atlas's steep faces are banks, under 1 % of them within about 12 degrees of vertical (135, Luceram, Sturec);
+/// a facade's, a wall's or a fence's are all that (Sardian's buildings 99 to 100 %); rock between (Sturec 18 to 92 %).
+/// None for a texture on no steep face.
+pub(crate) fn bank_shares(meshes: &[Mesh]) -> BTreeMap<TextureRef, f32> {
+    let mut areas: BTreeMap<TextureRef, [f32; 2]> = BTreeMap::new();
+    for mesh in meshes {
+        let at = |i: u32| Vec3::from(mesh.vertices[i as usize].position);
+        for draw in mesh.draws.iter().filter(|d| d.state.mip_bias) {
+            let (mut steep, mut standing) = (0.0, 0.0);
+            for t in mesh.indices[draw.indices.clone()].chunks_exact(3) {
+                let face = (at(t[1]) - at(t[0])).cross(at(t[2]) - at(t[0]));
+                let (up, area) = (face.y.abs(), face.length());
+                if up < 0.85 * area {
+                    steep += area;
+                }
+                if up < 0.2 * area {
+                    standing += area;
+                }
+            }
+            for texture in draw.state.textures.into_iter().flatten() {
+                let sums = areas.entry(texture).or_default();
+                sums[0] += steep;
+                sums[1] += standing;
+            }
+        }
+    }
+    (areas.into_iter())
+        .filter(|(_, [steep, _])| *steep > 0.0)
+        .map(|(key, [steep, standing])| (key, 1.0 - smoothstep(0.1, 0.3, standing / steep)))
+        .collect()
+}
+
+fn smoothstep(low: f32, high: f32, x: f32) -> f32 {
+    let t = ((x - low) / (high - low)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
 }
