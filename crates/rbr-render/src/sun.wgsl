@@ -43,12 +43,10 @@ fn vs_sun(v: VertexIn, @builtin(instance_index) instance: u32) -> Out {
     }
     let backdrop = instance == 1u;
     out.clip = cascade.matrix * vec4<f32>(v.position + select(vec3<f32>(0.0), cascade.drop.xyz, backdrop), 1.0);
-    // Casters further toward the sun than the near plane stay on it rather than being clipped (pancaking), and the
-    // backdrop's, moved deeper, further than the far plane on it.
+    // Casters further toward the sun than the near plane stay on it rather than being clipped (pancaking). Past the far
+    // plane they are clipped, the backdrop's too: what lies there shades nothing in the map, and a vertex held on that
+    // plane bent its triangle toward the sun, so the backdrop's large triangles shaded the road a low sun lit.
     out.clip.z = max(out.clip.z, 0.0);
-    if (backdrop) {
-        out.clip.z = min(out.clip.z, out.clip.w);
-    }
     out.uv0 = v.uv0;
     return out;
 }
