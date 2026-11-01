@@ -1,14 +1,15 @@
-"""Checks the emulator's x87 against the CPU the reference drives ran on (the test machine).
+"""Checks the emulator's x87 against this machine's CPU (the reference drives ran on x86_64).
 
 Usage: .venv/bin/python -I harness/replay-fpu.py [SNAPSHOT...]
   Cases: random operands for every arithmetic and transcendental x87 op at 24-bit (the game's
   physics thread: control word 0x7f) and 64-bit precision, plus the operands the transcendentals
   get when each SNAPSHOT's call is replayed. Each case runs fninit; fldcw; fld b; fld a; <op>;
-  fstp r0; fstp r1 in unicorn and natively (harness/replay-fpu.c, built and run on the test machine
-  over ssh: RBR_REMOTE_HOST, in the work dir RBR_REMOTE) and the 80-bit results are compared. Prints mismatches per op.
+  fstp r0; fstp r1 in unicorn and natively (harness/replay-fpu.c, compiled into build/replay-fpu/)
+  and the 80-bit results are compared. Prints mismatches per op. Needs an x86_64 CPU.
 """
 import importlib.util
 import os
+import platform
 import random
 import struct
 import subprocess
@@ -27,7 +28,7 @@ OPS = ["fadd", "fsub", "fmul", "fdiv", "fsqrt", "fsin", "fcos", "fsincos", "fpta
 CODE = [b"\xd8\xc1", b"\xd8\xe1", b"\xd8\xc9", b"\xd8\xf1", b"\xd9\xfa", b"\xd9\xfe", b"\xd9\xff", b"\xd9\xfb",
         b"\xd9\xf2", b"\xd9\xf3", b"\xd9\xf1", b"\xd9\xf0", b"\xd9\xfd", b"\xd9\xfc", b"\xd9\xf8"]
 BY_X87 = {0xFE: 5, 0xFF: 6, 0xFB: 7, 0xF2: 8, 0xF3: 9, 0xF1: 10, 0xF0: 11, 0xFD: 12, 0xFC: 13, 0xF8: 14}
-REMOTE, HOST = os.environ.get("RBR_REMOTE"), os.environ.get("RBR_REMOTE_HOST")
+BUILD = os.path.join(os.path.dirname(HERE), "build", "replay-fpu")  # the native oracle lives here
 
 
 def f80(x):
@@ -88,13 +89,14 @@ def emulate(cases):
 
 
 def native(cases):
-    if not REMOTE or not HOST:
-        sys.exit("replay-fpu.py: set RBR_REMOTE_HOST to the test machine's ssh host and RBR_REMOTE to a work dir there "
-                 "(scripts/remote-setup.sh)")
+    if platform.machine() not in ("x86_64", "AMD64"):
+        sys.exit("replay-fpu.py: the x87 check runs on this machine's CPU, which is not x86_64 (%s)" %
+                 platform.machine())
     data = b"".join(struct.pack("<BBH", op, 0, cw) + a + b for op, cw, a, b in cases)
-    subprocess.run(["scp", "-q", os.path.join(HERE, "replay-fpu.c"), "%s:%s/replay-fpu.c" % (HOST, REMOTE)], check=True)
-    r = subprocess.run(["ssh", HOST, "cd %s && gcc -O1 -o replay-fpu replay-fpu.c && ./replay-fpu" % REMOTE],
-                       input=data, capture_output=True, check=True).stdout
+    os.makedirs(BUILD, exist_ok=True)
+    exe = os.path.join(BUILD, "replay-fpu")
+    subprocess.run(["gcc", "-O1", "-o", exe, os.path.join(HERE, "replay-fpu.c")], check=True)
+    r = subprocess.run([exe], input=data, capture_output=True, check=True).stdout
     return [r[22 * i:22 * i + 20] for i in range(len(cases))]
 
 
