@@ -33,7 +33,13 @@ fn fs_contact(v: SkyOut) -> @location(0) vec4<f32> {
     if (depth == 0.0) {
         return vec4<f32>(1.0);
     }
-    return vec4<f32>(contact_light(p, mask_world(p, depth)));
+    let world = mask_world(p, depth);
+    // The cabin's (laid in the in-car view, `renderer::pipelines::prepassed`) within its reach of the eye.
+    let cabin = in_car() && distance(world, frame.eye.xyz) < CABIN_CONTACT_REACH;
+    if (cabin) {
+        return vec4<f32>(contact_light(p, world, CABIN_CONTACT_RADIUS, CABIN_CONTACT_STRENGTH));
+    }
+    return vec4<f32>(contact_light(p, world, CONTACT_RADIUS, CONTACT_STRENGTH));
 }
 
 fn mask_sun(world: vec3<f32>, n: vec3<f32>) -> f32 {
@@ -74,18 +80,23 @@ fn mask_sun(world: vec3<f32>, n: vec3<f32>) -> f32 {
 // lies metres away; this, what it is too coarse for: grass roots, posts' and barriers' feet, rocks on the verge,
 // creases. Never the sun's (its cascades hold that). Faded out where the radius spans under 2 pixels.
 const CONTACT_RADIUS: f32 = 1.0;
+// In the cabin (ours, `cabin_day_lit`): its creases, the binnacle's hood, the footwells, within a few centimetres.
+const CABIN_CONTACT_RADIUS: f32 = 0.2;
+const CABIN_CONTACT_STRENGTH: f32 = 2.5;
+// `post::CABIN_REACH`.
+const CABIN_CONTACT_REACH: f32 = 2.0;
 const CONTACT_DIRECTIONS: i32 = 4;
 const CONTACT_STEPS: i32 = 3;
 const CONTACT_STRENGTH: f32 = 1.5;
 // The angle over the face below which a neighbour hides nothing (against the depth's flat steps).
 const CONTACT_BIAS: f32 = 0.1;
 
-fn contact_light(p: vec2<i32>, world: vec3<f32>) -> f32 {
+fn contact_light(p: vec2<i32>, world: vec3<f32>, radius: f32, strength: f32) -> f32 {
     let size = vec2<f32>(textureDimensions(scene_depth));
     let m = frame.view_projection;
     let w = (m * vec4<f32>(world, 1.0)).w;
     // The radius in pixels: the projection's vertical scale over the distance along the view.
-    let pixels = CONTACT_RADIUS * 0.5 * size.y * length(vec3<f32>(m[0].y, m[1].y, m[2].y)) / max(w, 1e-3);
+    let pixels = radius * 0.5 * size.y * length(vec3<f32>(m[0].y, m[1].y, m[2].y)) / max(w, 1e-3);
     if (pixels < 2.0) {
         return 1.0;
     }
@@ -109,14 +120,14 @@ fn contact_light(p: vec2<i32>, world: vec3<f32>) -> f32 {
             }
             let h = mask_world(q, depth) - world;
             let d2 = dot(h, h);
-            let r2 = CONTACT_RADIUS * CONTACT_RADIUS;
+            let r2 = radius * radius;
             if (d2 < r2 && d2 > 1e-6) {
                 hidden += max(dot(n, h) * inverseSqrt(d2) - CONTACT_BIAS, 0.0) * (1.0 - d2 / r2);
             }
         }
     }
     let fade = smoothstep(2.0, 4.0, pixels);
-    let open = max(1.0 - CONTACT_STRENGTH * hidden / f32(CONTACT_DIRECTIONS * CONTACT_STEPS), 0.0);
+    let open = max(1.0 - strength * hidden / f32(CONTACT_DIRECTIONS * CONTACT_STEPS), 0.0);
     return mix(1.0, open, fade);
 }
 

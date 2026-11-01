@@ -9,7 +9,7 @@
 // (`car::cabin::SunIn`). The interior takes a faint sheen of what it reflects out of the windows (`cabin_sheen`). By
 // night and dusk the headlights' light off the road comes in through the glass. The dial faces keep at least the
 // game's light, so they read as before until the exposure follows the cabin. With the day's light the interior set takes
-// it instead (`cabin_day_lit`).
+// it instead (`cabin_day_lit`), its window and bounce light less what the cabin's own faces close off nearby.
 
 // True with `Enhance::cabin` (a pipeline override, so that the frame without it is built as before).
 override CABIN: bool = false;
@@ -108,10 +108,19 @@ fn cabin_headlights(n: vec3<f32>) -> vec3<f32> {
 // (`lamp_bounce`). Paint open to the sky (the bonnet seen from inside) takes the outside view's light. The sun's
 // highlight is left out: on the dash, seen at a grazing angle, it lit the plastic white; `cabin_sheen` reflects. A dial
 // face takes at least `CABIN_GAUGE_LEAST` of the open sky's light, so that it reads in the binnacle's shade.
-const CABIN_GAUGE_LEAST: f32 = 0.25;
+const CABIN_GAUGE_LEAST: f32 = 0.5;
 // A clear pane's two faces' share of the sky's light, `(1 - F)^2` over the cosine-weighed hemisphere (`F` Schlick's,
 // `F0` 0.04: `car::cabin::pane_through`).
 const CABIN_SKY_THROUGH: f32 = 0.848;
+// The window light and the bounce weighed toward the window (user's call, 2026-11-01): with the measured light alone the
+// bounce, the same on every face, lit most of the cabin, which read flat (the dash top under the windscreen as bright
+// as the footwell).
+const CABIN_WINDOW_LIGHT: f32 = 2.0;
+const CABIN_BOUNCE_SHARE: f32 = 0.5;
+// The near occlusion's (`car::cabin::NEAR`, `VertexOut::sky.z`) weight, and its share on the bounce: the bounce comes
+// off the faces nearby, so they hide less of it (in full it took the Fiat 131's dash under its hood to black).
+const CABIN_NEAR: f32 = 1.0;
+const CABIN_NEAR_BOUNCE: f32 = 0.5;
 
 fn cabin_day_lit(colour: vec3<f32>, v: VertexOut, n: vec3<f32>, shadowed: f32, under_cloud: f32, outside: vec4<f32>) -> vec3<f32> {
     let sky = 1.0 - v.specular.z;
@@ -129,7 +138,15 @@ fn cabin_day_lit(colour: vec3<f32>, v: VertexOut, n: vec3<f32>, shadowed: f32, u
     let sky_through = frame.day_sky.rgb * CABIN_SKY_THROUGH;
     let sun_through = frame.day_sun.rgb * frame.cabin_seen.w;
     let bounce = (1.0 - sky) * frame.cabin.rgb * (sky_through * sky_in + sun_through * sun_in);
-    var e = sky_through * window + sun_through * ndl + bounce;
+    // The window's and the bounce's light, never the sun's, less what the cabin's faces close off nearby: per vertex
+    // within `car::cabin::NEAR`, and per pixel the contact shading (`contact_light`, the cabin's depth laid in the
+    // prepass with the day's light).
+    var near = clamp(1.0 - CABIN_NEAR * v.sky.z, 0.0, 1.0);
+    if (LIGHTING) {
+        near *= cabin_contact();
+    }
+    let bounced = CABIN_BOUNCE_SHARE * bounce * mix(1.0, near, CABIN_NEAR_BOUNCE);
+    var e = CABIN_WINDOW_LIGHT * sky_through * window * near + bounced + sun_through * ndl;
     let level = select(frame.dusk.w, 1.0, frame.night.x != 0.0);
     if (level > 0.0) {
         var bounce = vec3<f32>(0.0);
@@ -147,6 +164,19 @@ fn cabin_day_lit(colour: vec3<f32>, v: VertexOut, n: vec3<f32>, shadowed: f32, u
     }
     let albedo = min(pow(colour * CAR_ALBEDO, vec3<f32>(2.2)), vec3<f32>(ALBEDO_MOST));
     return pow(albedo * e, vec3<f32>(1.0 / 2.2));
+}
+
+// The contact shading at the pixel (`contact_light`) over the 3 x 3 half-size texels about it: one texel's 12 taps
+// left a fixed speckle over the dash.
+fn cabin_contact() -> f32 {
+    let size = vec2<i32>(textureDimensions(sun_contact)) - 1;
+    var sum = 0.0;
+    for (var i = -1; i <= 1; i++) {
+        for (var j = -1; j <= 1; j++) {
+            sum += textureLoad(sun_contact, clamp(pixel / 2 + vec2<i32>(i, j), vec2<i32>(0), size), 0).r;
+        }
+    }
+    return sum / 9.0;
 }
 
 // `sun_lit` for the cabin, all within the first cascade: one filtered compare (2 x 2 texels, 1.4 cm each) in place of

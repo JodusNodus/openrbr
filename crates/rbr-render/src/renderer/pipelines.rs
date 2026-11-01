@@ -132,6 +132,11 @@ impl PipelineKey {
         PipelineKey { inside: Some(inside), ..self }
     }
 
+    /// Whether all the draw's faces are the cabin's interior set's ([`PipelineKey::cabin_set`]).
+    pub(super) fn cabin(&self) -> bool {
+        self.cabin_set == Some(true)
+    }
+
     /// Whether the draw has a pipeline per view ([`PipelineKey::inside`]): the lit draws.
     pub(super) fn takes_views(&self) -> bool {
         self.lit != 0
@@ -151,12 +156,13 @@ impl PipelineKey {
 /// An opaque alpha-tested stage draw that writes depth: the main view lays its depth first ([`DrawPass`]); with the
 /// sun's mask (`sun_mask`) every opaque one, whose depth the mask is worked out from. The lit draws are left out, since
 /// their alpha is not the texture's alone, but for the car's reflecting ones.
-pub(super) fn prepassed(state: &DrawState, lighting: bool) -> bool {
+pub(super) fn prepassed(state: &DrawState, lighting: bool, cabin: bool) -> bool {
     let opaque = state.depth_test && state.depth_write;
     match &state.shade {
-        // The car's opaque draws too (not the characters', whose shade reflects nothing), in the outside views only
-        // (`GpuDraw::prepassed`): the contact shading then sees the car, its arches and the ground under it.
-        Some(shade) => lighting && opaque && !state.blend && shade.fresnel_max > 0.0,
+        // The car's opaque draws too (not the characters', whose shade reflects nothing), in the outside views
+        // (`GpuDraw::prepassed`): the contact shading then sees the car, its arches and the ground under it. In the
+        // in-car view the cabin's interior set's ([`PipelineKey::cabin`]), for its own contact shading.
+        Some(shade) => lighting && opaque && !state.blend && (shade.fresnel_max > 0.0 || cabin),
         None => (cutout(state) || (lighting && !state.blend)) && opaque,
     }
 }

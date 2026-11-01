@@ -68,6 +68,9 @@ const RAYS: usize = 64;
 const REACH: f32 = 2.5;
 /// Where a ray starts, off its own face along the normal, metres (two cells: the face's own cells do not shade it).
 const LIFT: f32 = 2.0 * VOXEL;
+/// How far the near occlusion looks, metres ([`Grid::sky`]): the cabin's own faces within it close a face in (the
+/// binnacle's hood over the dials, the footwells), each by how near it lies.
+const NEAR: f32 = 0.3;
 
 /// The car's opaque faces in cells.
 struct Grid {
@@ -113,41 +116,50 @@ impl Grid {
 
     /// Whether a ray from `from` along `dir` leaves the car without meeting a face.
     fn open(&self, from: Vec3, dir: Vec3) -> bool {
+        self.hit(from, dir).is_none()
+    }
+
+    /// How far a ray from `from` along `dir` goes before it meets a face, `None` if it leaves the car.
+    fn hit(&self, from: Vec3, dir: Vec3) -> Option<f32> {
         let step = 0.5 * VOXEL;
         let mut t = 0.0;
         while t < REACH {
             match self.index(from + dir * t) {
-                Some(k) if self.solid[k] => return false,
+                Some(k) if self.solid[k] => return Some(t),
                 Some(_) => {}
-                None => return true,
+                None => return None,
             }
             t += step;
         }
-        true
+        None
     }
 
     /// The cosine-weighted share of the hemisphere over `normal` at `p` that is open, and where it lies: the mean of
     /// the [`RAYS`] directions, each that meets the car counted zero. The mean's length over the share says how
-    /// gathered the open directions are: 2/3 for the whole hemisphere, toward 1 for a narrow window.
-    fn sky(&self, p: Vec3, normal: Vec3) -> (f32, Vec3) {
+    /// gathered the open directions are: 2/3 for the whole hemisphere, toward 1 for a narrow window. Then the near
+    /// occlusion: the mean over the rays of how much of [`NEAR`] the face each meets leaves, 0 to 1.
+    fn sky(&self, p: Vec3, normal: Vec3) -> (f32, Vec3, f32) {
         let n = normal.normalize_or_zero();
         if n == Vec3::ZERO {
-            return (1.0, Vec3::ZERO);
+            return (1.0, Vec3::ZERO, 0.0);
         }
         let (t, b) = n.any_orthonormal_pair();
         let from = p + n * LIFT;
-        let (mut open, mut seen) = (0, Vec3::ZERO);
+        let (mut open, mut seen, mut near) = (0, Vec3::ZERO, 0.0);
         for k in 0..RAYS {
             // A spiral over the disc, lifted onto the hemisphere: cosine-weighted.
             let s = (k as f32 + 0.5) / RAYS as f32;
             let (r, angle) = (s.sqrt(), k as f32 * 2.399_963);
             let dir = t * (r * angle.cos()) + b * (r * angle.sin()) + n * (1.0 - s).sqrt();
-            if self.open(from, dir) {
-                open += 1;
-                seen += dir;
+            match self.hit(from, dir) {
+                None => {
+                    open += 1;
+                    seen += dir;
+                }
+                Some(d) => near += (1.0 - (d + LIFT) / NEAR).max(0.0),
             }
         }
-        (open as f32 / RAYS as f32, seen / RAYS as f32)
+        (open as f32 / RAYS as f32, seen / RAYS as f32, near / RAYS as f32)
     }
 }
 
@@ -177,16 +189,30 @@ fn pane_through(cos: f32) -> f32 {
 
 const PANE_F0: f32 = 0.04;
 
+/// Whether the exterior set's `draw` is its painted shell (a class that reflects, `Kf` over 0): the rest of the
+/// exterior holds its own low-detail cabin (the Escort Mk II's `e_internal`, the i20 WRC 2020's `e_tablero` and
+/// `e_jaula`), never drawn in the in-car view, which sat over the interior's dash and shut it off from the sky (the
+/// Escort's dash top saw none through the windscreen).
+fn shell(draw: &Draw) -> bool {
+    opaque(draw) && draw.state.shade.is_some_and(|shade| shade.kf > 0.0)
+}
+
 /// The triangles of `mesh`'s [`opaque`] draws.
 fn opaque_triangles(mesh: &Mesh) -> impl Iterator<Item = [Vec3; 3]> + '_ {
+    triangles_of(mesh, opaque)
+}
+
+/// The triangles of `mesh`'s draws that `keep` admits.
+fn triangles_of(mesh: &Mesh, keep: fn(&Draw) -> bool) -> impl Iterator<Item = [Vec3; 3]> + '_ {
     let at = |i: u32| Vec3::from(mesh.vertices[i as usize].position);
-    mesh.draws.iter().filter(|draw| opaque(draw)).flat_map(move |draw| {
+    mesh.draws.iter().filter(move |draw| keep(draw)).flat_map(move |draw| {
         mesh.indices[draw.indices.clone()].chunks_exact(3).map(move |t| [at(t[0]), at(t[1]), at(t[2])])
     })
 }
 
-/// Stores in each vertex of `interior` how much it is shut off from the sky, `1 - sky`, past the opaque faces of both
-/// `interior` and `exterior` (at the same placement), in `specular[2]`, and marks those of its [`opaque`] draws
+/// Stores in each vertex of `interior` how much it is shut off from the sky, `1 - sky`, past the opaque faces of
+/// `interior` and the [`shell`] of `exterior` (at the same placement), in `specular[2]`, its near occlusion
+/// ([`Grid::sky`]) in `occlusion`, and marks those of its [`opaque`] draws
 /// [`INTERIOR`] (the glass the outside is seen through stays lit as in the game), and the glass of its mirror parts
 /// (`damage`, per mesh) [`MIRROR`], with where each sees the sky ([`seen`]). Returns how light gets into the cabin
 /// ([`SunIn`]), the interior's faces' colours read from `textures`.
@@ -196,13 +222,16 @@ pub fn bake(
     exterior: &[Mesh],
     textures: &BTreeMap<TextureRef, StageTexture>,
 ) -> Option<SunIn> {
-    let triangles: Vec<[Vec3; 3]> = interior.iter().chain(exterior).flat_map(opaque_triangles).collect();
+    let shells = exterior.iter().flat_map(|mesh| triangles_of(mesh, shell));
+    let triangles: Vec<[Vec3; 3]> = interior.iter().flat_map(opaque_triangles).chain(shells).collect();
     let grid = Grid::new(&triangles)?;
     let points: Vec<(Vec3, Vec3)> = interior
         .iter()
         .flat_map(|m| m.vertices.iter().map(|v| (Vec3::from(v.position), Vec3::from(v.normal))))
         .collect();
-    let skies = in_parallel(&points, |&(p, n)| grid.sky(p, n));
+    let baked = in_parallel(&points, |&(p, n)| grid.sky(p, n));
+    let skies: Vec<(f32, Vec3)> = baked.iter().map(|&(sky, seen, _)| (sky, seen)).collect();
+    let mut nears = baked.iter().map(|&(_, _, near)| near);
     let panes: Vec<(Vec3, f32)> = interior.iter().chain(exterior).flat_map(panes).collect();
     let sun_in = SunIn::measure(&grid, interior, &skies, &panes, textures);
     let mirrors: Vec<Option<Mirror>> = (0..interior.len()).map(|k| damage.get(k).and_then(|d| d.mirror)).collect();
@@ -214,7 +243,9 @@ pub fn bake(
             .iter_mut()
             .zip(skies.by_ref())
             .map(|(vertex, (sky, seen))| {
+                let near = nears.next().unwrap_or(0.0);
                 vertex.specular[2] = 1.0 - sky;
+                vertex.occlusion = near;
                 seen
             })
             .collect();
@@ -610,8 +641,20 @@ mod tests {
             Vec3::new(-1.0, 0.5, 1.0),
         );
         let grid = Grid::new(&[floor, roof].concat()).unwrap();
-        let under = grid.sky(Vec3::ZERO, Vec3::Y).0;
+        let (under, _, near) = grid.sky(Vec3::ZERO, Vec3::Y);
         assert!(under > 0.05 && under < 0.4, "{under}");
+        // The roof lies past the near occlusion's reach overhead; only the rays low toward it meet it within reach.
+        assert!(near < 0.05, "{near}");
+        // A shelf 0.1 m over the floor closes it in.
+        let shelf = square(
+            Vec3::new(-1.0, 0.1, -1.0),
+            Vec3::new(1.0, 0.1, -1.0),
+            Vec3::new(1.0, 0.1, 1.0),
+            Vec3::new(-1.0, 0.1, 1.0),
+        );
+        let grid_shelf = Grid::new(&[floor, shelf].concat()).unwrap();
+        let (_, _, near) = grid_shelf.sky(Vec3::ZERO, Vec3::Y);
+        assert!(near > 0.3 && near < 0.9, "{near}");
         // Facing a wall a hand away from the edge, it sees out the open side.
         assert!(grid.sky(Vec3::new(0.95, 0.25, 0.0), Vec3::X).0 > 0.8);
     }
@@ -632,13 +675,13 @@ mod tests {
             Vec3::new(-3.0, 0.5, 3.0),
         );
         let grid = Grid::new(&[floor, roof].concat()).unwrap();
-        let (share, seen) = grid.sky(Vec3::new(0.5, 0.0, 0.0), Vec3::Y);
+        let (share, seen, _) = grid.sky(Vec3::new(0.5, 0.0, 0.0), Vec3::Y);
         assert!(share > 0.1 && share < 0.6, "{share}");
         assert!(seen.x > 0.5 * seen.length(), "{seen}");
         // Gathered: the mean's length over the share is past the whole hemisphere's 2/3.
         assert!(seen.length() / share > 0.7, "{seen} {share}");
         // Below the floor, facing down: all open, the mean at the whole hemisphere's.
-        let (open, wide) = grid.sky(Vec3::new(0.0, -0.1, 0.0), Vec3::NEG_Y);
+        let (open, wide, _) = grid.sky(Vec3::new(0.0, -0.1, 0.0), Vec3::NEG_Y);
         assert_eq!(open, 1.0);
         assert!((wide.length() - 2.0 / 3.0).abs() < 0.02, "{wide}");
     }
@@ -688,8 +731,12 @@ mod tests {
         for v in &mut mesh.vertices {
             v.color = [128, 128, 128, 255];
         }
-        let skies: Vec<(f32, Vec3)> =
-            mesh.vertices.iter().map(|v| grid.sky(Vec3::from(v.position), Vec3::from(v.normal))).collect();
+        let skies: Vec<(f32, Vec3)> = mesh
+            .vertices
+            .iter()
+            .map(|v| grid.sky(Vec3::from(v.position), Vec3::from(v.normal)))
+            .map(|(sky, seen, _)| (sky, seen))
+            .collect();
         let sun_in = SunIn::measure(&grid, &[mesh], &skies, &[], &BTreeMap::new());
         // Seen out the open side only, and grey 128 untextured: (128 / 255)^2.2 linear.
         assert!(sun_in.sky > 0.05 && sun_in.sky < 0.6, "{}", sun_in.sky);
@@ -759,6 +806,7 @@ mod tests {
             ),
         ];
         let grid = Grid::new(&faces.concat()).unwrap();
-        assert_eq!(grid.sky(Vec3::new(0.0, -0.5, 0.0), Vec3::Y), (0.0, Vec3::ZERO));
+        let (sky, seen, _) = grid.sky(Vec3::new(0.0, -0.5, 0.0), Vec3::Y);
+        assert_eq!((sky, seen), (0.0, Vec3::ZERO));
     }
 }

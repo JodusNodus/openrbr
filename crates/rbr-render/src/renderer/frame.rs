@@ -496,9 +496,10 @@ impl Renderer {
             .iter()
             .filter(|&&(mesh, distance)| laid(mesh, distance))
             .flat_map(|&(mesh, distance)| {
-                // The car's lit draws only outside it: the cockpit's frame is as it was.
-                let draws =
-                    mesh.draws.iter().filter(move |draw| draw.lod.shows(distance) && !(inside && draw.views.is_some()));
+                // The car's lit draws only outside it, but for the cabin's interior set inside it (its contact shading).
+                let draws = mesh.draws.iter().filter(move |draw| {
+                    draw.lod.shows(distance) && !(inside && draw.views.is_some() && !draw.pipeline.cabin())
+                });
                 draws.filter_map(move |draw| Some((mesh, draw, &draw.prepassed.as_ref()?[0])))
             })
             .collect();
