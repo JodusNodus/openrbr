@@ -85,7 +85,8 @@ values pace notes. Bit 31 of the flags is set at run time when a key fires.
 ## Collision
 
 `.col` (`FUN_004fe570`): header `{u32 'OC7R' 0x5237434f, u32 root offset (0x10), u32 cell count, u32 table offset}`;
-the table holds absolute cell offsets.
+the table holds absolute cell offsets. Bytes after its `cell count` words up to the next region are unread (one word in
+RSF's 149 and 150 Pribram, none in retail).
 - Root (0x28 bytes, type 4 mode 3): u16 slot, u32 flags, u32 vertex count (0), u32 vertex rel, u32 tree rel, u32
   brake-wall rel (0 = none), u32 list A count/rel, u32 list B count/rel. Lists are 0x40-byte records of four
   padded Vec3 corners: A wet puddles, B deep water.
