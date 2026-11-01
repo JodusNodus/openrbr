@@ -17,7 +17,7 @@ use rbr_render::glass::model::Switch;
 use rbr_render::hud::Parts;
 use rbr_render::mirrors::Rate;
 use rbr_render::present::Present;
-use rbr_render::renderer::{AntiAliasing, Detail};
+use rbr_render::renderer::Detail;
 use rbr_render::shifter::{CarBox, Engagement};
 use rbr_sound::custom_codriver;
 
@@ -248,8 +248,6 @@ pub struct Settings {
     pub marks: Option<bool>,
     /// One of [`RENDER_SCALES`].
     pub render_scale: Option<u32>,
-    /// The frame's anti-aliasing (`viewer --anti-aliasing`).
-    pub anti_aliasing: Option<AntiAliasing>,
     /// The wet roads (`viewer --enhance wet`, `--reflections`).
     pub wet_roads: Option<WetRoads>,
     /// The additions' detail (`viewer --detail`).
@@ -554,7 +552,6 @@ impl Settings {
             windscreen: launcher.on_off("windscreen"),
             marks: launcher.on_off("marks"),
             render_scale: launcher.number("render_scale").filter(|v| RENDER_SCALES.contains(v)),
-            anti_aliasing: launcher.choice("anti_aliasing"),
             wet_roads: launcher.choice("wet_roads"),
             detail: launcher.choice("detail"),
             upscale_textures: launcher.on_off("upscale_textures"),
@@ -651,7 +648,6 @@ impl Settings {
             ("rsf_root", self.rsf_root.clone()),
             ("head_gasket", self.head_gasket.map(|v| v.to_string())),
             ("render_scale", self.render_scale.map(|v| v.to_string())),
-            ("anti_aliasing", choice(self.anti_aliasing)),
             ("wet_roads", choice(self.wet_roads)),
             ("detail", choice(self.detail)),
             ("upscale_textures", on_off_text(self.upscale_textures)),
@@ -890,7 +886,6 @@ impl Form {
                 mirrors: settings.mirrors.unwrap_or(DEFAULT_GRAPHICS.mirrors),
             },
             render_scale: settings.render_scale.unwrap_or(100),
-            anti_aliasing: settings.anti_aliasing.unwrap_or_default(),
             upscale_textures: settings.upscale_textures.unwrap_or(false),
             upscaler: rbr_render::upscale::Upscaler::find(&home.join(rbr_render::upscale::DIR)).is_some(),
             upscaler_download: Default::default(),
@@ -988,7 +983,6 @@ impl Form {
             detail: Some(self.graphics.detail),
             mirrors: Some(self.graphics.mirrors),
             render_scale: Some(self.render_scale),
-            anti_aliasing: Some(self.anti_aliasing),
             upscale_textures: Some(self.upscale_textures),
             present: Some(self.present),
             fullscreen: Some(self.fullscreen),
@@ -1088,7 +1082,6 @@ mod tests {
             windscreen: Some(false),
             marks: Some(true),
             render_scale: Some(75),
-            anti_aliasing: Some(AntiAliasing::Off),
             wet_roads: Some(WetRoads::Low),
             detail: Some(Detail::Ultra),
             upscale_textures: Some(true),
@@ -1223,12 +1216,11 @@ mod tests {
         assert_eq!(clock_args(Some(5 * 60)), ["--clock", "05:00"]);
         assert!(clock_args(None).is_empty());
         assert_eq!(Settings::parse("[launcher]\nwipers = fast\n").wipers, None);
-        assert!(text.contains("render_scale = 75\nanti_aliasing = off\nwet_roads = low\ndetail = ultra\n"), "{text}");
+        assert!(text.contains("render_scale = 75\nwet_roads = low\ndetail = ultra\n"), "{text}");
         assert_eq!(Settings::parse("[launcher]\ndetail = high\n").detail, Some(Detail::High));
         assert_eq!(Settings::parse("[launcher]\ndetail = max\n").detail, None);
         assert_eq!(Settings::parse("[launcher]\nwet_roads = medium\n").wet_roads, Some(WetRoads::Medium));
         assert_eq!(Settings::parse("[launcher]\nwet_roads = on\n").wet_roads, None);
-        assert_eq!(Settings::parse("[launcher]\nanti_aliasing = 2x\n").anti_aliasing, None);
         assert!(text.contains("present = immediate\nmirrors = 3\n"), "{text}");
         assert_eq!(Settings::parse("[launcher]\nmirrors = 4\n").mirrors, None);
         assert_eq!(Settings::parse("[launcher]\nmirrors = off\n").mirrors, Some(Rate::Off));
@@ -1337,7 +1329,6 @@ mod tests {
                 "rsf_root = /games/rsf\n",
                 "head_gasket = 10\n",
                 "render_scale = 75\n",
-                "anti_aliasing = off\n",
                 "wet_roads = low\n",
                 "detail = ultra\n",
                 "upscale_textures = on\n",
@@ -1475,7 +1466,6 @@ mod tests {
         assert_eq!(Settings::parse("[launcher]\ndamage = hard\n").damage, None);
         assert_eq!(Settings::parse("[launcher]\ndetail = max\n").detail, None);
         assert_eq!(Settings::parse("[launcher]\nwet_roads = on\n").wet_roads, None);
-        assert_eq!(Settings::parse("[launcher]\nanti_aliasing = 2x\n").anti_aliasing, None);
         assert_eq!(Settings::parse("[launcher]\nmirrors = 4\n").mirrors, None);
         assert_eq!(Settings::parse("[launcher]\nwipers = fast\n").wipers, None);
         // The wipers, the presentation and the mirrors parse case-insensitively.

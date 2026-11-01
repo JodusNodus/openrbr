@@ -290,7 +290,6 @@ impl Form {
         let old_graphics = (
             self.graphics,
             self.render_scale,
-            self.anti_aliasing,
             self.upscale_textures,
             self.present,
             self.fullscreen,
@@ -422,7 +421,6 @@ impl Form {
                 != (
                     self.graphics,
                     self.render_scale,
-                    self.anti_aliasing,
                     self.upscale_textures,
                     self.present,
                     self.fullscreen,
@@ -628,7 +626,7 @@ mod tests {
     use crate::settings::{load, Clouds, Fog, Precipitation, Settings};
     use crate::{Start, SETTINGS_FILE};
     use rbr_gameplay::race_options::{DamageLevel, Skill};
-    use rbr_render::renderer::{AntiAliasing, Detail};
+    use rbr_render::renderer::Detail;
 
     /// Every dropdown choice parses back from its settings word, with a label of its own (`settings_round_trip`
     /// pins the file's text; this pins each value's word and label).
@@ -655,7 +653,6 @@ mod tests {
         round_trips(WetRoads::Off);
         round_trips(DamageLevel::Safe);
         round_trips(Skill::Rookie);
-        round_trips(AntiAliasing::Taa);
         round_trips(Detail::High);
     }
 
