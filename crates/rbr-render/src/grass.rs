@@ -793,7 +793,7 @@ fn green(rgb: Vec3, road: bool) -> f32 {
 
 /// The tint of a ground vertex of colour `rgb`, as `own_light` in `shader.wgsl` takes it on the near ground: its hue,
 /// [`GROUND_HUE`] of it.
-fn tint([r, g, b, _]: [u8; 4]) -> Vec3 {
+pub(crate) fn tint([r, g, b, _]: [u8; 4]) -> Vec3 {
     let c = Vec3::new(r.into(), g.into(), b.into()) / 255.0;
     let most = c.max_element();
     let hue = Vec3::ONE.lerp(c / most.max(1e-3), smoothstep(0.02, 0.08, most));
@@ -802,25 +802,27 @@ fn tint([r, g, b, _]: [u8; 4]) -> Vec3 {
 
 /// A ground texture's texels at its test level (`foliage::test_texels`), blurred ([`blur`]), sampled nearest and
 /// repeated.
-struct Texels {
+pub(crate) struct Texels {
     width: usize,
     height: usize,
     rgba: Vec<u8>,
 }
 
 impl Texels {
-    fn of(stage: &Stage, texture: TextureRef) -> Option<Texels> {
+    pub(crate) fn of(stage: &Stage, texture: TextureRef) -> Option<Texels> {
+        let Texels { width, height, rgba } = Texels::sharp(stage, texture)?;
+        Some(Texels { width, height, rgba: blur(&blur(&rgba, width, height, (1, 0)), width, height, (0, 1)) })
+    }
+
+    /// [`Texels::of`] without the blur.
+    pub(crate) fn sharp(stage: &Stage, texture: TextureRef) -> Option<Texels> {
         let (width, rgba) = test_texels(stage, texture)?;
         let height = rgba.len() / 4 / width.max(1);
-        (height > 0).then(|| Texels {
-            width,
-            height,
-            rgba: blur(&blur(&rgba, width, height, (1, 0)), width, height, (0, 1)),
-        })
+        (height > 0).then_some(Texels { width, height, rgba })
     }
 
     /// RGBA, 0 to 1.
-    fn at(&self, uv: Vec2) -> glam::Vec4 {
+    pub(crate) fn at(&self, uv: Vec2) -> glam::Vec4 {
         let x = (uv.x.rem_euclid(1.0) * self.width as f32) as usize % self.width;
         let y = (uv.y.rem_euclid(1.0) * self.height as f32) as usize % self.height;
         let i = (y * self.width + x) * 4;
@@ -849,12 +851,12 @@ fn blur(rgba: &[u8], width: usize, height: usize, step: (usize, usize)) -> Vec<u
 }
 
 /// The driveline's segments in a grid, for the distance across to it.
-struct Line {
+pub(crate) struct Line {
     grid: HashMap<(i32, i32), Vec<(Vec2, Vec2)>>,
 }
 
 impl Line {
-    fn new(points: &[Vec3]) -> Line {
+    pub(crate) fn new(points: &[Vec3]) -> Line {
         let mut grid: HashMap<(i32, i32), Vec<(Vec2, Vec2)>> = HashMap::new();
         for pair in points.windows(2) {
             let (a, b) = (pair[0].xz(), pair[1].xz());
@@ -873,7 +875,7 @@ impl Line {
     }
 
     /// The distance across from `p` to the driveline, up to just past [`BAND`].
-    fn distance(&self, p: Vec2) -> f32 {
+    pub(crate) fn distance(&self, p: Vec2) -> f32 {
         let segments = self.grid.get(&(Line::cell(p.x), Line::cell(p.y)));
         segments.into_iter().flatten().fold(BAND + 1.0, |near, &(a, b)| {
             let ab = b - a;
