@@ -50,7 +50,7 @@ rbr-recomp.
 | `RBR_RECORDINGS`, `RBR_VECTOR_STORE` | Recorded drives (`drive-*.bin`) and vector records; not in git, published set via `scripts/fetch-test-data.sh` |
 | `original/` | Original binaries and game data (gitignored, `SHA256SUMS` only) |
 | `data/` | Test data hashes and file lists, generator inputs |
-| `scripts/` | `rust-check.sh`, `rust-vectors.sh`, `remote-rust.sh`, `render-shots.py` (reference shots, `data/shots.json`), generators of Rust tables, NGP tools |
+| `scripts/` | `rust-check.sh`, `rust-vectors.sh`, `dev-env.sh` (the `dev.env` folders), `render-shots.py` (reference shots, `data/shots.json`), generators of Rust tables, NGP tools |
 
 Treat `original/`, `build/` and the recordings as local data. Do not commit their contents.
 
@@ -82,8 +82,9 @@ Treat `original/`, `build/` and the recordings as local data. Do not commit thei
 A Rust batch includes:
 
 - `scripts/rust-check.sh` from the repository root printing PASS, with `RBR_DATA`, `RBR_PATCH` and `RBR_RECORDINGS`
-  set;
-- for physics ports: the hybrid check (`harness/rust_step.py` with every binding over the drive's snapshots and
+  set in `dev.env` (read via `scripts/dev-env.sh`);
+- for physics ports: the hybrid check (after `cargo build --release -p rbr-hybrid`: `.venv/bin/python -I -B
+  harness/rust_step.py` with every binding over the drive's snapshots and
   recording) with every "run B vs run A" line equal, and fuzzed direct-call records for branches no drive reaches;
 - for changes to `rbr-standalone` or `rbr-hybrid`: `.venv/bin/python -I -B harness/rsf_compare.py
   $RBR_RECORDINGS/rsf/drive2 --attempt 5 --sections physics --out DIR` giving physics PASS 84084/84084 and exit
