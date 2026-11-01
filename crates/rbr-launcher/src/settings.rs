@@ -183,6 +183,8 @@ pub struct Settings {
     /// 54,129`).
     pub favourite_cars: Vec<String>,
     pub favourite_maps: Vec<u32>,
+    pub stage_browser: crate::browser_state::State,
+    pub car_browser: crate::browser_state::State,
     pub weather: Option<WeatherChoice>,
     /// The road wetness over the weather row's (0 dry, 1 damp, 2 wet); none takes it from the weather.
     pub wetness: Option<u32>,
@@ -498,6 +500,8 @@ impl Settings {
             recent_maps: launcher.ids("recent_maps"),
             favourite_cars: launcher.names("favourite_cars"),
             favourite_maps: launcher.ids("favourite_maps"),
+            stage_browser: crate::browser_state::State::read(&sections, "stage_browser"),
+            car_browser: crate::browser_state::State::read(&sections, "car_browser"),
             weather: launcher.parsed("weather", WeatherChoice::parse),
             wetness: launcher.parsed("wetness", parse_wetness),
             fog: launcher.choice("fog"),
@@ -669,6 +673,8 @@ impl Settings {
                 out.push_str(&format!("{key} = {v}\n"));
             }
         }
+        out.push_str(&self.stage_browser.to_text("stage_browser"));
+        out.push_str(&self.car_browser.to_text("car_browser"));
         out.push('\n');
         out.push_str(&self.bindings.to_text());
         out.push('\n');
@@ -918,6 +924,8 @@ impl Form {
         };
         form.list_cars();
         form.list_maps();
+        form.stage_browser.restore(&settings.stage_browser);
+        form.car_browser.restore(&settings.car_browser);
         form.rescan_codrivers();
         form
     }
@@ -934,6 +942,8 @@ impl Form {
             recent_maps: self.recent_maps.clone(),
             favourite_cars: self.favourite_cars.clone(),
             favourite_maps: self.favourite_maps.clone(),
+            stage_browser: self.stage_browser.state(),
+            car_browser: self.car_browser.state(),
             weather: Some(match &self.weather_row {
                 Some(section) => WeatherChoice::Row(section.clone()),
                 None => WeatherChoice::Preset(self.options.weather),
@@ -1037,6 +1047,8 @@ mod tests {
             recent_maps: vec![54, 129],
             favourite_cars: vec!["XSARA".into(), "Mitsubishi Lancer Evo IX N4".into()],
             favourite_maps: vec![129, 54, 300],
+            stage_browser: Default::default(),
+            car_browser: Default::default(),
             weather: Some(WeatherChoice::Preset(Preset::Bad)),
             wetness: Some(2),
             fog: Some(Fog::Heavy),
@@ -1117,6 +1129,32 @@ mod tests {
                 CarBox { engagement: Engagement::Dog, sequential: false },
             )]),
         }
+    }
+
+    #[test]
+    fn picker_state_is_saved_in_the_players_settings() {
+        let state = crate::browser_state::State {
+            collection: Some("country:FI".into()),
+            query: "forest 50%".into(),
+            sort: "newest".into(),
+            filter: "2".into(),
+            length: "1".into(),
+            selected: Some("621".into()),
+            scroll: 720.0,
+        };
+        let settings = Settings {
+            stage_browser: state,
+            car_browser: crate::browser_state::State {
+                collection: Some("class:Group A".into()),
+                query: "bmw".into(),
+                selected: Some("BMW M3".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let restored = Settings::parse(&settings.to_text());
+        assert_eq!(restored.stage_browser, settings.stage_browser);
+        assert_eq!(restored.car_browser, settings.car_browser);
     }
 
     #[test]

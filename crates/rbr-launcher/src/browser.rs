@@ -86,18 +86,37 @@ pub struct Nav {
     /// Bring the cursor into view at the next draw: `Some(true)` centred.
     reveal: Option<bool>,
     to_top: bool,
+    restore_scroll: Option<f32>,
 }
 
 impl Default for Nav {
     fn default() -> Self {
-        Nav { cursor: 0, scroll: (0.0, LIST_HEIGHT), reveal: None, to_top: false }
+        Nav { cursor: 0, scroll: (0.0, LIST_HEIGHT), reveal: None, to_top: false, restore_scroll: None }
     }
 }
 
 impl Nav {
+    pub fn offset(&self) -> f32 {
+        self.scroll.0
+    }
+
+    /// Restores a stable item and the last scroll position, including after restarting the launcher.
+    pub fn restore(&mut self, cursor: usize, offset: f32) {
+        self.cursor = cursor;
+        self.scroll.0 = offset;
+        self.restore_scroll = Some(offset);
+        self.reveal = None;
+        self.to_top = false;
+    }
+
+    pub fn resume(&mut self) {
+        self.restore(self.cursor, self.scroll.0);
+    }
+
     /// Highlights `cursor` and brings it to the middle of the list.
     pub fn show(&mut self, cursor: usize) {
         self.cursor = cursor;
+        self.restore_scroll = None;
         self.reveal = Some(true);
     }
 
@@ -122,6 +141,7 @@ impl Nav {
             None => 0,
         };
         self.cursor = rows[next];
+        self.restore_scroll = None;
         self.reveal = Some(false);
     }
 
@@ -129,9 +149,12 @@ impl Nav {
     /// list to its top.
     pub fn settle(&mut self, lines: &[Line]) {
         if self.position(lines).is_some() {
-            self.reveal.get_or_insert(true);
+            if self.restore_scroll.is_none() {
+                self.reveal.get_or_insert(true);
+            }
         } else if let Some(first) = items(lines).next() {
             self.cursor = first;
+            self.restore_scroll = None;
             self.to_top = true;
         }
     }
@@ -139,7 +162,9 @@ impl Nav {
     /// The list's scroll area, set to bring the cursor (on line `position`) into view when asked to.
     pub fn area(&mut self, id: &'static str, height: f32, position: Option<usize>) -> egui::ScrollArea {
         let mut area = egui::ScrollArea::vertical().id_salt(id).max_height(height).auto_shrink([false, true]);
-        if std::mem::take(&mut self.to_top) {
+        if let Some(offset) = self.restore_scroll.take() {
+            area = area.vertical_scroll_offset(offset);
+        } else if std::mem::take(&mut self.to_top) {
             area = area.vertical_scroll_offset(0.0);
         } else if let (Some(centre), Some(at)) = (self.reveal.take(), position) {
             let (offset, visible) = self.scroll;

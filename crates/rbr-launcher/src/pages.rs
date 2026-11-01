@@ -314,6 +314,7 @@ impl Form {
             self.notes_set.clone(),
         );
         let old_notes = self.notes_inputs();
+        let browsers_open = (self.stage_browser.open, self.car_browser.open);
         ctx.root_ui(|root| {
             egui::Panel::top("tabs").show(root, |ui| {
                 ui.add_space(6.0);
@@ -393,7 +394,9 @@ impl Form {
         // The notes summary is cached: mark it dirty and repaint, or a switch keeps the old text until the map
         // changes.
         self.invalidate_notes_cache(ctx, old_notes);
-        if self.bindings != bindings
+        if (browsers_open.0 && !self.stage_browser.open)
+            || (browsers_open.1 && !self.car_browser.open)
+            || self.bindings != bindings
             || self.ffb != ffb
             || old_selection
                 != (

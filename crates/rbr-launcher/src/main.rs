@@ -127,6 +127,7 @@
 
 mod archive;
 mod browser;
+mod browser_state;
 mod capture;
 mod car_browser;
 mod car_packs;
@@ -153,6 +154,7 @@ mod settings;
 mod settings_page;
 mod setup_page;
 mod stage_browser;
+mod stage_releases;
 mod upscaler;
 mod window;
 

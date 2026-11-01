@@ -103,6 +103,7 @@ pub struct StageRow {
     /// A 1.02 stage, not a RallySimFans one.
     pub retail: bool,
     pub km: Option<f32>,
+    pub release: Option<crate::stage_releases::Release>,
     /// 0 gravel, 1 tarmac, 2 snow.
     pub surface: u32,
     /// Why it cannot start.
@@ -135,6 +136,7 @@ impl StageRow {
             author,
             retail: map.rsf.is_none(),
             km,
+            release: map.rsf.as_ref().and_then(|_| crate::stage_releases::get(map.number)),
             surface: map.surface().min(2),
             problem: problem.map(plain_problem),
             haystack,
@@ -231,16 +233,36 @@ pub enum Sort {
     Length,
     /// The ones driven most recently first.
     Recent,
+    /// New maps and native conversions by the date RSF announced them; unknown dates last.
+    Newest,
 }
 
 impl Sort {
-    const ALL: [Sort; 3] = [Sort::Name, Sort::Length, Sort::Recent];
+    fn word(self) -> &'static str {
+        match self {
+            Self::Name => "name",
+            Self::Length => "length",
+            Self::Recent => "recent",
+            Self::Newest => "newest",
+        }
+    }
+    fn from_word(word: &str) -> Self {
+        match word {
+            "length" => Self::Length,
+            "recent" => Self::Recent,
+            "newest" => Self::Newest,
+            _ => Self::Name,
+        }
+    }
+
+    const ALL: [Sort; 4] = [Sort::Name, Sort::Length, Sort::Recent, Sort::Newest];
 
     fn label(self) -> &'static str {
         match self {
             Sort::Name => "Name A–Z",
             Sort::Length => "Length",
             Sort::Recent => "Recently driven",
+            Sort::Newest => "Newest on RSF",
         }
     }
 }
@@ -276,6 +298,15 @@ pub fn lines(
                 let km = |k: usize| rows[k].km.unwrap_or(f32::INFINITY);
                 km(a).total_cmp(&km(b)).then_with(|| rows[a].name.cmp(&rows[b].name))
             }),
+            Sort::Newest => members.sort_by_cached_key(|&k| {
+                let release = rows[k].release;
+                (
+                    std::cmp::Reverse(release.map(|r| r.date)),
+                    release.map(|r| r.kind),
+                    rows[k].name.to_lowercase(),
+                    rows[k].number,
+                )
+            }),
             Sort::Recent => members.sort_by_cached_key(|&k| {
                 (recent.iter().position(|&n| n == rows[k].number).unwrap_or(usize::MAX), rows[k].name.to_lowercase())
             }),
@@ -288,6 +319,11 @@ pub fn lines(
     if !words.is_empty() {
         let found = (0..rows.len()).filter(|&k| words.iter().all(|w| rows[k].haystack.contains(w.as_str())));
         let (ok, blocked) = split(found.filter(accepted).collect());
+        if sort == Sort::Newest {
+            out.extend(block(None, sorted(ok)));
+            out.extend(block(Some("Cannot start"), sorted(blocked)));
+            return out;
+        }
         let (starred, rest): (Vec<usize>, Vec<usize>) =
             ok.into_iter().partition(|&k| favourites.contains(&rows[k].number));
         out.extend(block(Some("Favourites"), sorted(starred)));
@@ -386,6 +422,7 @@ pub struct StageBrowser {
     nav: Nav,
     /// Focus the search box on the next draw.
     focus: bool,
+    visited: bool,
 }
 
 impl Default for StageBrowser {
@@ -400,6 +437,7 @@ impl Default for StageBrowser {
             made: None,
             nav: Nav::default(),
             focus: false,
+            visited: false,
         }
     }
 }
@@ -407,12 +445,67 @@ impl Default for StageBrowser {
 impl StageBrowser {
     /// Lists the stages: each map of the catalog with its reason not to start.
     pub fn set_rows(&mut self, rows: Vec<StageRow>) {
+        let state = self.state();
         self.rows = rows;
         self.made = None;
+        self.restore(&state);
     }
 
     pub fn row(&self, index: usize) -> Option<&StageRow> {
         self.rows.get(index)
+    }
+
+    pub fn state(&self) -> crate::browser_state::State {
+        if !self.visited {
+            return Default::default();
+        }
+        use crate::browser_state::State;
+        let collection = match &self.collection {
+            Collection::Favourites => "favourites".into(),
+            Collection::Recent => "recent".into(),
+            Collection::All => "all".into(),
+            Collection::CannotStart => "unavailable".into(),
+            Collection::Country(code) => format!("country:{}", code.as_deref().unwrap_or("")),
+        };
+        State {
+            collection: Some(collection),
+            query: self.filter.query.clone(),
+            sort: self.sort.word().into(),
+            filter: self.filter.surface.map(|n| n.to_string()).unwrap_or_default(),
+            length: (self.filter.length as usize).to_string(),
+            selected: self.rows.get(self.nav.cursor).map(|r| r.number.to_string()),
+            scroll: self.nav.offset(),
+        }
+    }
+
+    pub fn restore(&mut self, state: &crate::browser_state::State) {
+        let Some(collection) = state.collection.as_deref() else { return };
+        self.collection = match collection {
+            "favourites" => Collection::Favourites,
+            "recent" => Collection::Recent,
+            "unavailable" => Collection::CannotStart,
+            key if key.starts_with("country:") => {
+                let code = key[8..].to_owned();
+                let code = (!code.is_empty()).then_some(code);
+                if self.rows.iter().any(|r| r.country == code) {
+                    Collection::Country(code)
+                } else {
+                    Collection::All
+                }
+            }
+            _ => Collection::All,
+        };
+        self.filter = Filter {
+            query: state.query.clone(),
+            surface: state.filter.parse().ok().filter(|n| *n < 3),
+            length: state.length.parse::<usize>().ok().and_then(|n| Length::ALL.get(n)).copied().unwrap_or_default(),
+        };
+        self.sort = Sort::from_word(&state.sort);
+        let number = state.selected.as_deref().and_then(|s| s.parse::<u32>().ok());
+        let cursor = self.rows.iter().position(|r| Some(r.number) == number).unwrap_or(0);
+        self.nav.restore(cursor, state.scroll);
+        self.visited = true;
+        self.made = None;
     }
 
     /// The row of the stage with `number`.
@@ -424,12 +517,15 @@ impl StageBrowser {
     /// on all stages. `collection` opens it on that instead.
     pub fn open_on(&mut self, selected: usize, favourites: &[u32], collection: Option<Collection>) {
         let favourite = self.rows.get(selected).is_some_and(|r| favourites.contains(&r.number));
-        self.collection = collection.unwrap_or(if favourite { Collection::Favourites } else { Collection::All });
-        self.filter = Filter::default();
-        self.sort = Sort::Name;
-        self.nav.show(selected);
+        if !self.visited || collection.is_some() {
+            self.collection = collection.unwrap_or(if favourite { Collection::Favourites } else { Collection::All });
+            self.filter.query.clear();
+            self.nav.show(selected);
+        } else {
+            self.nav.resume();
+        }
+        self.visited = true;
         self.open = true;
-        self.made = None;
         self.focus = true;
     }
 
@@ -554,7 +650,7 @@ impl StageBrowser {
             };
             ui.label(RichText::new(format!("{count} {what}")).color(GREY));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                combo(ui, "sort", 120.0, &mut self.sort, &Sort::ALL, Sort::label);
+                combo(ui, "sort", 140.0, &mut self.sort, &Sort::ALL, Sort::label);
                 ui.label(RichText::new("Sort").color(GREY));
             });
         });
@@ -567,8 +663,14 @@ impl StageBrowser {
         let y = rect.center().y;
         let p = ui.painter();
         p.text(Pos2::new(c[1], y), Align2::LEFT_CENTER, "STAGE", small.clone(), GREY);
-        let third = if by_country { "COUNTRY" } else { "AUTHOR" };
-        p.text(Pos2::new(c[2], y), Align2::LEFT_CENTER, third, small.clone(), GREY);
+        let third = if self.sort == Sort::Newest {
+            Column::Release
+        } else if by_country {
+            Column::Country
+        } else {
+            Column::Author
+        };
+        p.text(Pos2::new(c[2], y), Align2::LEFT_CENTER, third.label(), small.clone(), GREY);
         p.text(Pos2::new(c[3], y), Align2::RIGHT_CENTER, "LENGTH", small.clone(), GREY);
         p.text(Pos2::new(c[4], y), Align2::LEFT_CENTER, "SURFACE", small, GREY);
         p.hline(rect.x_range(), rect.bottom(), Stroke::new(1.0_f32, Color32::from_gray(60)));
@@ -595,7 +697,7 @@ impl StageBrowser {
                 let row = &self.rows[k];
                 let (rect, response, star) = row_slot(ui, k);
                 let favourite = favourites.contains(&row.number);
-                draw_row(ui, rect, row, by_country, k == nav.cursor, response.hovered(), favourite);
+                draw_row(ui, rect, row, third, k == nav.cursor, response.hovered(), favourite);
                 let response = match &row.problem {
                     Some(problem) => response.on_hover_text(format!("cannot start: {problem}")),
                     None => response,
@@ -628,6 +730,15 @@ impl StageBrowser {
         env.previews.stage_ui(ui, map);
         ui.add_space(6.0);
         egui::Grid::new("facts").num_columns(2).spacing([14.0, 6.0]).show(ui, |ui| {
+            if let Some(release) = row.release {
+                ui.label(RichText::new(release.label()).color(GREY));
+                ui.label(release.date);
+                ui.end_row();
+            } else if !row.retail {
+                ui.label(RichText::new("Added to RSF").color(GREY));
+                ui.label("Unknown");
+                ui.end_row();
+            }
             for (label, value) in (env.facts)(row) {
                 ui.label(RichText::new(label).color(GREY));
                 ui.label(value);
@@ -662,8 +773,31 @@ fn columns(left: f32) -> [f32; 5] {
 /// The room the name has before the third column.
 const NAME_WIDTH: f32 = 170.0;
 
+#[derive(Clone, Copy)]
+enum Column {
+    Country,
+    Author,
+    Release,
+}
+impl Column {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Country => "COUNTRY",
+            Self::Author => "AUTHOR",
+            Self::Release => "RELEASED",
+        }
+    }
+    fn text(self, row: &StageRow) -> &str {
+        match self {
+            Self::Country => row.country_name(),
+            Self::Author => row.author.as_deref().unwrap_or(""),
+            Self::Release => row.release.map_or("Unknown", |r| r.date),
+        }
+    }
+}
+
 /// A stage's row: its star, name, country or author, length and surface; the highlighted one filled.
-fn draw_row(ui: &egui::Ui, rect: Rect, row: &StageRow, by_country: bool, cursor: bool, hovered: bool, favourite: bool) {
+fn draw_row(ui: &egui::Ui, rect: Rect, row: &StageRow, column: Column, cursor: bool, hovered: bool, favourite: bool) {
     let p = ui.painter();
     let c = columns(rect.left());
     let y = rect.center().y;
@@ -673,7 +807,7 @@ fn draw_row(ui: &egui::Ui, rect: Rect, row: &StageRow, by_country: bool, cursor:
     let name = p.layout_no_wrap(row.name.clone(), FontId::proportional(15.0), text);
     let room = Rect::from_min_max(Pos2::new(c[1], rect.top()), Pos2::new(c[1] + NAME_WIDTH, rect.bottom()));
     p.with_clip_rect(room).galley(Pos2::new(c[1], y - name.size().y / 2.0), name, text);
-    let third = if by_country { row.country_name() } else { row.author.as_deref().unwrap_or("") };
+    let third = column.text(row);
     let room = Rect::from_min_max(Pos2::new(c[2], rect.top()), Pos2::new(c[3] - 56.0, rect.bottom()));
     let third_colour = if row.startable() { GREY } else { DIM };
     let galley = p.layout_no_wrap(third.to_owned(), FontId::proportional(13.0), third_colour);
@@ -867,6 +1001,51 @@ mod tests {
         assert!(Length::Short.contains(Some(3.9)) && !Length::Short.contains(None) && Length::Any.contains(None));
     }
 
+    #[test]
+    fn newest_sort_uses_release_dates_and_leaves_unknown_dates_last() {
+        let mut rows = some();
+        use crate::stage_releases::{Kind, Release};
+        rows[1].release = Some(Release { date: "2026-08-15", kind: Kind::New });
+        rows[3].release = Some(Release { date: "2026-08-15", kind: Kind::Conversion });
+        rows[5].release = Some(Release { date: "2025-04-21", kind: Kind::New });
+        let newest = lines(&rows, &Collection::All, &Filter::default(), Sort::Newest, &[], &[]);
+        assert_eq!(items(&newest).collect::<Vec<_>>(), [1, 3, 5, 0]);
+        let filter = Filter { query: "synthetic".into(), ..Default::default() };
+        let found = lines(&rows, &Collection::All, &filter, Sort::Newest, &[110], &[]);
+        assert_eq!(items(&found).take(3).collect::<Vec<_>>(), [1, 3, 5], "search also sorts globally by release");
+        let favourite = lines(&rows, &Collection::Favourites, &Filter::default(), Sort::Newest, &[54, 110, 105], &[]);
+        assert_eq!(items(&favourite).collect::<Vec<_>>(), [1, 5, 0]);
+    }
+
+    #[test]
+    fn reopening_and_restoring_keep_the_stage_picker_state() {
+        let mut browser = StageBrowser::default();
+        browser.set_rows(some());
+        browser.open_on(1, &[], None);
+        browser.collection = Collection::Country(Some("ES".into()));
+        browser.filter = Filter { query: "synthetic".into(), surface: Some(2), length: Length::Medium };
+        browser.sort = Sort::Newest;
+        browser.nav.restore(1, 140.0);
+        browser.refresh(&[], &[]);
+        let state = browser.state();
+        browser.open = false;
+        browser.open_on(0, &[54], None);
+        browser.refresh(&[], &[]);
+        assert_eq!(browser.state(), state, "reopening must not replace browsing state with the chosen stage");
+        let mut restored = StageBrowser::default();
+        let mut rows = some();
+        rows.swap(0, 1);
+        restored.set_rows(rows);
+        restored.restore(&state);
+        restored.open_on(0, &[], None);
+        restored.refresh(&[], &[]);
+        assert_eq!(restored.state(), state, "selection uses stage number, not a stale catalogue position");
+        restored.open_on(0, &[54], Some(Collection::Favourites));
+        assert_eq!(restored.collection, Collection::Favourites);
+        assert!(restored.filter.query.is_empty());
+        assert_eq!(restored.sort, Sort::Newest);
+    }
+
     /// Draws the browser open in a window-sized frame, without a GPU; the time it took.
     fn frame(ctx: &egui::Context, browser: &mut StageBrowser, maps: &[Map], previews: &mut Previews) -> Duration {
         let input = egui::RawInput {
@@ -887,6 +1066,30 @@ mod tests {
         .textures_delta
         .clear();
         start.elapsed()
+    }
+
+    #[test]
+    fn a_scrolled_picker_keeps_its_viewport_on_reopen_and_after_restart() {
+        let maps: Vec<Map> = (0..500).map(rsf_map).collect();
+        let mut browser = StageBrowser::default();
+        browser.set_rows(rows_of(&maps));
+        browser.open_on(250, &[], None);
+        browser.nav.restore(250, 2000.0);
+        let mut previews = Previews::new(rbr_formats::data::Data::new("/nonexistent", None));
+        let ctx = egui::Context::default();
+        frame(&ctx, &mut browser, &maps, &mut previews);
+        assert_eq!(browser.nav.offset(), 2000.0);
+        let state = browser.state();
+        browser.open = false;
+        browser.open_on(5, &[], None);
+        frame(&ctx, &mut browser, &maps, &mut previews);
+        assert_eq!(browser.state(), state);
+        let mut restarted = StageBrowser::default();
+        restarted.set_rows(rows_of(&maps));
+        restarted.restore(&state);
+        restarted.open_on(5, &[], None);
+        frame(&egui::Context::default(), &mut restarted, &maps, &mut previews);
+        assert_eq!(restarted.state(), state);
     }
 
     /// The scale of a full RallySimFans install, and more: 500 stages open, list and filter within a frame.
@@ -924,7 +1127,7 @@ mod tests {
         browser.set_rows(some());
         browser.open_on(0, &[54], None);
         assert_eq!(browser.collection, Collection::Favourites);
-        browser.open_on(3, &[54], None);
+        browser.open_on(3, &[54], Some(Collection::All));
         assert_eq!(browser.collection, Collection::All);
         assert_eq!(browser.nav.cursor, 3);
         // All: Synthetic 10 (position 5 in the rows), Synthetic 5 (1), Synthetic 8 (3), Tanner (0).

@@ -277,7 +277,12 @@ impl App {
         }
         let response = gfx.egui.on_window_event(&gfx.window, &event);
         match event {
-            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::CloseRequested => {
+                if let Some(form) = &self.form {
+                    form.save();
+                }
+                event_loop.exit();
+            }
             WindowEvent::Resized(size) => gfx.resize(size.width, size.height),
             WindowEvent::RedrawRequested => {
                 let delay = match &mut self.form {

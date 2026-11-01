@@ -358,17 +358,61 @@ pub struct CarBrowser {
     nav: Nav,
     /// Focus the search box on the next draw.
     focus: bool,
+    visited: bool,
 }
 
 impl CarBrowser {
     /// Lists the cars of the catalog.
     pub fn set_rows(&mut self, rows: Vec<CarRow>) {
+        let state = self.state();
         self.rows = rows;
         self.made = None;
+        self.restore(&state);
     }
 
     pub fn row(&self, index: usize) -> Option<&CarRow> {
         self.rows.get(index)
+    }
+
+    pub fn state(&self) -> crate::browser_state::State {
+        if !self.visited {
+            return Default::default();
+        }
+        let collection = match self.collection.as_ref().unwrap_or(&Collection::All) {
+            Collection::Favourites => "favourites".into(),
+            Collection::Recent => "recent".into(),
+            Collection::All => "all".into(),
+            Collection::CannotStart => "unavailable".into(),
+            Collection::Class(name) => format!("class:{name}"),
+        };
+        crate::browser_state::State {
+            collection: Some(collection),
+            query: self.filter.query.clone(),
+            sort: if self.sort == Sort::Recent { "recent" } else { "name" }.into(),
+            filter: self.filter.drive.map(|d| d.label().to_owned()).unwrap_or_default(),
+            length: String::new(),
+            selected: self.rows.get(self.nav.cursor).map(|r| r.name.clone()),
+            scroll: self.nav.offset(),
+        }
+    }
+
+    pub fn restore(&mut self, state: &crate::browser_state::State) {
+        let Some(collection) = state.collection.as_deref() else { return };
+        self.collection = Some(match collection {
+            "favourites" => Collection::Favourites,
+            "recent" => Collection::Recent,
+            "unavailable" => Collection::CannotStart,
+            key if key.starts_with("class:") && self.rows.iter().any(|r| r.class == key[6..]) => {
+                Collection::Class(key[6..].into())
+            }
+            _ => Collection::All,
+        });
+        self.filter = Filter { query: state.query.clone(), drive: Drive::parse(&state.filter) };
+        self.sort = if state.sort == "recent" { Sort::Recent } else { Sort::Name };
+        let cursor = self.rows.iter().position(|r| Some(&r.name) == state.selected.as_ref()).unwrap_or(0);
+        self.nav.restore(cursor, state.scroll);
+        self.visited = true;
+        self.made = None;
     }
 
     /// The row of the car named `name`.
@@ -380,13 +424,17 @@ impl CarBrowser {
     /// one, else on all cars. `collection` opens it on that instead.
     pub fn open_on(&mut self, target: Target, selected: usize, favourites: &[String], collection: Option<Collection>) {
         let favourite = self.rows.get(selected).is_some_and(|r| favourites.contains(&r.name));
-        self.collection = Some(collection.unwrap_or(if favourite { Collection::Favourites } else { Collection::All }));
-        self.filter = Filter::default();
-        self.sort = Sort::Name;
+        if !self.visited || collection.is_some() {
+            self.collection =
+                Some(collection.unwrap_or(if favourite { Collection::Favourites } else { Collection::All }));
+            self.filter.query.clear();
+            self.nav.show(selected);
+        } else {
+            self.nav.resume();
+        }
+        self.visited = true;
         self.target = target;
-        self.nav.show(selected);
         self.open = true;
-        self.made = None;
         self.focus = true;
     }
 
@@ -691,6 +739,36 @@ mod tests {
             row(2, "Beta", "WRC 2.0", None),
             row(3, "Gamma", "Group A6", None),
         ]
+    }
+
+    #[test]
+    fn reopening_and_restoring_keep_the_car_picker_state() {
+        let mut browser = CarBrowser::default();
+        browser.set_rows(rows());
+        browser.open_on(Target::Drive, 0, &[], None);
+        browser.collection = Some(Collection::Class("Group A".into()));
+        browser.filter = Filter { query: "gamma".into(), drive: Some(Drive::Awd) };
+        browser.sort = Sort::Recent;
+        browser.nav.restore(3, 90.0);
+        browser.refresh(&[], &[]);
+        let state = browser.state();
+        browser.open = false;
+        browser.open_on(Target::Season, 0, &["Zeta".into()], None);
+        browser.refresh(&[], &[]);
+        assert_eq!(browser.state(), state);
+        assert_eq!(browser.target, Target::Season);
+        let mut restored = CarBrowser::default();
+        let mut rows = rows();
+        rows.swap(0, 3);
+        restored.set_rows(rows);
+        restored.restore(&state);
+        restored.open_on(Target::Drive, 0, &[], None);
+        restored.refresh(&[], &[]);
+        assert_eq!(restored.state(), state, "highlight follows the car name across catalogue changes");
+        restored.open_on(Target::Drive, 0, &[], Some(Collection::Favourites));
+        assert_eq!(restored.collection, Some(Collection::Favourites));
+        assert!(restored.filter.query.is_empty());
+        assert_eq!(restored.sort, Sort::Recent);
     }
 
     fn names(rows: &[CarRow], lines: &[Line]) -> Vec<String> {

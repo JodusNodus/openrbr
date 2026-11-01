@@ -58,6 +58,12 @@ sources). Start runs the viewer with `rbr-standalone --live --boot` as child pro
 
 - The game's quality settings and music are not offered (user decisions).
 - The co-driver is set up on the Settings page, not per drive (user decision 2026-10-29).
+- Stage browser: “Newest on RSF” uses first native introductions from dated RSF announcements
+  (`data/rsf-stage-releases.csv`, coverage from 2024-10-05); new maps precede conversions on a tied date,
+  unknown dates follow dated maps, later fixes keep the introduction date (`stage_releases`, 2026-11-01).
+- Stage and car pickers retain collection, search, filters, sort, highlight and scroll on reopening and restart
+  (`[stage_browser]` / `[car_browser]` in the player's settings, `browser_state`); highlights use map numbers
+  and car names across rescans; Favourites shortcuts still open that collection explicitly (2026-11-01).
 - Install findings are dated data, not code: RSF install (2026-10-29, 525 stage folders) resolves LuppisV3 on 511
   stages (477 as the newest-file rule did, 33 where a newer `_default` won, 15 `_default`-only keeping their own
   notes, one stray file); the note-set rule itself is `codriver_packs::set_files`.
